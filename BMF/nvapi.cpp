@@ -47,11 +47,22 @@ static bool nvapi_silent = false;
                             MB_OK | MB_ICONASTERISK );       \
                       }
 #else
-#define NVAPI_CALL(x) { NvAPI_Status ret = NvAPI_##x; if (nvapi_silent != true && ret != NVAPI_OK) MessageBox (NULL, ErrorMessage (ret, #x, __LINE__, __FUNCTION__, __FILE__).c_str (), L"Error Calling NVAPI Function", MB_OK | MB_ICONASTERISK ); }
-#define NVAPI_CALL2(x,y) { ##y = NvAPI_##x; if (nvapi_silent != true && ##y != NVAPI_OK) MessageBox (NULL, ErrorMessage (##y, #x, __LINE__, __FUNCTION__, __FILE__).c_str (), L"Error Calling NVAPI Function", MB_OK | MB_ICONASTERISK); }
+#define NVAPI_CALL(x) { NvAPI_Status ret = NvAPI_##x; if (nvapi_silent !=    \
+ true && ret != NVAPI_OK) MessageBox (NULL, ErrorMessage (ret, #x, __LINE__, \
+__FUNCTION__, __FILE__).c_str (), L"Error Calling NVAPI Function", MB_OK     \
+ | MB_ICONASTERISK ); }
+
+#define NVAPI_CALL2(x,y) { ##y = NvAPI_##x; if (nvapi_silent != true &&     \
+##y != NVAPI_OK) MessageBox (                                               \
+  NULL, ErrorMessage (##y, #x, __LINE__, __FUNCTION__, __FILE__).c_str (),  \
+L"Error Calling NVAPI Function", MB_OK | MB_ICONASTERISK); }
+
 #endif
 
-#define NVAPI_SET_DWORD(x,y,z) (x).version = NVDRS_SETTING_VER; (x).settingId = (y); (x).settingType = NVDRS_DWORD_TYPE; (x).u32CurrentValue = (z);
+#define NVAPI_SET_DWORD(x,y,z) (x).version = NVDRS_SETTING_VER;       \
+                               (x).settingId = (y); (x).settingType = \
+                                 NVDRS_DWORD_TYPE;                    \
+                               (x).u32CurrentValue = (z);
 
 
 std::wstring
@@ -155,7 +166,8 @@ NVAPI::EnumSLIGPUs (void)
 
       while (adapters != nullptr) {
         if (adapters->AdapterLuid.LowPart > 1)
-          memcpy (&_nv_sli_adapters [nv_sli_count++], adapters, sizeof (DXGI_ADAPTER_DESC));
+          memcpy (&_nv_sli_adapters [nv_sli_count++], adapters,
+                  sizeof (DXGI_ADAPTER_DESC));
 
         ++adapters;
 
@@ -233,72 +245,17 @@ bmf::NVAPI::EnumGPUs_DXGI (void)
 
     // NVIDIA's driver measures these numbers in KiB (to store as a 32-bit int)
     //  * We want the numbers in bytes (64-bit)
-    adapterDesc.DedicatedVideoMemory  = (size_t)meminfo.dedicatedVideoMemory * 1024;
-    adapterDesc.DedicatedSystemMemory = (size_t)meminfo.systemVideoMemory    * 1024;
-    adapterDesc.SharedSystemMemory    = (size_t)meminfo.sharedSystemMemory   * 1024;
+    adapterDesc.DedicatedVideoMemory =
+      (size_t)meminfo.dedicatedVideoMemory << 10;
+    adapterDesc.DedicatedSystemMemory =
+      (size_t)meminfo.systemVideoMemory    << 10;
+    adapterDesc.SharedSystemMemory    = 
+      (size_t)meminfo.sharedSystemMemory   << 10;
 
     _nv_dxgi_adapters [i] = adapterDesc;
   }
 
   *_nv_dxgi_adapters [gpu_count].Description = L'\0';
-
-#if 0
-  NvDRSSessionHandle hSession;
-  NVAPI_CALL (DRS_CreateSession (&hSession));
-
-  NvDRSProfileHandle hProfile;
-
-  NVDRS_APPLICATION app;
-  app.version = NVDRS_APPLICATION_VER;
-
-  NVAPI_CALL (DRS_LoadSettings (hSession));
-
-  //extern std::wstring executable;
-
-  NvAPI_Status ret;
-
-  NVAPI_CALL2 (DRS_FindApplicationByName (hSession, (NvU16 *)L"batmanak.exe", &hProfile, &app), ret);
-
-#if 0
-  NvU32 max_count = 2048;
-  NvU32 setting_ids [2048];
-  NvAPI_DRS_EnumAvailableSettingIds (setting_ids, &max_count);
-
-  for (int i = 0; i < max_count; i++) {
-    wchar_t setting [2048];
-    NvAPI_DRS_GetSettingNameFromId (setting_ids [i], (NvAPI_UnicodeString *)setting);
-    MessageBox (NULL, setting, L"Driver Setting", MB_OK);
-  }
-#endif
-
-  if (ret == NVAPI_OK) {
-    NVAPI_SILENT ();
-
-  //NVAPI_CALL2 (DRS_GetSetting (hSession, hProfile, MAXWELL_B_SAMPLE_INTERLEAVE_ID, &misc->mfaa), ret);
-
-  //if (ret == NVAPI_OK)
-    //support_mfaa = true;
-
-    NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PRERENDERLIMIT_ID,   &misc->prerender_limit));
-    NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PREFERRED_PSTATE_ID, &misc->power_policy));
-
-    // Don't load this stuff if there's only 1 GPU...
-    if (CountPhysicalGPUs () > 1) {
-      NVAPI_CALL (DRS_GetSetting (hSession, hProfile, SLI_RENDERING_MODE_ID, &sli->mode));
-      NVAPI_CALL (DRS_GetSetting (hSession, hProfile, VSYNCSMOOTHAFR_ID,     &vsync->smooth));
-    }
-
-    NVAPI_CALL (DRS_GetSetting (hSession, hProfile, VSYNCMODE_ID,        &vsync->mode));
-    NVAPI_CALL (DRS_GetSetting (hSession, hProfile, VSYNCTEARCONTROL_ID, &vsync->adaptive));
-
-    NVAPI_CALL (DRS_GetSetting (hSession, hProfile, LODBIASADJUST_ID,               &lodbias->adjust));
-    NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_TEXFILTER_NO_NEG_LODBIAS_ID, &lodbias->allow_negative));
-
-    NVAPI_VERBOSE ();
-  }
-
-  NVAPI_CALL (DRS_DestroySession (hSession));
-#endif
 
   enumerated = true;
 
@@ -314,7 +271,12 @@ NVAPI::FindGPUByDXGIName (const wchar_t* wszName)
   // 01234567
 
   while (*adapters->Description != L'\0') {
-    if (wcsstr (adapters->Description, wszName + 7) != NULL) {//strstrw (lstrcmpiW () == 0) {
+    //strstrw (lstrcmpiW () == 0) { // More accurate, but some GPUs have
+                                    //   trailing spaces in their names.
+                                    // -----
+                                    // What the heck?!
+
+    if (wcsstr (adapters->Description, wszName + 7) != NULL) {
       return adapters;
     }
 
@@ -322,97 +284,6 @@ NVAPI::FindGPUByDXGIName (const wchar_t* wszName)
   }
 
   return NULL;
-}
-
-#include "nvapi/nvapi_lite_common.h"
-
-
-
-void SaveDriverTweaksNV (HWND hDlg)
-{
-#if 0
-  NvDRSSessionHandle hSession;
-  NVAPI_CALL (DRS_CreateSession (&hSession));
-
-  NvDRSProfileHandle hProfile;
-
-  NVDRS_APPLICATION app;
-  app.version = NVDRS_APPLICATION_VER;
-
-  NVAPI_CALL (DRS_LoadSettings (hSession));
-
-  extern std::wstring executable;
-
-  // We expect to fail here, just go with it if it happens... we can fix it.
-  NVAPI_SILENT ();
-
-  NvAPI_Status ret;
-  NVAPI_CALL2 (DRS_FindApplicationByName (hSession, (NvU16 *)L"batmanak.exe", &hProfile, &app), ret);
-
-  if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
-    NVAPI_CALL2 (DRS_FindApplicationByName (hSession, (NvU16 *)L"bmgame.exe", &hProfile, &app), ret);
-
-    NVAPI_VERBOSE ();
-
-    if (ret == NVAPI_OK) {
-      lstrcpyW ((wchar_t *)app.appName, L"batmanak.exe");
-      lstrcpyW ((wchar_t *)app.userFriendlyName, L"Batman: Arkham Knight");
-      app.isPredefined = false;
-
-      NvAPI_DRS_CreateApplication (hSession, hProfile, &app);
-    }
-    else {
-      return;
-    }
-  }
-
-  NVAPI_VERBOSE ();
-
-  NvU32 setting_id = 0;
-
-  NVAPI_CALL (DRS_GetSettingIdFromName ((NvU16 *)PRERENDERLIMIT_STRING, &setting_id));
-
-  if (ret == NVAPI_OK) {
-    NVAPI_SET_DWORD (misc->prerender_limit, setting_id, misc->poll_prerender_limit ());
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &misc->prerender_limit));
-
-    NVAPI_SET_DWORD (misc->power_policy, PREFERRED_PSTATE_ID, misc->poll_power_policy ());
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &misc->power_policy));
-
-    // Don't save this stuff if there's only 1 GPU...
-    if (CountSLIGPUs () > 1) {
-      NVAPI_SET_DWORD (sli->mode, SLI_RENDERING_MODE_ID, sli->poll_mode ());
-      NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &sli->mode));
-
-      NVAPI_SET_DWORD (vsync->smooth, VSYNCSMOOTHAFR_ID, vsync->poll_smooth ());
-      NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &vsync->smooth));
-    }
-
-    NVAPI_SET_DWORD (vsync->mode, VSYNCMODE_ID, vsync->poll_mode ());
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &vsync->mode));
-
-    NVAPI_SET_DWORD (vsync->adaptive, VSYNCTEARCONTROL_ID, vsync->poll_adaptive ());
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &vsync->adaptive));
-
-    NVDRS_SETTING lodbias_auto_adjust;
-    NVAPI_SET_DWORD (lodbias_auto_adjust, AUTO_LODBIASADJUST_ID, 0);
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &lodbias_auto_adjust));
-
-    NVAPI_SET_DWORD (lodbias->adjust, LODBIASADJUST_ID, lodbias->poll_adjust ());
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &lodbias->adjust));
-
-    NVAPI_SET_DWORD (lodbias->allow_negative, PS_TEXFILTER_NO_NEG_LODBIAS_ID, lodbias->poll_allow_negative ())
-    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &lodbias->allow_negative));
-
-//    if (support_mfaa) {
-//      NVAPI_SET_DWORD (misc->mfaa, MAXWELL_B_SAMPLE_INTERLEAVE_ID, misc->poll_mfaa ());
-//      NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &misc->mfaa));
-//    }
-  }
-
-  NVAPI_CALL (DRS_SaveSettings   (hSession));
-  NVAPI_CALL (DRS_DestroySession (hSession));
-#endif
 }
 
 std::wstring
@@ -428,7 +299,6 @@ NVAPI::GetDriverVersion (NvU32* pVer)
   //   let's do this the right way and report a number the end-user
   //     is actually going to recognize...
   swprintf (ver_wstr, 64, L"%u.%u", ver / 100, ver % 100);
-  //MultiByteToWideChar (CP_OEMCP, 0, ver_str, -1, ver_wstr, 64);
 
   if (pVer != NULL)
     *pVer = ver;
@@ -501,205 +371,10 @@ NVAPI::InitializeLibrary (void)
 }
 
 bool
-TEST_SLI (void)
-{
-  return false;
-  //NvAPI_D3D_GetCurrentSLIState ()
-}
-
-#if 0
-std::wstring
-EDID_Audio_CodecName (uint8_t SAD1)
-{
-  switch ((SAD1 & 0x78) >> 3)
-  {
-  case 1:
-    return L"LPCM";
-  case 2:
-    return L"AC-3";
-  case 3:
-    return L"MPEG1";
-  case 4:
-    return L"MP3";
-  case 5:
-    return L"MPEG2";
-  case 6:
-    return L"AAC";
-  case 7:
-    return L"DTS";
-  case 8:
-    return L"ATRAC";
-  case 9:
-    return L"SACD";
-  case 10:
-    return L"Dolby Digital+";
-  case 11:
-    return L"DTS-HD";
-  case 12:
-    return L"Dolby TrueHD";
-  case 13:
-    return L"DST Audio";
-  case 14:
-    return L"Microsoft WMA Pro";
-  default:
-    return L"INVALID";
-  }
-}
-
-std::wstring
-EDID_Audio_SampleRates (uint8_t SAD2)
-{
-  std::wstring rates = L" ";
-
-  if (SAD2 & 0x1)
-    rates += L"32 kHz ";
-  if (SAD2 & 0x2)
-    rates += L"44 kHz ";
-  if (SAD2 & 0x4)
-    rates += L"48 kHz ";
-  if (SAD2 & 0x8)
-    rates += L"88 kHz ";
-  if (SAD2 & 0x10)
-    rates += L"96 kHz ";
-  if (SAD2 & 0x20)
-    rates += L"176 kHz ";
-  if (SAD2 & 0x40)
-    rates += L"192 kHz ";
-
-  return rates;
-}
-
-std::wstring
-EDID_Audio_BitRates (uint8_t SAD3)
-{
-  std::wstring rates = L" ";
-
-  if (SAD3 & 0x1)
-    rates += L"16-bit ";
-  if (SAD3 & 0x2)
-    rates += L"20-bit ";
-  if (SAD3 & 0x4)
-    rates += L"24-bit ";
-
-  return rates;
-}
-
-wchar_t wszFormat [16384];
-#endif
-
-bool
 NVAPI::CheckDriverVersion (void)
 {
   NvU32 ver;
   GetDriverVersion (&ver);
-
-#if 0
-  NV_MONITOR_CAPABILITIES mon_caps;
-  mon_caps.version = NV_MONITOR_CAPABILITIES_VER;
-  mon_caps.size = sizeof (NV_MONITOR_CAPABILITIES);
-
-  NvPhysicalGpuHandle gpus [16];
-  NvU32               gpu_count = 16;
-
-  NV_GPU_DISPLAYIDS disp_ids [4];
-  disp_ids [0].version = NV_GPU_DISPLAYIDS_VER;
-  disp_ids [1].version = NV_GPU_DISPLAYIDS_VER;
-  disp_ids [2].version = NV_GPU_DISPLAYIDS_VER;
-  disp_ids [3].version = NV_GPU_DISPLAYIDS_VER;
-
-  NvU32             disp_count = 4;
-
-  NVAPI_CALL (EnumPhysicalGPUs (gpus, &gpu_count));
-  NVAPI_CALL (GPU_GetConnectedDisplayIds (gpus [0], disp_ids, &disp_count, NV_GPU_CONNECTED_IDS_FLAG_SLI));
-
-  for (int i = 0; i < disp_count; i++) {
-    //NVAPI_CALL (DISP_GetMonitorCapabilities (disp_ids [i].displayId, &mon_caps));
-
-    NV_EDID edid;
-    edid.version    = NV_EDID_VER;
-    edid.sizeofEDID = NV_EDID_DATA_SIZE;
-
-    NVAPI_CALL (GPU_GetEDID (gpus [0], disp_ids [i].displayId, &edid));
-
-    if (((uint64_t *)edid.EDID_Data) [0] == 0x00ffffffffffff00)
-      MessageBox (NULL, L"We did it!", L"Neat", MB_OK);
-    else
-      return true;
-
-    uint8_t* data = &edid.EDID_Data [128 + 4];
-    while (true) {
-#if 0
-      uint8_t type = (*data & 0x7);// (*data & 0xE0) >> 5;
-      uint8_t adv = (*data & 0xF8) >> 5;// (*data & 0x1F);
-#else
-      uint8_t type = (*data & 0xE0) >> 5;
-      uint8_t adv  = (*data & 0x1F);
-#endif
-
-      data++;
-
-      wchar_t* pwszFormat = wszFormat;
-
-      if (type == 1) {
-        //MessageBox (NULL, L"Audio Block", L"EDID Debug", MB_OK);
-        uint8_t* end = data + adv;
-        while (data < end) {
-          pwszFormat += swprintf (pwszFormat, 16384, L"%s (%d Channels - [%s] @ (%s)))\n",
-            EDID_Audio_CodecName (*data).c_str (),
-              (*data & 0x7) + 1,
-            EDID_Audio_SampleRates (*(data + 1)).c_str (),
-            EDID_Audio_BitRates    (*(data + 2)).c_str ());
-
-          data += 3;
-        }
-
-        MessageBox (NULL, wszFormat, L"Audio Channels", MB_OK);
-      }
-
-      if (type == 2) {
-        //MessageBox (NULL, L"Video Block", L"EDID Debug", MB_OK);
-        data += adv;
-      }
-
-      if (type == 3) {
-        MessageBox (NULL, L"Vendor Block", L"EDID Debug", MB_OK);
-
-        if (data [8]) {
-          swprintf (wszFormat, 512, L"%d MHz Max TMDS", data [8] * 5);
-          MessageBox (NULL, wszFormat, L"Pixel Clock", MB_OK);
-        }
-
-        bool latency = (data [9] & 0x80);
-
-        if (latency) {
-          swprintf (wszFormat, 512, L"(%d : %d) ms <video : audio> latency", data [10] * 2 - 1, data [11] * 2 - 1);
-          MessageBox (NULL, wszFormat, L"Video Latency", MB_OK);
-        }
-          
-        //uint8_t* end = 
-        data += adv;
-      }
-
-      if (type == 4) {
-        //MessageBox (NULL, L"Speaker Block", L"EDID Debug", MB_OK);
-        data += adv;
-      }
-
-      if (data > &edid.EDID_Data [127] + edid.EDID_Data [128 + 2])
-        break;
-    }
-
-    //NvAPI_GetAssociatedNvidiaDisplayName (disp_ids [i]., disp_name);
-    //MessageBoxA (NULL, disp_name, "Test", MB_OK);
-
-    //wchar_t wszSummary [1024];
-    //disp_ids [i].connectorType
-
-    //swprintf (wszSummary, 1024, L"%d ms Latency\n", mon_caps.data.vcdb.quantizationRangeYcc);// mon_caps.data.vsdb.supportDeepColor36bits);// mon_caps.data.vsdb.videoLatency);
-    //MessageBox (NULL, wszSummary, L"Monitor Info", MB_OK);
-    //mon_caps.data.vsdb.videoLatency;
-  }
-#endif
 
   return ver >= 35330;
   if (ver < 35330) {

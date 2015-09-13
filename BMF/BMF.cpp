@@ -39,7 +39,6 @@ extern "C" {
 
 static HANDLE hBudgetThread = NULL;
 
-static BOOL    bSilent = FALSE;
 static FILE*   fLog    = nullptr;
 static HMODULE hDxgi   = NULL;
 
@@ -97,17 +96,66 @@ BMF_Timestamp (wchar_t* const out)
   return stLogTime.wMilliseconds;
 }
 
-static CRITICAL_SECTION log_mutex = { 0 };
+struct bmf_logger_t {
+  bool init (const char* const szFilename,
+             const char* const szMode);
+
+  void close (void);
+
+  void LogEx (bool                 _Timestamp,
+              _In_z_ _Printf_format_string_
+              wchar_t const* const _Format, ...);
+
+  void Log   (_In_z_ _Printf_format_string_
+              wchar_t const* const _Format, ...);
+
+  FILE*            fLog        = NULL;
+  bool             silent      = false;
+  bool             initialized = false;
+  CRITICAL_SECTION log_mutex =   { 0 };
+} static dxgi_log, budget_log;
+
 
 void
-BMF_LogEx (                              bool                 _Timestamp,
-           _In_z_ _Printf_format_string_ wchar_t const* const _Format, ...)
+bmf_logger_t::close (void)
+{
+  if (fLog != NULL)
+    fclose (fLog);
+
+  silent = true;
+
+  DeleteCriticalSection (&log_mutex);
+}
+
+bool
+bmf_logger_t::init (const char* const szFileName,
+                    const char* const szMode)
+{
+  if (initialized)
+    return true;
+
+  fLog = fopen (szFileName, szMode);
+
+  InitializeCriticalSection (&log_mutex);
+
+  if (fLog == NULL) {
+    silent = true;
+    return false;
+  }
+
+  return (initialized = true);
+}
+
+void
+bmf_logger_t::LogEx (bool                 _Timestamp,
+                     _In_z_ _Printf_format_string_
+                     wchar_t const* const _Format, ...)
 {
   va_list _ArgList;
 
   EnterCriticalSection (&log_mutex);
 
-  if ((! fLog) || bSilent) {
+  if ((! fLog) || silent) {
     LeaveCriticalSection (&log_mutex);
     return;
   }
@@ -130,13 +178,14 @@ BMF_LogEx (                              bool                 _Timestamp,
 }
 
 void
-BMF_Log (_In_z_ _Printf_format_string_ wchar_t const* const _Format, ...)
+bmf_logger_t::Log   (_In_z_ _Printf_format_string_
+                     wchar_t const* const _Format, ...)
 {
   va_list _ArgList;
 
   EnterCriticalSection (&log_mutex);
 
-  if ((! fLog) || bSilent) {
+  if ((! fLog) || silent) {
     LeaveCriticalSection (&log_mutex);
     return;
   }
@@ -155,67 +204,6 @@ BMF_Log (_In_z_ _Printf_format_string_ wchar_t const* const _Format, ...)
   fflush    (fLog);
 
   LeaveCriticalSection (&log_mutex);
-}
-
-// Is Thread Local Storage acceptable in a DLL? It'd be nice to have here...
-void
-BMF_BLogEx (                              budget_thread_params_t* _Params,
-                                          bool                    _Timestamp,
-            _In_z_ _Printf_format_string_ wchar_t const* const    _Format, ...)
-{
-  va_list _ArgList;
-
-  EnterCriticalSection (&_Params->log_mutex);
-
-  if ((! _Params->fLog) || _Params->silent) {
-    LeaveCriticalSection (&_Params->log_mutex);
-    return;
-  }
-
-  if (_Timestamp) {
-    wchar_t wszLogTime [128];
-
-    WORD ms = BMF_Timestamp (wszLogTime);
-
-    fwprintf (_Params->fLog, L"%s%03u: ", wszLogTime, ms);
-  }
-
-  va_start (_ArgList, _Format);
-  vfwprintf (_Params->fLog, _Format, _ArgList);
-  va_end (_ArgList);
-
-  fflush (_Params->fLog);
-
-  LeaveCriticalSection (&_Params->log_mutex);
-}
-
-void
-BMF_BLog (                              budget_thread_params_t* _Params,
-          _In_z_ _Printf_format_string_ wchar_t const* const    _Format, ...)
-{
-  va_list _ArgList;
-
-  EnterCriticalSection (&_Params->log_mutex);
-
-  if ((! _Params->fLog) || _Params->silent) {
-    LeaveCriticalSection (&_Params->log_mutex);
-    return;
-  }
-
-  wchar_t wszLogTime [128];
-
-  WORD ms = BMF_Timestamp (wszLogTime);
-
-  fwprintf (_Params->fLog, L"%s%03u: ", wszLogTime, ms);
-
-  va_start (_ArgList, _Format);
-  vfwprintf (_Params->fLog, _Format, _ArgList);
-  va_end (_ArgList);
-
-  fwprintf  (_Params->fLog, L"\n");
-  fflush    (_Params->fLog);
-
-  LeaveCriticalSection (&_Params->log_mutex);
 }
 
 const wchar_t*
@@ -280,26 +268,23 @@ BMF_Init (void)
     return;
   }
 
-  InitializeCriticalSection (&log_mutex);
-
   HANDLE hProc = GetCurrentProcess ();
 
   FILE*   silent = NULL;
   errno_t err    = fopen_s (&silent, "dxgi.silent", "r");
 
   if (err == 0 && silent != NULL) {
-    bSilent = true;
+    dxgi_log.silent = true;
     fclose (silent);
   }
   else {
-    bSilent = false;
-    fLog = fopen ("dxgi.log", "w");
-    //err = fopen_s (&fLog, "dxgi.log", "w");
+    dxgi_log.init ("dxgi.log", "w");
+    dxgi_log.silent = false;
   }
 
-  BMF_Log (L"dxgi.log created");
+  dxgi_log.Log (L"dxgi.log created");
 
-  BMF_LogEx (false,
+  dxgi_log.LogEx (false,
   L"------------------------------------------------------------------------"
   L"-----------\n");
 
@@ -313,49 +298,50 @@ BMF_Init (void)
   while (pwszShortName > wszProcessName && *(pwszShortName - 1) != L'\\')
     --pwszShortName;
 
-  BMF_Log (L">> (%s) <<", pwszShortName);
+  dxgi_log.Log (L">> (%s) <<", pwszShortName);
 
-  BMF_LogEx (false,
+  dxgi_log.LogEx (false,
   L"------------------------------------------------------------------------"
   L"-----------\n");
 
   wchar_t wszDxgiDLL [MAX_PATH] = { L'\0' };
   GetSystemDirectory (wszDxgiDLL, MAX_PATH);
 
-  BMF_Log (L" System Directory:           %s", wszDxgiDLL);
+  dxgi_log.Log (L" System Directory:           %s", wszDxgiDLL);
 
   lstrcatW (wszDxgiDLL, L"\\dxgi.dll");
 
-  BMF_LogEx (true, L" Loading default dxgi.dll: ");
+  dxgi_log.LogEx (true, L" Loading default dxgi.dll: ");
 
   hDxgi = LoadLibrary (wszDxgiDLL);
 
   if (hDxgi != NULL)
-    BMF_LogEx (false, L" (%s)\n", wszDxgiDLL);
+    dxgi_log.LogEx (false, L" (%s)\n", wszDxgiDLL);
   else
-    BMF_LogEx (false, L" FAILED (%s)!\n", wszDxgiDLL);
+    dxgi_log.LogEx (false, L" FAILED (%s)!\n", wszDxgiDLL);
 
-  BMF_LogEx (false,
+  dxgi_log.LogEx (false,
     L"----------------------------------------------------------------------"
     L"-------------\n");
 
-  BMF_LogEx (true, L"Initializing NvAPI: ");
+  dxgi_log.LogEx (true, L"Initializing NvAPI: ");
 
   nvapi_init = bmf::NVAPI::InitializeLibrary ();
 
-  BMF_LogEx (false, L" %s\n\n", nvapi_init ? L"Success" : L"Failed");
+  dxgi_log.LogEx (false, L" %s\n\n", nvapi_init ? L"Success" : L"Failed");
 
   if (nvapi_init) {
     int num_sli_gpus = bmf::NVAPI::CountSLIGPUs ();
 
-    BMF_Log (L" >> NVIDIA Driver Version: %s",
+    dxgi_log.Log (L" >> NVIDIA Driver Version: %s",
       bmf::NVAPI::GetDriverVersion ().c_str ());
 
-    BMF_Log (L"  * Number of Installed NVIDIA GPUs: %u (%u are in SLI mode)",
+    dxgi_log.Log (L"  * Number of Installed NVIDIA GPUs: %u "
+                  L"(%u are in SLI mode)",
        bmf::NVAPI::CountPhysicalGPUs (), num_sli_gpus);
 
     if (num_sli_gpus > 0) {
-      BMF_LogEx (false, L"\n");
+      dxgi_log.LogEx (false, L"\n");
 
       DXGI_ADAPTER_DESC* sli_adapters =
         bmf::NVAPI::EnumSLIGPUs ();
@@ -363,57 +349,58 @@ BMF_Init (void)
       int sli_gpu_idx = 0;
 
       while (*sli_adapters->Description != L'\0') {
-        BMF_Log ( L"   + SLI GPU %d: %s",
+        dxgi_log.Log ( L"   + SLI GPU %d: %s",
                     sli_gpu_idx++,
                       (sli_adapters++)->Description );
       }
     }
 
-    BMF_LogEx (false, L"\n");
+    dxgi_log.LogEx (false, L"\n");
   }
 
-  BMF_Log (L"Importing CreateDXGIFactory{1|2}");
-  BMF_Log (L"================================");
+  dxgi_log.Log (L"Importing CreateDXGIFactory{1|2}");
+  dxgi_log.Log (L"================================");
 
-  BMF_Log (L"  CreateDXGIFactory:  %08Xh", 
+  dxgi_log.Log (L"  CreateDXGIFactory:  %08Xh", 
     (CreateDXGIFactoryEX =  \
       (CreateDXGIFactory_t)GetProcAddress (hDxgi, "CreateDXGIFactory")));
-  BMF_Log (L"  CreateDXGIFactory1: %08Xh",
+  dxgi_log.Log (L"  CreateDXGIFactory1: %08Xh",
     (CreateDXGIFactory1EX = \
       (CreateDXGIFactory1_t)GetProcAddress (hDxgi, "CreateDXGIFactory1")));
-  BMF_Log (L"  CreateDXGIFactory2: %08Xh",
+  dxgi_log.Log (L"  CreateDXGIFactory2: %08Xh",
     (CreateDXGIFactory2EX = \
       (CreateDXGIFactory2_t)GetProcAddress (hDxgi, "CreateDXGIFactory2")));
 
   // Put to sleep 1 scheduler quantum before recursively loading debug symbols
   Sleep (15);
 
-  BMF_LogEx (true, L" @ Loading Debug Symbols: ");
+  dxgi_log.LogEx (true, L" @ Loading Debug Symbols: ");
   SymInitializeW       (GetCurrentProcess (), NULL, TRUE);
   SymRefreshModuleList (GetCurrentProcess ());
 
-  BMF_LogEx (false, L"done!\n");
+  dxgi_log.LogEx (false, L"done!\n");
 
-  BMF_Log (L"=== Initialization Finished! ===\n");
+  dxgi_log.Log (L"=== Initialization Finished! ===\n");
 }
 
 
-#define DXGI_CALL(_Ret, _Call) {                                  \
-  BMF_LogEx (true, L"  Calling original function: ");             \
-  (_Ret) = (_Call);                                               \
-  BMF_LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret)); \
+#define DXGI_CALL(_Ret, _Call) {                                      \
+  dxgi_log.LogEx (true, L"  Calling original function: ");            \
+  (_Ret) = (_Call);                                                   \
+  dxgi_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret));\
 }
 
 // Interface-based DXGI call
 #define DXGI_LOG_CALL_I(_Interface,_Name,_Format)                            \
-  BMF_LogEx (true, L"[!] %s::%s (", _Interface, _Name);                      \
-  BMF_LogEx (false, _Format
+  dxgi_log.LogEx (true, L"[!] %s::%s (", _Interface, _Name);                 \
+  dxgi_log.LogEx (false, _Format
 // Global DXGI call
 #define DXGI_LOG_CALL(_Name,_Format)                                         \
-  BMF_LogEx (true, L"[!] %s (", _Name);                                      \
-  BMF_LogEx (false, _Format
+  dxgi_log.LogEx (true, L"[!] %s (", _Name);                                 \
+  dxgi_log.LogEx (false, _Format
 #define DXGI_LOG_CALL_END                                                    \
-  BMF_LogEx (false, L") -- [Calling Thread: 0x%04x]\n",GetCurrentThreadId ());
+  dxgi_log.LogEx (false, L") -- [Calling Thread: 0x%04x]\n",                 \
+    GetCurrentThreadId ());
 
 #define DXGI_LOG_CALL_I0(_Interface,_Name) {                                 \
   DXGI_LOG_CALL_I   (_Interface,_Name, L"void"));                            \
@@ -468,14 +455,14 @@ BMF_Init (void)
       _default_impl = (passthrough_t)GetProcAddress (hDxgi, szName);  \
                                                                       \
       if (_default_impl == nullptr) {                                 \
-        BMF_Log (                                                     \
+        dxgi_log.Log (                                                \
           L"Unable to locate symbol  %s in dxgi.dll",                 \
           L#_Name);                                                   \
         return E_NOTIMPL;                                             \
       }                                                               \
     }                                                                 \
                                                                       \
-    BMF_Log (L"[!] %s (%s) - "                                        \
+    dxgi_log.Log (L"[!] %s (%s) - "                                   \
              L"[Calling Thread: 0x%04x]",                             \
       L#_Name, L#_Proto, GetCurrentThreadId ());                      \
                                                                       \
@@ -619,28 +606,28 @@ extern "C++" {
                                                                               \
     VirtualProtect (&vftable [_Index], 8, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-    BMF_Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",   \
+  dxgi_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",\
              L##_Name, vftable [_Index],                                      \
              BMF_DescribeVirtualProtectFlags (dwProtect));                    \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    BMF_Log (L"  + %s: %08Xh", L#_Original, _Original);                       \
+    dxgi_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                  \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
     VirtualProtect (&vftable [_Index], 8, dwProtect, &dwProtect);             \
                                                                               \
-    BMF_Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",      \
-             L##_Name, vftable [_Index],                                      \
-             BMF_DescribeVirtualProtectFlags (dwProtect));                    \
+    dxgi_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n", \
+                  L##_Name, vftable [_Index],                                 \
+                  BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *GetDesc1_t)(
-         IDXGIAdapter1      *This,
-  _Out_  DXGI_ADAPTER_DESC1 *pDesc);
+typedef HRESULT (STDMETHODCALLTYPE  *GetDesc1_t)(
+                 IDXGIAdapter1      *This,
+          _Out_  DXGI_ADAPTER_DESC1 *pDesc);
 
 GetDesc1_t GetDesc1_Original = NULL;
 
@@ -656,21 +643,21 @@ HRESULT STDMETHODCALLTYPE GetDesc1_Override (IDXGIAdapter1*      This,
 
   //// OVERRIDE VRAM NUMBER
   if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
-    BMF_LogEx ( true,
+    dxgi_log.LogEx ( true,
       L" <> GetDesc1_Override: Looking for matching NVAPI GPU for %s...: ",
         pDesc->Description );
       
     DXGI_ADAPTER_DESC* match =
       bmf::NVAPI::FindGPUByDXGIName (pDesc->Description);
     if (match != NULL) {
-      BMF_LogEx (false, L"Success! (%s)\n", match->Description);
+      dxgi_log.LogEx (false, L"Success! (%s)\n", match->Description);
       pDesc->DedicatedVideoMemory = match->DedicatedVideoMemory;
     }
     else
-      BMF_LogEx (false, L"Failure! (No Match Found)\n");
+      dxgi_log.LogEx (false, L"Failure! (No Match Found)\n");
   }
 
-  BMF_LogEx (false, L"\n");
+  dxgi_log.LogEx (false, L"\n");
 
   return ret;
 }
@@ -693,7 +680,7 @@ HRESULT STDMETHODCALLTYPE GetDesc_Override (IDXGIAdapter      *This,
 
   //// OVERRIDE VRAM NUMBER
   if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
-    BMF_LogEx ( true,
+    dxgi_log.LogEx ( true,
       L" <> GetDesc_Override: Looking for matching NVAPI GPU for %s...: ",
         pDesc->Description );
 
@@ -701,14 +688,14 @@ HRESULT STDMETHODCALLTYPE GetDesc_Override (IDXGIAdapter      *This,
       bmf::NVAPI::FindGPUByDXGIName (pDesc->Description);
 
     if (match != NULL) {
-      BMF_LogEx (false, L"Success! (%s)\n", match->Description);
+      dxgi_log.LogEx (false, L"Success! (%s)\n", match->Description);
       pDesc->DedicatedVideoMemory = match->DedicatedVideoMemory;
     }
     else
-      BMF_LogEx (false, L"Failure! (No Match Found)\n");
+      dxgi_log.LogEx (false, L"Failure! (No Match Found)\n");
   }
 
-  BMF_LogEx (false, L"\n");
+  dxgi_log.LogEx (false, L"\n");
 
   return ret;
 }
@@ -757,7 +744,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
     // Logic to skip Intel and Microsoft adapters and return only AMD / NV
     if (lstrlenW (desc.Description)) {
       if (desc.VendorId == Microsoft || desc.VendorId == Intel) {
-        BMF_LogEx (false,
+        dxgi_log.LogEx (false,
            L" >> (Host Application Tried To Enum Intel or Microsoft Adapter)"
            L" -- Skipping Adapter %d <<\n\n", Adapter);
 
@@ -770,11 +757,11 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
 
           if (match != NULL &&
               desc.DedicatedVideoMemory > match->DedicatedVideoMemory) {
-            BMF_Log (
+            dxgi_log.Log (
               L"   # SLI Detected (Corrected Memory Total: %u MiB -- "
               L"Original: %u MiB)",
-                            match->DedicatedVideoMemory / 1024ULL / 1024ULL,
-                              desc.DedicatedVideoMemory / 1024ULL / 1024ULL);
+                            match->DedicatedVideoMemory >> 20ULL,
+                              desc.DedicatedVideoMemory >> 20ULL);
           }
         }
 
@@ -786,18 +773,6 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
             // We're going to Release this interface after this loop, but
             //   the running thread still needs a reference counted.
             pAdapter3->AddRef ();
-#if 0
-            if (hBudgetThread) {
-              budget_thread->ready = false;
-              SignalObjectAndWait (budget_thread->event, hBudgetThread,
-                                   INFINITE, TRUE);
-              budget_thread->pAdapter->
-                UnregisterVideoMemoryBudgetChangeNotification (
-                  budget_thread->cookie
-                );
-              budget_thread->pAdapter->Release ();
-            }
-#endif
 
             DWORD WINAPI BudgetThread (LPVOID user_data);
 
@@ -806,7 +781,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
                 new budget_thread_params_t ();
             }
 
-            BMF_LogEx (true,
+            dxgi_log.LogEx (true,
                  L"   $ Spawning DXGI 1.3 Memory Budget Change Thread.: ");
 
             budget_thread->pAdapter = pAdapter3;
@@ -824,9 +799,9 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
               ;
 
             if (budget_thread->tid != 0) {
-              BMF_LogEx (false, L"tid=0x%04x\n", budget_thread->tid);
+              dxgi_log.LogEx (false, L"tid=0x%04x\n", budget_thread->tid);
 
-              BMF_LogEx (true,
+              dxgi_log.LogEx (true,
                 L"   %% Setting up Budget Change Notification.........: ");
 
               HRESULT result =
@@ -835,74 +810,86 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
               );
 
               if (result == S_OK) {
-                BMF_LogEx (false, L"eid=0x%x, cookie=%u\n",
+                dxgi_log.LogEx (false, L"eid=0x%x, cookie=%u\n",
                            budget_thread->event, budget_thread->cookie);
 
                 // Immediately run the event loop one time
                 //SignalObjectAndWait (budget_thread->event, hBudgetThread,
                                  //0, TRUE);
               } else {
-                BMF_LogEx (false, L"Failed! (%s)\n",
+                dxgi_log.LogEx (false, L"Failed! (%s)\n",
                            BMF_DescribeHRESULT (result));
               }
             } else {
-              BMF_LogEx (false, L"failed!\n");
+              dxgi_log.LogEx (false, L"failed!\n");
             }
           }
           int i = 0;
 
-          BMF_LogEx (true,
+          dxgi_log.LogEx (true,
                      L"   [DXGI 1.3]: Local Memory.....:");
 
           DXGI_QUERY_VIDEO_MEMORY_INFO mem_info;
           while (S_OK ==
                  pAdapter3->QueryVideoMemoryInfo (
                    i,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&mem_info)) {
+
             if (i > 0) {
-              BMF_LogEx (false, L"\n");
-             BMF_LogEx (true,  L"                                 ");
+              dxgi_log.LogEx (false, L"\n");
+              dxgi_log.LogEx (true,  L"                                 ");
             }
-            BMF_LogEx (false,
+            dxgi_log.LogEx (false,
                        L" Node%u (Reserve: %#5u / %#5u MiB - "
                        L"Budget: %#5u / %#5u MiB)",
-                     i++,
-                       mem_info.CurrentReservation / 1024ULL / 1024ULL,
-                       mem_info.AvailableForReservation / 1024ULL / 1024ULL,
-                       mem_info.CurrentUsage / 1024ULL / 1024ULL,
-                       mem_info.Budget / 1024ULL / 1024ULL);
+                       i++,
+                       mem_info.CurrentReservation      >> 20ULL,
+                       mem_info.AvailableForReservation >> 20ULL,
+                       mem_info.CurrentUsage            >> 20ULL,
+                       mem_info.Budget                  >> 20ULL);
+
             pAdapter3->SetVideoMemoryReservation (
-              i-1, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-              mem_info.AvailableForReservation);
+                     i-1,
+                       DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                         mem_info.AvailableForReservation
+            );
           }
-          BMF_LogEx (false, L"\n");
+          dxgi_log.LogEx (false, L"\n");
 
           i = 0;
 
-          BMF_LogEx (true,
+          dxgi_log.LogEx (true,
                      L"   [DXGI 1.3]: Non-Local Memory.:");
 
-          while (S_OK ==
-                 pAdapter3->QueryVideoMemoryInfo (
-                   i,DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,&mem_info)) {
+          while ( S_OK ==
+                  pAdapter3->QueryVideoMemoryInfo (
+                    i,
+                      DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+                        &mem_info
+                  )
+                 )
+          {
             if (i > 0) {
-              BMF_LogEx (false, L"\n");
-              BMF_LogEx (true,  L"                                 ");
+              dxgi_log.LogEx (false, L"\n");
+              dxgi_log.LogEx (true,  L"                                 ");
             }
-            BMF_LogEx (false,
+            dxgi_log.LogEx (false,
                        L" Node%u (Reserve: %#5u / %#5u MiB - "
                        L"Budget: %#5u / %#5u MiB)",
                      i++,
-                       mem_info.CurrentReservation / 1024ULL / 1024ULL,
-                       mem_info.AvailableForReservation / 1024ULL / 1024ULL,
-                       mem_info.CurrentUsage / 1024ULL / 1024ULL,
-                       mem_info.Budget / 1024ULL / 1024ULL);
-            pAdapter3->SetVideoMemoryReservation (
-              i-1, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
-              mem_info.AvailableForReservation);
+                       mem_info.CurrentReservation      >> 20ULL,
+                       mem_info.AvailableForReservation >> 20ULL,
+                       mem_info.CurrentUsage            >> 20ULL,
+                       mem_info.Budget                  >> 20ULL );
+
+              pAdapter3->SetVideoMemoryReservation (
+                     i-1,
+                       DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+                         mem_info.AvailableForReservation
+            );
           }
         }
 
-        BMF_LogEx (false, L"\n");
+        dxgi_log.LogEx (false, L"\n");
 
         // This sounds good in theory, but we have a tendancy to underflow
         //   the reference counter and I don't know why you'd even really
@@ -911,7 +898,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
         //pAdapter3->Release ();
       }
 
-      BMF_Log (L"   @ Returning Adapter w/ Name: %s\n", desc.Description);
+      dxgi_log.Log (L"   @ Returning Adapter w/ Name: %s\n", desc.Description);
     }
   }
 
@@ -947,7 +934,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
     // Logic to skip Intel and Microsoft adapters and return only AMD / NV
     if (lstrlenW (desc.Description)) {
       if (desc.VendorId == Microsoft || desc.VendorId == Intel) {
-        BMF_LogEx (false,
+        dxgi_log.LogEx (false,
            L" >> (Host Application Tried To Enum Intel or Microsoft Adapter)"
            L" -- Skipping Adapter %d <<\n\n", Adapter);
 
@@ -960,7 +947,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
 
           if (match != NULL &&
               desc.DedicatedVideoMemory > match->DedicatedVideoMemory) {
-            BMF_Log (
+            dxgi_log.Log (
               L"   # SLI Detected (Corrected Memory Total: %u MiB -- "
               L"Original: %u MiB)",
                             match->DedicatedVideoMemory / 1024ULL / 1024ULL,
@@ -996,7 +983,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
                 new budget_thread_params_t ();
             }
 
-            BMF_LogEx (true,
+            dxgi_log.LogEx (true,
                  L"   $ Spawning DXGI 1.3 Memory Budget Change Thread.: ");
 
             budget_thread->pAdapter = pAdapter3;
@@ -1014,9 +1001,9 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
               ;
 
             if (budget_thread->tid != 0) {
-              BMF_LogEx (false, L"tid=0x%04x\n", budget_thread->tid);
+              dxgi_log.LogEx (false, L"tid=0x%04x\n", budget_thread->tid);
 
-              BMF_LogEx (true,
+              dxgi_log.LogEx (true,
                 L"   %% Setting up Budget Change Notification.........: ");
 
               HRESULT result =
@@ -1025,23 +1012,23 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
               );
 
               if (result == S_OK) {
-                BMF_LogEx (false, L"eid=0x%x, cookie=%u\n",
+                dxgi_log.LogEx (false, L"eid=0x%x, cookie=%u\n",
                            budget_thread->event, budget_thread->cookie);
 
                 // Immediately run the event loop one time
                 //SignalObjectAndWait (budget_thread->event, hBudgetThread,
                                  //0, TRUE);
               } else {
-                BMF_LogEx (false, L"Failed! (%s)\n",
+                dxgi_log.LogEx (false, L"Failed! (%s)\n",
                            BMF_DescribeHRESULT (result));
               }
             } else {
-              BMF_LogEx (false, L"failed!\n");
+              dxgi_log.LogEx (false, L"failed!\n");
             }
           }
           int i = 0;
 
-          BMF_LogEx (true,
+          dxgi_log.LogEx (true,
                      L"   [DXGI 1.3]: Local Memory.....:");
 
           DXGI_QUERY_VIDEO_MEMORY_INFO mem_info;
@@ -1049,50 +1036,59 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
                  pAdapter3->QueryVideoMemoryInfo (
                    i,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&mem_info)) {
             if (i > 0) {
-              BMF_LogEx (false, L"\n");
-             BMF_LogEx (true,  L"                                 ");
+              dxgi_log.LogEx (false, L"\n");
+              dxgi_log.LogEx (true,  L"                                 ");
             }
-            BMF_LogEx (false,
+            dxgi_log.LogEx (false,
                        L" Node%u (Reserve: %#5u / %#5u MiB - "
                        L"Budget: %#5u / %#5u MiB)",
                      i++,
-                       mem_info.CurrentReservation / 1024ULL / 1024ULL,
-                       mem_info.AvailableForReservation / 1024ULL / 1024ULL,
-                       mem_info.CurrentUsage / 1024ULL / 1024ULL,
-                       mem_info.Budget / 1024ULL / 1024ULL);
+                       mem_info.CurrentReservation      >> 20ULL,
+                       mem_info.AvailableForReservation >> 20ULL,
+                       mem_info.CurrentUsage            >> 20ULL,
+                       mem_info.Budget                  >> 20UL );
             pAdapter3->SetVideoMemoryReservation (
-              i-1, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-              mem_info.AvailableForReservation);
+                    i-1,
+                      DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                        mem_info.AvailableForReservation
+            );
           }
-          BMF_LogEx (false, L"\n");
+          dxgi_log.LogEx (false, L"\n");
 
           i = 0;
 
-          BMF_LogEx (true,
+          dxgi_log.LogEx (true,
                      L"   [DXGI 1.3]: Non-Local Memory.:");
 
-          while (S_OK ==
-                 pAdapter3->QueryVideoMemoryInfo (
-                   i,DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,&mem_info)) {
+          while ( S_OK ==
+                    pAdapter3->QueryVideoMemoryInfo (
+                      i,
+                        DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+                          &mem_info 
+                    )
+                )
+          {
             if (i > 0) {
-              BMF_LogEx (false, L"\n");
-              BMF_LogEx (true,  L"                                 ");
+              dxgi_log.LogEx (false, L"\n");
+              dxgi_log.LogEx (true,  L"                                 ");
             }
-            BMF_LogEx (false,
+            dxgi_log.LogEx (false,
                        L" Node%u (Reserve: %#5u / %#5u MiB - "
                        L"Budget: %#5u / %#5u MiB)",
                      i++,
-                       mem_info.CurrentReservation / 1024ULL / 1024ULL,
-                       mem_info.AvailableForReservation / 1024ULL / 1024ULL,
-                       mem_info.CurrentUsage / 1024ULL / 1024ULL,
-                       mem_info.Budget / 1024ULL / 1024ULL);
+                       mem_info.CurrentReservation      >> 20ULL,
+                       mem_info.AvailableForReservation >> 20ULL,
+                       mem_info.CurrentUsage            >> 20ULL,
+                       mem_info.Budget                  >> 20ULL );
             pAdapter3->SetVideoMemoryReservation (
-              i-1, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
-              mem_info.AvailableForReservation);
+                     i-1,
+                       DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+                         mem_info.AvailableForReservation
+            );
           }
         }
 
-        BMF_LogEx (false, L"\n");
+        dxgi_log.LogEx (false, L"\n");
 
         // This sounds good in theory, but we have a tendancy to underflow
         //   the reference counter and I don't know why you'd even really
@@ -1101,7 +1097,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
         //pAdapter3->Release ();
       }
 
-      BMF_Log (L"   @ Returning Adapter w/ Name: %s\n", desc.Description);
+      dxgi_log.Log (L"   @ Returning Adapter w/ Name: %s\n", desc.Description);
     }
   }
 
@@ -1181,23 +1177,6 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
     return ret;
   }
 
-#if 0
-  DXGI_STUB (HRESULT, CreateDXGIFactory,
-             (      REFIID     riid,
-              _Out_ void     **ppFactory),
-             (riid, ppFactory));
-
-  DXGI_STUB (HRESULT, CreateDXGIFactory1,
-             (      REFIID     riid,
-              _Out_ void     **ppFactory),
-             (riid, ppFactory));
-  DXGI_STUB (HRESULT, CreateDXGIFactory2,
-             (      UINT       Flags,
-                    REFIID     riid,
-              _Out_ void     **ppFactory),
-             (Flags, riid, ppFactory));
-#endif
-
   DXGI_STUB (HRESULT, DXGID3D10CreateDevice,
     (HMODULE hModule, IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
      UINT    Flags,   void         *unknown,  void         *ppDevice),
@@ -1263,7 +1242,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
     if (params->fLog) {
       params->tid    = GetCurrentThreadId ();
       params->event  = CreateEvent (NULL, FALSE, FALSE, L"DXGIMemoryBudget");
-      InitializeCriticalSection (&params->log_mutex);
+      budget_log.init ("dxgi_budget.log", "w");
       params->silent = true;
       params->ready  = true;
     } else {
@@ -1318,31 +1297,18 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
       if (nodes > 0) {
         int i = 0;
 
-        BMF_BLogEx (params, true, L"   [DXGI 1.3]: Local Memory.....:");
+        budget_log.LogEx (true, L"   [DXGI 1.3]: Local Memory.....:");
 
         while (i < nodes) {
-#if 0
-          static bool init = false;
-          if (init == false) {
-            params->pAdapter->SetVideoMemoryReservation (
-              i, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-              mem_info [buffer].local [i].AvailableForReservation);
-            params->pAdapter->SetVideoMemoryReservation (
-              i, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
-              mem_info [buffer].nonlocal [i].AvailableForReservation);
-            if (i == nodes - 1)
-              init = true;
-          }
-#endif
-
           mem_stats [i].budget_changes++;
 
           if (i > 0) {
-            BMF_BLogEx (params, false, L"\n");
-            BMF_BLogEx (params, true,  L"                                 ");
+            budget_log.LogEx (false, L"\n");
+            budget_log.LogEx (true,  L"                                 ");
           }
 
-          BMF_BLogEx (params, false,
+          
+          budget_log.LogEx (false,
                            L" Node%u (Reserve: %#5u / %#5u MiB - "
                            L"Budget: %#5u / %#5u MiB)",
                          i,
@@ -1402,44 +1368,22 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
             if (mem_stats [i].max_over_budget < over_budget)
               mem_stats [i].max_over_budget = over_budget;
           }
-#if 0
-          static ULONGLONG last_tick [4] = { 0ULL, 0ULL, 0ULL, 0ULL };
-          if (GetTickCount64 () - last_tick[i] > 1000000000000000ULL) {
-          if (over_budget <= 0) {
-            params->pAdapter->SetVideoMemoryReservation (
-              i, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-              ((uint64_t)
-                (float)mem_info [buffer].local [i].CurrentReservation * 1.01f)
-                <= mem_info [buffer].local [i].AvailableForReservation ?
-              ((uint64_t)
-                (float)mem_info [buffer].local [i].CurrentReservation * 1.01f) :
-               mem_info [buffer].local [i].AvailableForReservation);
-          } else {
-            params->pAdapter->SetVideoMemoryReservation (
-              i, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-              (uint64_t)
-                (float)mem_info [buffer].local [i].CurrentReservation * 0.66f);
-            }
-          last_tick [i] = GetTickCount64 ();
-          }
-#else
-#endif
           i++;
         }
-        BMF_BLogEx (params, false, L"\n");
+        budget_log.LogEx (false, L"\n");
 
         i = 0;
 
-        BMF_BLogEx (params, true,
-                         L"   [DXGI 1.3]: Non-Local Memory.:");
+        budget_log.LogEx (true,
+                          L"   [DXGI 1.3]: Non-Local Memory.:");
 
         while (i < nodes) {
           if (i > 0) {
-            BMF_BLogEx (params, false, L"\n");
-            BMF_BLogEx (params, true,  L"                                 ");
+            budget_log.LogEx (false, L"\n");
+            budget_log.LogEx (true,  L"                                 ");
           }
 
-          BMF_BLogEx (params, false,
+          budget_log.LogEx (false,
                            L" Node%u (Reserve: %#5u / %#5u MiB - "
                            L"Budget: %#5u / %#5u MiB)",
                          i,
@@ -1449,7 +1393,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
               mem_info [buffer].nonlocal [i].Budget                  >> 20ULL);
           i++;
         }
-        BMF_BLogEx (params, false, L"\n");
+        budget_log.LogEx (false, L"\n");
       }
     }
 
@@ -1491,26 +1435,31 @@ DllMain ( HMODULE hModule,
     case DLL_PROCESS_DETACH:
     {
       if (hBudgetThread != NULL) {
-        BMF_LogEx (true,
-                   L"Shutting down DXGI 1.3 Memory Budget Change Thread... ");
+        
+        dxgi_log.LogEx (
+              true,
+                L"Shutting down DXGI 1.3 Memory Budget Change Thread... "
+        );
 
         budget_thread->ready  = false;
 
         SignalObjectAndWait (budget_thread->event, hBudgetThread, INFINITE,
                              TRUE);
 
-        BMF_LogEx (false, L"done!\n");
+        dxgi_log.LogEx (false, L"done!\n");
 
         budget_thread_params_t* params = budget_thread;
 
         // Record the final statistics always
         params->silent = false;
 
-        BMF_BLogEx (params,
-                    true, L"Shutdown Statistics:\n"
-                          L"--------------------\n");
+        budget_log.LogEx (false, L"\n");
+        budget_log.Log   (L"--------------------");
+        budget_log.Log   (L"Shutdown Statistics:");
+        budget_log.Log   (L"--------------------\n");
 
-        BMF_BLog (params, L" Memory Budget Changed %d times\n",// in %10u seconds\n",
+                                         // in %10u seconds\n",
+        budget_log.Log (L" Memory Budget Changed %d times\n",
               mem_stats [0].budget_changes);
 
         for (int i = 0; i < 4; i++) {
@@ -1521,14 +1470,14 @@ DllMain ( HMODULE hModule,
             if (mem_stats [i].min_over_budget == UINT64_MAX)
               mem_stats [i].min_over_budget = 0ULL;
 
-        BMF_BLogEx (params, true, L" GPU%u: Min Budget:        %05u MiB\n", i,
+        budget_log.LogEx (true, L" GPU%u: Min Budget:        %05u MiB\n", i,
                     mem_stats [i].min_budget >> 20ULL);
-        BMF_BLogEx (params, true, L"       Max Budget:        %05u MiB\n",
+        budget_log.LogEx (true, L"       Max Budget:        %05u MiB\n",
                     mem_stats [i].max_budget >> 20ULL);
 
-        BMF_BLogEx (params, true, L"       Min Usage:         %05u MiB\n",
+        budget_log.LogEx (true, L"       Min Usage:         %05u MiB\n",
                     mem_stats [i].min_usage >> 20ULL);
-        BMF_BLogEx (params, true, L"       Max Usage:         %05u MiB\n",
+        budget_log.LogEx (true, L"       Max Usage:         %05u MiB\n",
                     mem_stats [i].max_usage >> 20ULL);
 
         /*
@@ -1543,14 +1492,14 @@ DllMain ( HMODULE hModule,
                     mem_stats [i].max_avail_reserve >> 20ULL);
         */
 
-        BMF_BLogEx (params, true, L"------------------------------------\n");
-        BMF_BLogEx (params, true, L" Minimum Over Budget:     %05u MiB\n",
+        budget_log.LogEx (true, L"------------------------------------\n");
+        budget_log.LogEx (true, L" Minimum Over Budget:     %05u MiB\n",
                     mem_stats [i].min_over_budget >> 20ULL);
-        BMF_BLogEx (params, true, L" Maximum Over Budget:     %05u MiB\n",
+        budget_log.LogEx (true, L" Maximum Over Budget:     %05u MiB\n",
                     mem_stats [i].max_over_budget >> 20ULL);
-        BMF_BLogEx (params, true, L"------------------------------------\n");
+        budget_log.LogEx (true, L"------------------------------------\n");
 
-        BMF_BLogEx (params, false, L"\n");
+        budget_log.LogEx (false, L"\n");
           }
         }
 
@@ -1565,16 +1514,15 @@ DllMain ( HMODULE hModule,
         hBudgetThread = NULL;
       }
 
-      BMF_Log (L"Custom dxgi.dll Detached (pid=0x%04x)",
+      dxgi_log.Log (L"Custom dxgi.dll Detached (pid=0x%04x)",
                GetCurrentProcessId ());
 
-      if (! bSilent)
-        fclose (fLog);
+      budget_log.close ();
+      dxgi_log.close   ();
 
       SymCleanup (GetCurrentProcess ());
 
       DeleteCriticalSection (&init_mutex);
-      DeleteCriticalSection (&log_mutex);
     }
     break;
   }
