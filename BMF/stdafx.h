@@ -622,3 +622,141 @@ public:
       _Outptr_  IDXGISwapChain1 **ppSwapChain) = 0;
 
   };
+
+  typedef 
+enum DXGI_GRAPHICS_PREEMPTION_GRANULARITY
+    {
+        DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY	= 0,
+        DXGI_GRAPHICS_PREEMPTION_PRIMITIVE_BOUNDARY	= 1,
+        DXGI_GRAPHICS_PREEMPTION_TRIANGLE_BOUNDARY	= 2,
+        DXGI_GRAPHICS_PREEMPTION_PIXEL_BOUNDARY	= 3,
+        DXGI_GRAPHICS_PREEMPTION_INSTRUCTION_BOUNDARY	= 4
+    } 	DXGI_GRAPHICS_PREEMPTION_GRANULARITY;
+
+typedef 
+enum DXGI_COMPUTE_PREEMPTION_GRANULARITY
+    {
+        DXGI_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY	= 0,
+        DXGI_COMPUTE_PREEMPTION_DISPATCH_BOUNDARY	= 1,
+        DXGI_COMPUTE_PREEMPTION_THREAD_GROUP_BOUNDARY	= 2,
+        DXGI_COMPUTE_PREEMPTION_THREAD_BOUNDARY	= 3,
+        DXGI_COMPUTE_PREEMPTION_INSTRUCTION_BOUNDARY	= 4
+    } 	DXGI_COMPUTE_PREEMPTION_GRANULARITY;
+
+typedef struct DXGI_ADAPTER_DESC2
+    {
+    WCHAR Description[ 128 ];
+    UINT VendorId;
+    UINT DeviceId;
+    UINT SubSysId;
+    UINT Revision;
+    SIZE_T DedicatedVideoMemory;
+    SIZE_T DedicatedSystemMemory;
+    SIZE_T SharedSystemMemory;
+    LUID AdapterLuid;
+    UINT Flags;
+    DXGI_GRAPHICS_PREEMPTION_GRANULARITY GraphicsPreemptionGranularity;
+    DXGI_COMPUTE_PREEMPTION_GRANULARITY ComputePreemptionGranularity;
+    } 	DXGI_ADAPTER_DESC2;
+
+  EXTERN_C const IID IID_IDXGIAdapter2;
+
+    MIDL_INTERFACE("0AA1AE0A-FA0E-4B84-8644-E05FF8E5ACB5")
+    IDXGIAdapter2 : public IDXGIAdapter1
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetDesc2( 
+            /* [annotation][out] */ 
+            _Out_  DXGI_ADAPTER_DESC2 *pDesc) = 0;
+
+    };
+
+    typedef 
+enum DXGI_MEMORY_SEGMENT_GROUP
+    {
+        DXGI_MEMORY_SEGMENT_GROUP_LOCAL	= 0,
+        DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL	= 1
+    } 	DXGI_MEMORY_SEGMENT_GROUP;
+
+typedef struct DXGI_QUERY_VIDEO_MEMORY_INFO
+    {
+    UINT64 Budget;
+    UINT64 CurrentUsage;
+    UINT64 AvailableForReservation;
+    UINT64 CurrentReservation;
+    } 	DXGI_QUERY_VIDEO_MEMORY_INFO;
+
+  EXTERN_C const IID IID_IDXGIAdapter3;
+    
+    MIDL_INTERFACE("645967A4-1392-4310-A798-8053CE3E93FD")
+    IDXGIAdapter3 : public IDXGIAdapter2
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE RegisterHardwareContentProtectionTeardownStatusEvent( 
+            /* [annotation][in] */ 
+            _In_  HANDLE hEvent,
+            /* [annotation][out] */ 
+            _Out_  DWORD *pdwCookie) = 0;
+        
+        virtual void STDMETHODCALLTYPE UnregisterHardwareContentProtectionTeardownStatus( 
+            /* [annotation][in] */ 
+            _In_  DWORD dwCookie) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE QueryVideoMemoryInfo( 
+            /* [annotation][in] */ 
+            _In_  UINT NodeIndex,
+            /* [annotation][in] */ 
+            _In_  DXGI_MEMORY_SEGMENT_GROUP MemorySegmentGroup,
+            /* [annotation][out] */ 
+            _Out_  DXGI_QUERY_VIDEO_MEMORY_INFO *pVideoMemoryInfo) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetVideoMemoryReservation( 
+            /* [annotation][in] */ 
+            _In_  UINT NodeIndex,
+            /* [annotation][in] */ 
+            _In_  DXGI_MEMORY_SEGMENT_GROUP MemorySegmentGroup,
+            /* [annotation][in] */ 
+            _In_  UINT64 Reservation) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE RegisterVideoMemoryBudgetChangeNotificationEvent( 
+            /* [annotation][in] */ 
+            _In_  HANDLE hEvent,
+            /* [annotation][out] */ 
+            _Out_  DWORD *pdwCookie) = 0;
+        
+        virtual void STDMETHODCALLTYPE UnregisterVideoMemoryBudgetChangeNotification( 
+            /* [annotation][in] */ 
+            _In_  DWORD dwCookie) = 0;
+        
+    };
+
+    EXTERN_C const IID IID_IDXGIFactory3;
+
+MIDL_INTERFACE("25483823-cd46-4c7d-86ca-47aa95b837bd")
+IDXGIFactory3 : public IDXGIFactory2
+{
+public:
+    virtual UINT STDMETHODCALLTYPE GetCreationFlags(void) = 0;
+};
+
+EXTERN_C const IID IID_IDXGIFactory4;
+
+    MIDL_INTERFACE("1bc6ea02-ef36-464f-bf0c-21ca39e5168a")
+    IDXGIFactory4 : public IDXGIFactory3
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE EnumAdapterByLuid( 
+            /* [annotation] */ 
+            _In_  LUID AdapterLuid,
+            /* [annotation] */ 
+            _In_  REFIID riid,
+            /* [annotation] */ 
+            _COM_Outptr_  void **ppvAdapter) = 0;
+
+        virtual HRESULT STDMETHODCALLTYPE EnumWarpAdapter( 
+            /* [annotation] */ 
+            _In_  REFIID riid,
+            /* [annotation] */ 
+            _COM_Outptr_  void **ppvAdapter) = 0;
+
+    };
