@@ -837,142 +837,142 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
                             match->DedicatedVideoMemory / 1024ULL / 1024ULL,
                               desc.DedicatedVideoMemory / 1024ULL / 1024ULL);
           }
-
-          IDXGIAdapter3* pAdapter3;
-          if (S_OK ==
-              (*ppAdapter)->QueryInterface (
-                __uuidof (IDXGIAdapter3), (void **)&pAdapter3)) {
-            if (hBudgetThread == NULL) {
-              // We're going to Release this interface after this loop, but
-              //   the running thread still needs a reference counted.
-              pAdapter3->AddRef ();
-#if 0
-              if (hBudgetThread) {
-                budget_thread->ready = false;
-                SignalObjectAndWait (budget_thread->event, hBudgetThread,
-                                     INFINITE, TRUE);
-                budget_thread->pAdapter->
-                  UnregisterVideoMemoryBudgetChangeNotification (
-                    budget_thread->cookie
-                  );
-                budget_thread->pAdapter->Release ();
-              }
-#endif
-
-              DWORD WINAPI BudgetThread (LPVOID user_data);
-
-              if (budget_thread == nullptr) {
-                budget_thread =
-                  new budget_thread_params_t ();
-              }
-
-              BMF_LogEx (true,
-                   L"   $ Spawning DXGI 1.3 Memory Budget Change Thread.: ");
-
-              budget_thread->pAdapter = pAdapter3;
-              budget_thread->fLog     = NULL;
-              budget_thread->tid      = 0;
-              budget_thread->event    = 0;
-              budget_thread->silent   = true;// false;
-              budget_thread->ready    = false;
-
-              hBudgetThread =
-                CreateThread (NULL, 0, BudgetThread, (LPVOID)budget_thread,
-                              0, NULL);
-
-              while (! budget_thread->ready)
-                ;
-
-              if (budget_thread->tid != 0) {
-                BMF_LogEx (false, L"tid=0x%04x\n", budget_thread->tid);
-
-                BMF_LogEx (true,
-                  L"   %% Setting up Budget Change Notification.........: ");
-
-                HRESULT result =
-                pAdapter3->RegisterVideoMemoryBudgetChangeNotificationEvent (
-                  budget_thread->event, &budget_thread->cookie
-                );
-
-                if (result == S_OK) {
-                  BMF_LogEx (false, L"eid=0x%x, cookie=%u\n",
-                             budget_thread->event, budget_thread->cookie);
-
-                  // Immediately run the event loop one time
-                  //SignalObjectAndWait (budget_thread->event, hBudgetThread,
-                                   //0, TRUE);
-                } else {
-                  BMF_LogEx (false, L"Failed! (%s)\n",
-                             BMF_DescribeHRESULT (result));
-                }
-              } else {
-                BMF_LogEx (false, L"failed!\n");
-              }
-            }
-            int i = 0;
-
-            BMF_LogEx (true,
-                       L"   [DXGI 1.3]: Local Memory.....:");
-
-            DXGI_QUERY_VIDEO_MEMORY_INFO mem_info;
-            while (S_OK ==
-                   pAdapter3->QueryVideoMemoryInfo (
-                     i,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&mem_info)) {
-              if (i > 0) {
-                BMF_LogEx (false, L"\n");
-               BMF_LogEx (true,  L"                                 ");
-              }
-              BMF_LogEx (false,
-                         L" Node%u (Reserve: %#5u / %#5u MiB - "
-                         L"Budget: %#5u / %#5u MiB)",
-                       i++,
-                         mem_info.CurrentReservation / 1024ULL / 1024ULL,
-                         mem_info.AvailableForReservation / 1024ULL / 1024ULL,
-                         mem_info.CurrentUsage / 1024ULL / 1024ULL,
-                         mem_info.Budget / 1024ULL / 1024ULL);
-              pAdapter3->SetVideoMemoryReservation (
-                i-1, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-                mem_info.AvailableForReservation);
-            }
-            BMF_LogEx (false, L"\n");
-
-            i = 0;
-
-            BMF_LogEx (true,
-                       L"   [DXGI 1.3]: Non-Local Memory.:");
-
-            while (S_OK ==
-                   pAdapter3->QueryVideoMemoryInfo (
-                     i,DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,&mem_info)) {
-              if (i > 0) {
-                BMF_LogEx (false, L"\n");
-                BMF_LogEx (true,  L"                                 ");
-              }
-              BMF_LogEx (false,
-                         L" Node%u (Reserve: %#5u / %#5u MiB - "
-                         L"Budget: %#5u / %#5u MiB)",
-                       i++,
-                         mem_info.CurrentReservation / 1024ULL / 1024ULL,
-                         mem_info.AvailableForReservation / 1024ULL / 1024ULL,
-                         mem_info.CurrentUsage / 1024ULL / 1024ULL,
-                         mem_info.Budget / 1024ULL / 1024ULL);
-              pAdapter3->SetVideoMemoryReservation (
-                i-1, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
-                mem_info.AvailableForReservation);
-            }
-          }
-
-          BMF_LogEx (false, L"\n");
-
-          // This sounds good in theory, but we have a tendancy to underflow
-          //   the reference counter and I don't know why you'd even really
-          //     care about references to a DXGI adapter. Keep it alvie as
-          //       long as possible to prevent nasty things from happening.
-          //pAdapter3->Release ();
         }
 
-        BMF_Log (L"   @ Returning Adapter w/ Name: %s\n", desc.Description);
+        IDXGIAdapter3* pAdapter3;
+        if (S_OK ==
+            (*ppAdapter)->QueryInterface (
+              __uuidof (IDXGIAdapter3), (void **)&pAdapter3)) {
+          if (hBudgetThread == NULL) {
+            // We're going to Release this interface after this loop, but
+            //   the running thread still needs a reference counted.
+            pAdapter3->AddRef ();
+#if 0
+            if (hBudgetThread) {
+              budget_thread->ready = false;
+              SignalObjectAndWait (budget_thread->event, hBudgetThread,
+                                   INFINITE, TRUE);
+              budget_thread->pAdapter->
+                UnregisterVideoMemoryBudgetChangeNotification (
+                  budget_thread->cookie
+                );
+              budget_thread->pAdapter->Release ();
+            }
+#endif
+
+            DWORD WINAPI BudgetThread (LPVOID user_data);
+
+            if (budget_thread == nullptr) {
+              budget_thread =
+                new budget_thread_params_t ();
+            }
+
+            BMF_LogEx (true,
+                 L"   $ Spawning DXGI 1.3 Memory Budget Change Thread.: ");
+
+            budget_thread->pAdapter = pAdapter3;
+            budget_thread->fLog     = NULL;
+            budget_thread->tid      = 0;
+            budget_thread->event    = 0;
+            budget_thread->silent   = true;// false;
+            budget_thread->ready    = false;
+
+            hBudgetThread =
+              CreateThread (NULL, 0, BudgetThread, (LPVOID)budget_thread,
+                            0, NULL);
+
+            while (! budget_thread->ready)
+              ;
+
+            if (budget_thread->tid != 0) {
+              BMF_LogEx (false, L"tid=0x%04x\n", budget_thread->tid);
+
+              BMF_LogEx (true,
+                L"   %% Setting up Budget Change Notification.........: ");
+
+              HRESULT result =
+                pAdapter3->RegisterVideoMemoryBudgetChangeNotificationEvent (
+                budget_thread->event, &budget_thread->cookie
+              );
+
+              if (result == S_OK) {
+                BMF_LogEx (false, L"eid=0x%x, cookie=%u\n",
+                           budget_thread->event, budget_thread->cookie);
+
+                // Immediately run the event loop one time
+                //SignalObjectAndWait (budget_thread->event, hBudgetThread,
+                                 //0, TRUE);
+              } else {
+                BMF_LogEx (false, L"Failed! (%s)\n",
+                           BMF_DescribeHRESULT (result));
+              }
+            } else {
+              BMF_LogEx (false, L"failed!\n");
+            }
+          }
+          int i = 0;
+
+          BMF_LogEx (true,
+                     L"   [DXGI 1.3]: Local Memory.....:");
+
+          DXGI_QUERY_VIDEO_MEMORY_INFO mem_info;
+          while (S_OK ==
+                 pAdapter3->QueryVideoMemoryInfo (
+                   i,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&mem_info)) {
+            if (i > 0) {
+              BMF_LogEx (false, L"\n");
+             BMF_LogEx (true,  L"                                 ");
+            }
+            BMF_LogEx (false,
+                       L" Node%u (Reserve: %#5u / %#5u MiB - "
+                       L"Budget: %#5u / %#5u MiB)",
+                     i++,
+                       mem_info.CurrentReservation / 1024ULL / 1024ULL,
+                       mem_info.AvailableForReservation / 1024ULL / 1024ULL,
+                       mem_info.CurrentUsage / 1024ULL / 1024ULL,
+                       mem_info.Budget / 1024ULL / 1024ULL);
+            pAdapter3->SetVideoMemoryReservation (
+              i-1, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+              mem_info.AvailableForReservation);
+          }
+          BMF_LogEx (false, L"\n");
+
+          i = 0;
+
+          BMF_LogEx (true,
+                     L"   [DXGI 1.3]: Non-Local Memory.:");
+
+          while (S_OK ==
+                 pAdapter3->QueryVideoMemoryInfo (
+                   i,DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,&mem_info)) {
+            if (i > 0) {
+              BMF_LogEx (false, L"\n");
+              BMF_LogEx (true,  L"                                 ");
+            }
+            BMF_LogEx (false,
+                       L" Node%u (Reserve: %#5u / %#5u MiB - "
+                       L"Budget: %#5u / %#5u MiB)",
+                     i++,
+                       mem_info.CurrentReservation / 1024ULL / 1024ULL,
+                       mem_info.AvailableForReservation / 1024ULL / 1024ULL,
+                       mem_info.CurrentUsage / 1024ULL / 1024ULL,
+                       mem_info.Budget / 1024ULL / 1024ULL);
+            pAdapter3->SetVideoMemoryReservation (
+              i-1, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+              mem_info.AvailableForReservation);
+          }
+        }
+
+        BMF_LogEx (false, L"\n");
+
+        // This sounds good in theory, but we have a tendancy to underflow
+        //   the reference counter and I don't know why you'd even really
+        //     care about references to a DXGI adapter. Keep it alvie as
+        //       long as possible to prevent nasty things from happening.
+        //pAdapter3->Release ();
       }
+
+      BMF_Log (L"   @ Returning Adapter w/ Name: %s\n", desc.Description);
     }
   }
 
