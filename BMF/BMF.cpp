@@ -649,6 +649,7 @@ HRESULT STDMETHODCALLTYPE GetDesc1_Override (IDXGIAdapter1*      This,
       
     DXGI_ADAPTER_DESC* match =
       bmf::NVAPI::FindGPUByDXGIName (pDesc->Description);
+
     if (match != NULL) {
       dxgi_log.LogEx (false, L"Success! (%s)\n", match->Description);
       pDesc->DedicatedVideoMemory = match->DedicatedVideoMemory;
@@ -1243,7 +1244,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
       params->tid    = GetCurrentThreadId ();
       params->event  = CreateEvent (NULL, FALSE, FALSE, L"DXGIMemoryBudget");
       budget_log.init ("dxgi_budget.log", "w");
-      params->silent = true;
+      budget_log.silent = true;
       params->ready  = true;
     } else {
       params->tid    = 0;
@@ -1451,7 +1452,7 @@ DllMain ( HMODULE hModule,
         budget_thread_params_t* params = budget_thread;
 
         // Record the final statistics always
-        params->silent = false;
+        budget_log.silent = false;
 
         budget_log.LogEx (false, L"\n");
         budget_log.Log   (L"--------------------");

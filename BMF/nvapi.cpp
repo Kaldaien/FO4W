@@ -270,18 +270,32 @@ NVAPI::FindGPUByDXGIName (const wchar_t* wszName)
   //"NVIDIA "
   // 01234567
 
+  wchar_t* wszFixedName = wcsdup (wszName + 7);
+  int      fixed_len    = lstrlenW (wszFixedName);
+
+  // Remove trailing whitespace.
+  for (int i = fixed_len; i > 0; i--) {
+    if (wszFixedName [i - 1] == L' ')
+      wszFixedName [i - 1] = L'\0';
+    else
+      break;
+  }
+
   while (*adapters->Description != L'\0') {
     //strstrw (lstrcmpiW () == 0) { // More accurate, but some GPUs have
                                     //   trailing spaces in their names.
                                     // -----
                                     // What the heck?!
 
-    if (wcsstr (adapters->Description, wszName + 7) != NULL) {
+    if (wcsstr (adapters->Description, wszFixedName) != NULL) {
+      delete [] wszFixedName;
       return adapters;
     }
 
     ++adapters;
   }
+
+  delete [] wszFixedName;
 
   return NULL;
 }
