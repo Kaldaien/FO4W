@@ -1366,6 +1366,10 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
                            EnumAdapters1_Override, EnumAdapters1_Original,
                            EnumAdapters1_t);
 
+    DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory::CreateSwapChain",
+                           CreateSwapChain_Override, CreateSwapChain_Original,
+                           CreateSwapChain_t);
+
     return ret;
   }
 
@@ -1391,6 +1395,10 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
                            EnumAdapters1_Override, EnumAdapters1_Original,
                            EnumAdapters1_t);
+
+    DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory::CreateSwapChain",
+                           CreateSwapChain_Override, CreateSwapChain_Original,
+                           CreateSwapChain_t);
 
     return ret;
   }
