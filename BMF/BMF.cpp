@@ -40,17 +40,6 @@ static bool USE_SLI = true;
 
 HMODULE hParent;
 
-class IAkStreamMgr;
-
-//typedef void (STDMETHODCALLTYPE    *FlushAllCaches_t)(void);
-
-typedef void (__thiscall    *FlushAllCaches_t)(
-              IAkStreamMgr  *This
-  );
-
-IAkStreamMgr*    StreamMgr      = nullptr;
-FlushAllCaches_t FlushAllCaches = nullptr;
-
 extern "C" {
   // We have some really sneaky overlays that manage to call some of our
   //   exported functions before the DLL's even attached -- make them wait,
@@ -390,6 +379,35 @@ BMF_Init (void)
     dxgi_log.LogEx (false, L"\n");
   }
 
+    HMODULE hMod = GetModuleHandle (pwszShortName);
+
+  if (hMod != NULL) {
+    DWORD* dwOptimus = (DWORD *)GetProcAddress (hMod, "NvOptimusEnablement");
+
+    if (dwOptimus != NULL) {
+      dxgi_log.Log (L"  NvOptimusEnablement..................: 0x%02X (%s)",
+                     *dwOptimus,
+                    (*dwOptimus & 0x1 ? L"Max Perf." :
+                                        L"Don't Care"));
+    } else {
+      dxgi_log.Log (L"  NvOptimusEnablement..................: UNDEFINED");
+    }
+
+    DWORD* dwPowerXpress =
+      (DWORD *)GetProcAddress (hMod, "AmdPowerXpressRequestHighPerformance");
+
+    if (dwPowerXpress != NULL) {
+      dxgi_log.Log (L"  AmdPowerXpressRequestHighPerformance.: 0x%02X (%s)",
+                    *dwPowerXpress,
+                   (*dwPowerXpress & 0x1 ? L"High Perf." :
+                                           L"Don't Care"));
+    }
+    else
+      dxgi_log.Log (L"  AmdPowerXpressRequestHighPerformance.: UNDEFINED");
+
+    dxgi_log.LogEx (false, L"\n");
+  }
+
   dxgi_log.Log (L"Importing CreateDXGIFactory{1|2}");
   dxgi_log.Log (L"================================");
 
@@ -668,12 +686,16 @@ BOOL UpdateOSD(LPCSTR lpText)
 {
 	BOOL bResult	= FALSE;
 
-	HANDLE hMapFile = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+	HANDLE hMapFile =
+    OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
 
 	if (hMapFile)
 	{
-		LPVOID pMapAddr				= MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-		LPRTSS_SHARED_MEMORY pMem	= (LPRTSS_SHARED_MEMORY)pMapAddr;
+		LPVOID               pMapAddr =
+      MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+
+		LPRTSS_SHARED_MEMORY pMem	    =
+      (LPRTSS_SHARED_MEMORY)pMapAddr;
 
 		if (pMem)
 		{
@@ -685,10 +707,14 @@ BOOL UpdateOSD(LPCSTR lpText)
 					//2nd pass : otherwise find the first unused OSD slot and capture it
 				{
 					for (DWORD dwEntry=1; dwEntry<pMem->dwOSDArrSize; dwEntry++)
-						//allow primary OSD clients (i.e. EVGA Precision / MSI Afterburner) to use the first slot exclusively, so third party
-						//applications start scanning the slots from the second one
+						//allow primary OSD clients (i.e. EVGA Precision / MSI Afterburner)
+            //  to use the first slot exclusively, so third party applications
+            //    start scanning the slots from the second one
 					{
-						RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry = (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)((LPBYTE)pMem + pMem->dwOSDArrOffset + dwEntry * pMem->dwOSDEntrySize);
+						RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+              (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+              ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+                              dwEntry * pMem->dwOSDEntrySize);
 
 						if (dwPass)
 						{
@@ -699,8 +725,9 @@ BOOL UpdateOSD(LPCSTR lpText)
 						if (!strcmp(pEntry->szOSDOwner, "Batman Fix"))
 						{
 							if (pMem->dwVersion >= 0x00020007)
-								//use extended text slot for v2.7 and higher shared memory, it allows displaying 4096 symbols
-								//instead of 256 for regular text slot
+								//use extended text slot for v2.7 and higher shared memory,
+                // it allows displaying 4096 symbols instead of 256 for regular
+                //   text slot
 								strncpy(pEntry->szOSDEx, lpText, sizeof(pEntry->szOSDEx) - 1);	
 							else
 								strncpy(pEntry->szOSD, lpText, sizeof(pEntry->szOSD) - 1);
@@ -729,7 +756,8 @@ BOOL UpdateOSD(LPCSTR lpText)
 /////////////////////////////////////////////////////////////////////////////
 void ReleaseOSD (void)
 {
-	HANDLE hMapFile = OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+	HANDLE hMapFile =
+    OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
 
 	if (hMapFile)
 	{
@@ -744,11 +772,14 @@ void ReleaseOSD (void)
 			{
 				for (DWORD dwEntry=1; dwEntry<pMem->dwOSDArrSize; dwEntry++)
 				{
-					RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry = (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)((LPBYTE)pMem + pMem->dwOSDArrOffset + dwEntry * pMem->dwOSDEntrySize);
+					RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+            ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+                  dwEntry * pMem->dwOSDEntrySize);
 
-					if (!strcmp(pEntry->szOSDOwner, "Batman Fix"))
+					if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
 					{
-						memset(pEntry, 0, pMem->dwOSDEntrySize);
+						memset (pEntry, 0, pMem->dwOSDEntrySize);
 						pMem->dwOSDFrame++;
 					}
 				}
@@ -854,9 +885,48 @@ HRESULT WINAPI D3D11CreateDeviceAndSwapChain (
                                                  ppDevice,
                                                  pFeatureLevel,
                                                  ppImmediateContext);
-  dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
+
+  if (res == S_OK && (ppDevice != NULL))
+    dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
 
   return res;
+}
+typedef HRESULT (STDMETHODCALLTYPE  *GetDesc2_t)(
+                 IDXGIAdapter2      *This,
+          _Out_  DXGI_ADAPTER_DESC2 *pDesc);
+
+GetDesc2_t GetDesc2_Original = NULL;
+
+HRESULT STDMETHODCALLTYPE GetDesc2_Override (IDXGIAdapter2*      This,
+                                      _Out_  DXGI_ADAPTER_DESC2* pDesc)
+{
+  std::wstring iname = BMF_GetDXGIAdapterInterface (This);
+
+  DXGI_LOG_CALL_I2 (iname.c_str (), L"GetDesc2", L"%08Xh, %08Xh", This, pDesc);
+
+  HRESULT ret;
+  DXGI_CALL (ret, GetDesc2_Original (This, pDesc));
+
+  //// OVERRIDE VRAM NUMBER
+  if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
+    dxgi_log.LogEx ( true,
+      L" <> GetDesc2_Override: Looking for matching NVAPI GPU for %s...: ",
+        pDesc->Description );
+      
+    DXGI_ADAPTER_DESC* match =
+      bmf::NVAPI::FindGPUByDXGIName (pDesc->Description);
+
+    if (match != NULL) {
+      dxgi_log.LogEx (false, L"Success! (%s)\n", match->Description);
+      pDesc->DedicatedVideoMemory = match->DedicatedVideoMemory;
+    }
+    else
+      dxgi_log.LogEx (false, L"Failure! (No Match Found)\n");
+  }
+
+  dxgi_log.LogEx (false, L"\n");
+
+  return ret;
 }
 
 typedef HRESULT (STDMETHODCALLTYPE  *GetDesc1_t)(
@@ -1700,14 +1770,6 @@ DllMain ( HMODULE hModule,
 
       //LoadLibrary (L"d3d11.dll");
 
-      hParent = GetModuleHandle (L"BatmanAK.exe");
-
-      void* x = GetProcAddress (hParent, "?FlushAllCaches@StreamMgr@AK@@YAXXZ");
-      if (x != NULL) {
-         FlushAllCaches = (FlushAllCaches_t)x;
-         StreamMgr = (IAkStreamMgr *)GetProcAddress (hParent, "?m_pStreamMgr@IAkStreamMgr@AK@@1PEAV12@EA");
-      }
-
       InitializeCriticalSection (&init_mutex);
       InitializeCriticalSection (&budget_mutex);
       InitializeCriticalSection (&d3dhook_mutex);
@@ -1802,11 +1864,7 @@ DllMain ( HMODULE hModule,
         hBudgetThread = NULL;
       }
 
-      dxgi_log.Log (L"Custom dxgi.dll Detached (pid=0x%04x)",
-               GetCurrentProcessId ());
-
-      budget_log.close ();
-      dxgi_log.close   ();
+      ReleaseOSD ();
 
       SymCleanup (GetCurrentProcess ());
 
@@ -1814,7 +1872,12 @@ DllMain ( HMODULE hModule,
       DeleteCriticalSection (&d3dhook_mutex);
 
       MH_Uninitialize ();
-      ReleaseOSD ();
+
+      dxgi_log.Log (L"Custom dxgi.dll Detached (pid=0x%04x)",
+               GetCurrentProcessId ());
+
+      budget_log.close ();
+      dxgi_log.close   ();
     }
     break;
   }
