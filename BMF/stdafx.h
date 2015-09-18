@@ -781,7 +781,9 @@ enum D3D_FEATURE_LEVEL
         D3D_FEATURE_LEVEL_10_0	= 0xa000,
         D3D_FEATURE_LEVEL_10_1	= 0xa100,
         D3D_FEATURE_LEVEL_11_0	= 0xb000,
-        D3D_FEATURE_LEVEL_11_1	= 0xb100
+        D3D_FEATURE_LEVEL_11_1	= 0xb100,
+        D3D_FEATURE_LEVEL_12_0  = 0xc000,
+        D3D_FEATURE_LEVEL_12_1  = 0xc100
     } 	D3D_FEATURE_LEVEL;
 
 EXTERN_C const IID IID_ID3D11Device;
@@ -1089,6 +1091,111 @@ EXTERN_C const IID IID_ID3D11Device;
 #endif
 
     };
+
+    EXTERN_C const IID IID_ID3D11Device1;
+    
+    MIDL_INTERFACE("a04bfb29-08ef-43d6-a49c-a9bdbdcbe686")
+    ID3D11Device1 : public ID3D11Device
+    {
+    public:
+#if 0
+        virtual void STDMETHODCALLTYPE GetImmediateContext1( 
+            /* [annotation] */ 
+            _Out_  ID3D11DeviceContext1 **ppImmediateContext) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CreateDeferredContext1( 
+            UINT ContextFlags,
+            /* [annotation] */ 
+            _Out_opt_  ID3D11DeviceContext1 **ppDeferredContext) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CreateBlendState1( 
+            /* [annotation] */ 
+            _In_  const D3D11_BLEND_DESC1 *pBlendStateDesc,
+            /* [annotation] */ 
+            _Out_opt_  ID3D11BlendState1 **ppBlendState) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CreateRasterizerState1( 
+            /* [annotation] */ 
+            _In_  const D3D11_RASTERIZER_DESC1 *pRasterizerDesc,
+            /* [annotation] */ 
+            _Out_opt_  ID3D11RasterizerState1 **ppRasterizerState) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CreateDeviceContextState( 
+            UINT Flags,
+            /* [annotation] */ 
+            _In_reads_( FeatureLevels )  const D3D_FEATURE_LEVEL *pFeatureLevels,
+            UINT FeatureLevels,
+            UINT SDKVersion,
+            REFIID EmulatedInterface,
+            /* [annotation] */ 
+            _Out_opt_  D3D_FEATURE_LEVEL *pChosenFeatureLevel,
+            /* [annotation] */ 
+            _Out_opt_  ID3DDeviceContextState **ppContextState) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE OpenSharedResource1( 
+            /* [annotation] */ 
+            _In_  HANDLE hResource,
+            /* [annotation] */ 
+            _In_  REFIID returnedInterface,
+            /* [annotation] */ 
+            _Out_  void **ppResource) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE OpenSharedResourceByName( 
+            /* [annotation] */ 
+            _In_  LPCWSTR lpName,
+            /* [annotation] */ 
+            _In_  DWORD dwDesiredAccess,
+            /* [annotation] */ 
+            _In_  REFIID returnedInterface,
+            /* [annotation] */ 
+            _Out_  void **ppResource) = 0;
+#endif  
+    };
+
+    EXTERN_C const IID IID_ID3D11Device2;
+    
+    MIDL_INTERFACE("9d06dffa-d1e5-4d07-83a8-1bb123f2f841")
+    ID3D11Device2 : public ID3D11Device1
+    {
+    public:
+#if 0
+        virtual void STDMETHODCALLTYPE GetImmediateContext2( 
+            /* [annotation] */ 
+            _Out_  ID3D11DeviceContext2 **ppImmediateContext) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CreateDeferredContext2( 
+            UINT ContextFlags,
+            /* [annotation] */ 
+            _Out_opt_  ID3D11DeviceContext2 **ppDeferredContext) = 0;
+        
+        virtual void STDMETHODCALLTYPE GetResourceTiling( 
+            /* [annotation] */ 
+            _In_  ID3D11Resource *pTiledResource,
+            /* [annotation] */ 
+            _Out_opt_  UINT *pNumTilesForEntireResource,
+            /* [annotation] */ 
+            _Out_opt_  D3D11_PACKED_MIP_DESC *pPackedMipDesc,
+            /* [annotation] */ 
+            _Out_opt_  D3D11_TILE_SHAPE *pStandardTileShapeForNonPackedMips,
+            /* [annotation] */ 
+            _Inout_opt_  UINT *pNumSubresourceTilings,
+            /* [annotation] */ 
+            _In_  UINT FirstSubresourceTilingToGet,
+            /* [annotation] */ 
+            _Out_writes_(*pNumSubresourceTilings)  D3D11_SUBRESOURCE_TILING *pSubresourceTilingsForNonPackedMips) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CheckMultisampleQualityLevels1( 
+            /* [annotation] */ 
+            _In_  DXGI_FORMAT Format,
+            /* [annotation] */ 
+            _In_  UINT SampleCount,
+            /* [annotation] */ 
+            _In_  UINT Flags,
+            /* [annotation] */ 
+            _Out_  UINT *pNumQualityLevels) = 0;
+#endif  
+    };
+
 
     EXTERN_C const IID IID_ID3D11DeviceChild;
 
@@ -1932,4 +2039,63 @@ EXTERN_C const IID IID_ID3D11Device;
             /* [annotation] */ 
             _Out_opt_  ID3D11CommandList **ppCommandList) = 0;
 #endif
+    };
+
+    typedef struct DXGI_SHARED_RESOURCE
+    {
+    HANDLE Handle;
+    } 	DXGI_SHARED_RESOURCE;
+
+#define	DXGI_RESOURCE_PRIORITY_MINIMUM	( 0x28000000 )
+
+#define	DXGI_RESOURCE_PRIORITY_LOW	( 0x50000000 )
+
+#define	DXGI_RESOURCE_PRIORITY_NORMAL	( 0x78000000 )
+
+#define	DXGI_RESOURCE_PRIORITY_HIGH	( 0xa0000000 )
+
+#define	DXGI_RESOURCE_PRIORITY_MAXIMUM	( 0xc8000000 )
+
+typedef 
+enum DXGI_RESIDENCY
+    {
+        DXGI_RESIDENCY_FULLY_RESIDENT	= 1,
+        DXGI_RESIDENCY_RESIDENT_IN_SHARED_MEMORY	= 2,
+        DXGI_RESIDENCY_EVICTED_TO_DISK	= 3
+    } 	DXGI_RESIDENCY;
+
+    EXTERN_C const IID IID_IDXGIDevice;
+    
+    MIDL_INTERFACE("54ec77fa-1377-44e6-8c32-88fd5f44c84c")
+    IDXGIDevice : public IDXGIObject
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetAdapter( 
+            /* [annotation][out] */ 
+            _Out_  IDXGIAdapter **pAdapter) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE CreateSurface( 
+            /* [annotation][in] */ 
+            _In_  const DXGI_SURFACE_DESC *pDesc,
+            /* [in] */ UINT NumSurfaces,
+            /* [in] */ DXGI_USAGE Usage,
+            /* [annotation][in] */ 
+            _In_opt_  const DXGI_SHARED_RESOURCE *pSharedResource,
+            /* [annotation][out] */ 
+            _Out_  IDXGISurface **ppSurface) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE QueryResourceResidency( 
+            /* [annotation][size_is][in] */ 
+            _In_reads_(NumResources)  IUnknown *const *ppResources,
+            /* [annotation][size_is][out] */ 
+            _Out_writes_(NumResources)  DXGI_RESIDENCY *pResidencyStatus,
+            /* [in] */ UINT NumResources) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetGPUThreadPriority( 
+            /* [in] */ INT Priority) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetGPUThreadPriority( 
+            /* [annotation][retval][out] */ 
+            _Out_  INT *pPriority) = 0;
+        
     };

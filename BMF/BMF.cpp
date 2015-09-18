@@ -43,6 +43,8 @@ static CRITICAL_SECTION init_mutex    = { 0 };
 // Disable SLI memory in Batman Arkham Knight
 static bool USE_SLI = true;
 
+static ID3D11Device* g_pD3D11Dev;
+
 extern "C" {
   // We have some really sneaky overlays that manage to call some of our
   //   exported functions before the DLL's even attached -- make them wait,
@@ -226,7 +228,7 @@ bmf_logger_t::init (const char* const szFileName,
 
   fLog = fopen (szFileName, szMode);
 
-  InitializeCriticalSection (&log_mutex);
+  InitializeCriticalSectionAndSpinCount (&log_mutex, 2500);
 
   if (fLog == NULL) {
     silent = true;
@@ -390,6 +392,17 @@ BMF_DescribeHRESULT (HRESULT result)
 
     case DXGI_ERROR_SDK_COMPONENT_MISSING:
       return L"DXGI_ERROR_SDK_COMPONENT_MISSING";
+
+
+   /* DXGI (Status) */
+    case DXGI_STATUS_OCCLUDED:
+      return L"DXGI_STATUS_OCCLUDED";
+
+    case DXGI_STATUS_MODE_CHANGED:
+      return L"DXGI_STATUS_MODE_CHANGED";
+
+    case DXGI_STATUS_MODE_CHANGE_IN_PROGRESS:
+      return L"DXGI_STATUS_MODE_CHANGE_IN_PROGRESS";
 
 
     /* D3D11 */
@@ -1072,6 +1085,43 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
 {
   DXGI_LOG_CALL_0 (L"D3D11CreateDeviceAndSwapChain");
 
+  dxgi_log.LogEx (true, L" Preferred Feature Level(s): ", FeatureLevels);
+
+  for (int i = 0; i < FeatureLevels; i++) {
+    switch (pFeatureLevels [i])
+    {
+      case D3D_FEATURE_LEVEL_9_1:
+        dxgi_log.LogEx (false, L" 9_1");
+        break;
+      case D3D_FEATURE_LEVEL_9_2:
+        dxgi_log.LogEx (false, L" 9_2");
+        break;
+      case D3D_FEATURE_LEVEL_9_3:
+        dxgi_log.LogEx (false, L" 9_3");
+        break;
+      case D3D_FEATURE_LEVEL_10_0:
+        dxgi_log.LogEx (false, L" 10_0");
+        break;
+      case D3D_FEATURE_LEVEL_10_1:
+        dxgi_log.LogEx (false, L" 10_1");
+        break;
+      case D3D_FEATURE_LEVEL_11_0:
+        dxgi_log.LogEx (false, L" 11_0");
+        break;
+      case D3D_FEATURE_LEVEL_11_1:
+        dxgi_log.LogEx (false, L" 11_1");
+        break;
+      case D3D_FEATURE_LEVEL_12_0:
+        dxgi_log.LogEx (false, L" 12_0");
+        break;
+      case D3D_FEATURE_LEVEL_12_1:
+        dxgi_log.LogEx (false, L" 12_1");
+        break;
+    }
+  }
+
+  dxgi_log.LogEx (false, L"\n");
+
   HRESULT res =
     D3D11CreateDeviceAndSwapChain_Import (pAdapter,
                                           DriverType,
@@ -1086,8 +1136,10 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
                                           pFeatureLevel,
                                           ppImmediateContext);
 
-  if (res == S_OK && (ppDevice != NULL))
+  if (res == S_OK && (ppDevice != NULL)) {
     dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
+    g_pD3D11Dev = (*ppDevice);
+  }
 
   return res;
 }
@@ -1262,6 +1314,10 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
   // Logic to skip Intel and Microsoft adapters and return only AMD / NV
   if (lstrlenW (pDesc->Description)) {
     if (pDesc->VendorId == Microsoft || pDesc->VendorId == Intel) {
+      // We need to release the reference we were just handed before
+      //   skipping it.
+      (*ppAdapter)->Release ();
+
       dxgi_log.LogEx (false,
           L" >> (Host Application Tried To Enum Intel or Microsoft Adapter)"
           L" -- Skipping Adapter %d <<\n\n", Adapter);
@@ -1344,9 +1400,40 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
           } else {
             dxgi_log.LogEx (false, L"failed!\n");
           }
+
+          dxgi_log.LogEx (false, L"\n");
         }
 
         LeaveCriticalSection (&budget_mutex);
+
+        dxgi_log.LogEx (true,  L"   [DXGI 1.2]: GPU Scheduling...:"
+                               L" Pre-Emptive");
+
+        DXGI_ADAPTER_DESC2 desc2;
+        pAdapter3->GetDesc2 (&desc2);
+
+        switch (desc2.GraphicsPreemptionGranularity)
+        {
+          case DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY:
+            dxgi_log.LogEx (false, L" (DMA Buffer)\n\n");
+            break;
+          case DXGI_GRAPHICS_PREEMPTION_PRIMITIVE_BOUNDARY:
+            dxgi_log.LogEx (false, L" (Graphics Primitive)\n\n");
+            break;
+          case DXGI_GRAPHICS_PREEMPTION_TRIANGLE_BOUNDARY:
+            dxgi_log.LogEx (false, L" (Triangle)\n\n");
+            break;
+          case DXGI_GRAPHICS_PREEMPTION_PIXEL_BOUNDARY:
+            dxgi_log.LogEx (false, L" (Fragment)\n\n");
+            break;
+          case DXGI_GRAPHICS_PREEMPTION_INSTRUCTION_BOUNDARY:
+            dxgi_log.LogEx (false, L" (Instruction)\n\n");
+            break;
+          default:
+            dxgi_log.LogEx (false, L"UNDEFINED\n\n");
+            break;
+        }
+
         int i = 0;
 
         dxgi_log.LogEx (true,
@@ -1417,6 +1504,8 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
                           0
           );
         }
+      
+        dxgi_log.LogEx (false, L"\n");
 
         pAdapter3->Release ();
       }
@@ -1643,7 +1732,8 @@ const uint32_t BUDGET_POLL_INTERVAL = 66UL; // How often to sample the budget
 #define min_max(ref,min,max) if ((ref) > (max)) (max) = (ref); \
                              if ((ref) < (min)) (min) = (ref);
 
-#define OSD_PRINTF if (print_mem_stats) { pszOSD += sprintf (pszOSD,
+#define OSD_M_PRINTF if (print_mem_stats) { pszOSD += sprintf (pszOSD,
+#define OSD_B_PRINTF if (do_load_balance) { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
 DWORD
@@ -1667,6 +1757,9 @@ WINAPI BudgetThread (LPVOID user_data)
   char*  szOSD       =(char *)HeapAlloc  (hThreadHeap, HEAP_ZERO_MEMORY, 4096);
   char*  pszOSD      =        szOSD;
 
+  IDXGIDevice*
+         pDXGIDev    = nullptr;
+
   enum buffer {
     Front = 0,
     Back  = 1,
@@ -1685,21 +1778,40 @@ WINAPI BudgetThread (LPVOID user_data)
     DWORD dwWaitStatus = WaitForSingleObject (params->event,
                                               BUDGET_POLL_INTERVAL);
 
+    if (pDXGIDev == nullptr) {
+      if (g_pD3D11Dev != nullptr) {
+        g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
+                                     (void **)&pDXGIDev);
+      }
+    }
+
     static bool print_mem_stats = true;
+    static bool do_load_balance = false;
 #if 0
     BYTE keys [256];
     GetKeyboardState (keys);
     if (keys [VK_CONTROL] && keys [VK_SHIFT] && keys ['M'])
 #else
-    static bool toggle = false;
+    static bool toggle_mem = false;
     if (HIWORD (GetAsyncKeyState (VK_CONTROL)) &&
         HIWORD (GetAsyncKeyState (VK_SHIFT))   &&
         HIWORD (GetAsyncKeyState ('M'))) {
-      if (! toggle)
+      if (! toggle_mem)
         print_mem_stats = (! print_mem_stats);
-      toggle = true;
+      toggle_mem = true;
     } else {
-      toggle = false;
+      toggle_mem = false;
+    }
+    
+    static bool toggle_balance = false;
+    if (HIWORD (GetAsyncKeyState (VK_CONTROL)) &&
+        HIWORD (GetAsyncKeyState (VK_SHIFT))   &&
+        HIWORD (GetAsyncKeyState ('B'))) {
+      if (! toggle_balance)
+        do_load_balance = (! do_load_balance);
+      toggle_balance = true;
+    } else {
+      toggle_balance = false;
     }
 #endif
 
@@ -1774,7 +1886,7 @@ WINAPI BudgetThread (LPVOID user_data)
       struct heap_opt_t {
         DWORD version;
         DWORD length;
-      } heap_opt;
+      } heap_opt;`
         
       heap_opt.version = 1;
       heap_opt.length  = sizeof (heap_opt_t);
@@ -1784,20 +1896,52 @@ WINAPI BudgetThread (LPVOID user_data)
       queued_flush = false;
     }
 #endif
-    //if (dwWaitStatus == WAIT_OBJECT_0)
-    //last_budget = mem_info [buffer].local [0].Budget;
-
     pszOSD = szOSD;
+
+    static uint64_t last_budget =
+      mem_info [buffer].local [0].Budget;
+
+    if (dwWaitStatus == WAIT_OBJECT_0 && do_load_balance)
+    {
+      INT prio = 0;
+
+      if (pDXGIDev != nullptr &&
+          SUCCEEDED (pDXGIDev->GetGPUThreadPriority (&prio)))
+      {
+
+        if (last_budget > mem_info [buffer].local [0].Budget &&
+              mem_info [buffer].local [0].CurrentUsage >
+              mem_info [buffer].local [0].Budget)
+        {
+          if (prio > -7)
+          {
+            pDXGIDev->SetGPUThreadPriority (--prio);
+          }
+        }
+
+        else if (last_budget < mem_info [buffer].local [0].Budget &&
+                    mem_info [buffer].local [0].CurrentUsage <
+                    mem_info [buffer].local [0].Budget)
+        {
+          if (prio < 7)
+          {
+            pDXGIDev->SetGPUThreadPriority (++prio);
+          }
+        }
+      }
+
+      last_budget = mem_info [buffer].local [0].Budget;
+    }
 
     if (nodes > 0) {
       int i = 0;
 
       budget_log.LogEx (true, L"   [DXGI 1.3]: Local Memory.....:");
 
-      OSD_PRINTF "\n"
-                 "----- [DXGI 1.3]: Local Memory -----------"
-                 "------------------------------------------"
-                 "-\n"
+      OSD_M_PRINTF "\n"
+                   "----- [DXGI 1.3]: Local Memory -----------"
+                   "------------------------------------------"
+                   "-\n"
       OSD_END
 
       while (i < nodes) {
@@ -1809,8 +1953,8 @@ WINAPI BudgetThread (LPVOID user_data)
           budget_log.LogEx (true,  L"                                 ");
         }
 
-        OSD_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  - "
-                   " Budget:  %05u / %05u MiB)\n",
+        OSD_M_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  - "
+                     " Budget:  %05u / %05u MiB)\n",
                   nodes > 1 ? (nvapi_init ? "SLI Node" : "CFX Node") : "GPU",
                   i,
                   mem_info [buffer].local [i].CurrentReservation      >> 20ULL,
@@ -1859,9 +2003,9 @@ WINAPI BudgetThread (LPVOID user_data)
 
       i = 0;
 
-      OSD_PRINTF "----- [DXGI 1.3]: Non-Local Memory -------"
-                 "------------------------------------------"
-                 "\n"
+      OSD_M_PRINTF "----- [DXGI 1.3]: Non-Local Memory -------"
+                   "------------------------------------------"
+                   "\n"
       OSD_END
 
       budget_log.LogEx (true,
@@ -1873,8 +2017,8 @@ WINAPI BudgetThread (LPVOID user_data)
           budget_log.LogEx (true,  L"                                 ");
         }
 
-        OSD_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  -  "
-                   "Budget:  %05u / %05u MiB)\n",
+        OSD_M_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  -  "
+                     "Budget:  %05u / %05u MiB)\n",
                        nodes > 1 ? "SLI Node" : "GPU",
                        i,
               mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
@@ -1894,33 +2038,60 @@ WINAPI BudgetThread (LPVOID user_data)
         i++;
       }
 
-      OSD_PRINTF "----- [DXGI 1.3]: Miscellaneous ----------"
-                 "------------------------------------------"
-                 "---\n"
+      OSD_M_PRINTF "----- [DXGI 1.3]: Miscellaneous ----------"
+                   "------------------------------------------"
+                   "---\n"
       OSD_END
 
       int64_t headroom = mem_info [buffer].local [0].Budget -
                          mem_info [buffer].local [0].CurrentUsage;
 
-      OSD_PRINTF "  Max. Resident Set:  %05u MiB  -"
-                 "  Max. Over Budget:  %05u MiB\n"
-                 "    Budget Changes:  %06u       -    "
-                 "       Budget Left:  %05i MiB",
+      OSD_M_PRINTF "  Max. Resident Set:  %05u MiB  -"
+                   "  Max. Over Budget:  %05u MiB\n"
+                   "    Budget Changes:  %06u       -    "
+                   "       Budget Left:  %05i MiB",
                                       mem_stats [0].max_usage       >> 20ULL,
                                       mem_stats [0].max_over_budget >> 20ULL,
                                       mem_stats [0].budget_changes,
                                       headroom / 1024 / 1024
       OSD_END
 
+      if (pDXGIDev != nullptr)
+      {
+        static INT prio = 0;
+
+        if (do_load_balance)
+        {
+          if (SUCCEEDED (pDXGIDev->GetGPUThreadPriority (&prio)))
+          { 
+            OSD_B_PRINTF "\n  GPU Priority: %+1i",
+                         prio
+            OSD_END
+          }
+        } else {
+          if (prio != 0) {
+            prio = 0;
+            pDXGIDev->SetGPUThreadPriority (prio);
+          }
+        }
+      }
+
       budget_log.LogEx (false, L"\n");
     }
 
-    if (print_mem_stats)
+    if (print_mem_stats || do_load_balance)
       UpdateOSD (szOSD);
     else
       UpdateOSD (" ");
 
     ResetEvent (params->event);
+  }
+
+  if (pDXGIDev != nullptr) {
+    // Releasing this actually causes driver crashes, so ...
+    //   let it leak, what do we care?
+    //pDXGIDev->Release ();
+    pDXGIDev = nullptr;
   }
 
   HeapFree    (hThreadHeap, 0, szOSD);
@@ -1955,9 +2126,9 @@ APIENTRY DllMain ( HMODULE hModule,
 
       //LoadLibrary (L"d3d11.dll");
 
-      InitializeCriticalSection (&init_mutex);
-      InitializeCriticalSection (&budget_mutex);
-      InitializeCriticalSection (&d3dhook_mutex);
+      InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
+      InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
+      InitializeCriticalSectionAndSpinCount (&init_mutex,    50000);
 
       hInitThread = CreateThread (NULL, 0, DllThread, NULL, 0, NULL);
 
