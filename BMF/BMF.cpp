@@ -1340,7 +1340,7 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
       }
 
       //
-      // If the adapter implements DXGI 1.3, then create a budget monitoring
+      // If the adapter implements DXGI 1.4, then create a budget monitoring
       //  thread...
       //
       IDXGIAdapter3* pAdapter3;
@@ -1364,7 +1364,7 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
                               sizeof (budget_thread_params_t) );
 
           dxgi_log.LogEx (true,
-                L"   $ Spawning DXGI 1.3 Memory Budget Change Thread.: ");
+                L"   $ Spawning DXGI 1.4 Memory Budget Change Thread.: ");
 
           budget_thread->pAdapter = pAdapter3;
           budget_thread->tid      = 0;
@@ -1437,7 +1437,7 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
         int i = 0;
 
         dxgi_log.LogEx (true,
-                    L"   [DXGI 1.3]: Local Memory.....:");
+                    L"   [DXGI 1.4]: Local Memory.....:");
 
         DXGI_QUERY_VIDEO_MEMORY_INFO mem_info;
         while (SUCCEEDED (pAdapter3->QueryVideoMemoryInfo (
@@ -1474,7 +1474,7 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
         i = 0;
 
         dxgi_log.LogEx (true,
-                    L"   [DXGI 1.3]: Non-Local Memory.:");
+                    L"   [DXGI 1.4]: Non-Local Memory.:");
 
         while (SUCCEEDED (pAdapter3->QueryVideoMemoryInfo (
                             i,
@@ -1936,10 +1936,10 @@ WINAPI BudgetThread (LPVOID user_data)
     if (nodes > 0) {
       int i = 0;
 
-      budget_log.LogEx (true, L"   [DXGI 1.3]: Local Memory.....:");
+      budget_log.LogEx (true, L"   [DXGI 1.4]: Local Memory.....:");
 
       OSD_M_PRINTF "\n"
-                   "----- [DXGI 1.3]: Local Memory -----------"
+                   "----- [DXGI 1.4]: Local Memory -----------"
                    "------------------------------------------"
                    "-\n"
       OSD_END
@@ -2003,13 +2003,13 @@ WINAPI BudgetThread (LPVOID user_data)
 
       i = 0;
 
-      OSD_M_PRINTF "----- [DXGI 1.3]: Non-Local Memory -------"
+      OSD_M_PRINTF "----- [DXGI 1.4]: Non-Local Memory -------"
                    "------------------------------------------"
                    "\n"
       OSD_END
 
       budget_log.LogEx (true,
-                        L"   [DXGI 1.3]: Non-Local Memory.:");
+                        L"   [DXGI 1.4]: Non-Local Memory.:");
 
       while (i < nodes) {
         if (i > 0) {
@@ -2038,7 +2038,7 @@ WINAPI BudgetThread (LPVOID user_data)
         i++;
       }
 
-      OSD_M_PRINTF "----- [DXGI 1.3]: Miscellaneous ----------"
+      OSD_M_PRINTF "----- [DXGI 1.4]: Miscellaneous ----------"
                    "------------------------------------------"
                    "---\n"
       OSD_END
@@ -2153,7 +2153,7 @@ APIENTRY DllMain ( HMODULE hModule,
       if (budget_thread != nullptr) {
         dxgi_log.LogEx (
               true,
-                L"Shutting down DXGI 1.3 Memory Budget Change Thread... "
+                L"Shutting down DXGI 1.4 Memory Budget Change Thread... "
         );
 
         budget_thread->ready  = false;
