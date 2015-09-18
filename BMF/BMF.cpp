@@ -14,6 +14,7 @@
 * You should have received a copy of the GNU General Public License
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
+#define _CRT_SECURE_NO_WARNINGS
 
 #include "stdafx.h"
 #include "nvapi.h"
@@ -31,14 +32,16 @@
 #  pragma comment (lib, "dbghelp.lib")
 #pragma warning   (pop)
 
-static CRITICAL_SECTION init_mutex = { 0 };
-
 #include "minhook/MinHook.h"
+
+static HANDLE           dll_heap      = { 0 };
+
+static CRITICAL_SECTION d3dhook_mutex = { 0 };
+static CRITICAL_SECTION budget_mutex  = { 0 };
+static CRITICAL_SECTION init_mutex    = { 0 };
 
 // Disable SLI memory in Batman Arkham Knight
 static bool USE_SLI = true;
-
-HMODULE hParent;
 
 extern "C" {
   // We have some really sneaky overlays that manage to call some of our
@@ -46,10 +49,76 @@ extern "C" {
   //     so we don't crash and burn!
   void WaitForInit (void);
 
-static HANDLE hBudgetThread = NULL;
+typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
+  (UINT Flags, REFIID riid,  void** ppFactory);
+typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory1_t) \
+              (REFIID riid,  void** ppFactory);
+typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory_t)  \
+              (REFIID riid,  void** ppFactory);
 
-static FILE*   fLog    = nullptr;
-static HMODULE hDxgi   = NULL;
+typedef HRESULT (WINAPI *D3D11CreateDeviceAndSwapChain_t)(
+    _In_opt_                             IDXGIAdapter*, 
+                                         D3D_DRIVER_TYPE,
+                                         HMODULE,
+                                         UINT, 
+    _In_reads_opt_ (FeatureLevels) CONST D3D_FEATURE_LEVEL*, 
+                                         UINT FeatureLevels,
+                                         UINT,
+    _In_opt_                       CONST DXGI_SWAP_CHAIN_DESC*,
+    _Out_opt_                            IDXGISwapChain**,
+    _Out_opt_                            ID3D11Device**, 
+    _Out_opt_                            D3D_FEATURE_LEVEL*,
+    _Out_opt_                            ID3D11DeviceContext**);
+
+
+typedef HRESULT (STDMETHODCALLTYPE *PresentSwapChain_t)(
+                  IDXGISwapChain *This,
+                  UINT            SyncInterval,
+                  UINT            Flags);
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateSwapChain_t)(
+                  IDXGIFactory          *This,
+            _In_  IUnknown              *pDevice,
+            _In_  DXGI_SWAP_CHAIN_DESC  *pDesc,
+           _Out_  IDXGISwapChain       **ppSwapChain);
+
+
+typedef HRESULT (STDMETHODCALLTYPE *GetDesc1_t)(IDXGIAdapter1      *This,
+                                         _Out_  DXGI_ADAPTER_DESC1 *pDesc);
+typedef HRESULT (STDMETHODCALLTYPE *GetDesc2_t)(IDXGIAdapter2      *This,
+                                         _Out_  DXGI_ADAPTER_DESC2 *pDesc);
+typedef HRESULT (STDMETHODCALLTYPE *GetDesc_t) (IDXGIAdapter       *This,
+                                         _Out_  DXGI_ADAPTER_DESC  *pDesc);
+
+typedef HRESULT (STDMETHODCALLTYPE *EnumAdapters_t)(
+        IDXGIFactory  *This,
+        UINT           Adapter,
+  _Out_ IDXGIAdapter **ppAdapter);
+
+typedef HRESULT (STDMETHODCALLTYPE *EnumAdapters1_t)(
+        IDXGIFactory1  *This,
+        UINT            Adapter,
+  _Out_ IDXGIAdapter1 **ppAdapter);
+
+volatile
+D3D11CreateDeviceAndSwapChain_t
+D3D11CreateDeviceAndSwapChain_Import = nullptr;
+
+PresentSwapChain_t   Present_Original          = nullptr;
+CreateSwapChain_t    CreateSwapChain_Original  = nullptr;
+
+GetDesc_t            GetDesc_Original          = nullptr;
+GetDesc1_t           GetDesc1_Original         = nullptr;
+GetDesc2_t           GetDesc2_Original         = nullptr;
+
+EnumAdapters_t       EnumAdapters_Original     = nullptr;
+EnumAdapters1_t      EnumAdapters1_Original    = nullptr;
+
+CreateDXGIFactory_t  CreateDXGIFactory_Import  = nullptr;
+CreateDXGIFactory1_t CreateDXGIFactory1_Import = nullptr;
+CreateDXGIFactory2_t CreateDXGIFactory2_Import = nullptr;
+
+static HMODULE hDxgi = NULL;
 
 struct memory_stats_t {
   uint64_t min_reserve = UINT64_MAX;
@@ -72,12 +141,10 @@ struct memory_stats_t {
 
 struct IDXGIAdapter3;
 
-static CRITICAL_SECTION d3dhook_mutex = { 0 };
-static CRITICAL_SECTION budget_mutex  = { 0 };
-
 struct budget_thread_params_t {
-  IDXGIAdapter3*   pAdapter;
+  IDXGIAdapter3   *pAdapter;
   DWORD            tid;
+  HANDLE           handle;
   DWORD            cookie;
   HANDLE           event;
   volatile bool    ready;
@@ -105,6 +172,17 @@ BMF_Timestamp (wchar_t* const out)
   return stLogTime.wMilliseconds;
 }
 
+//
+// NOTE: This is a barbaric approach to the problem... we clearly have a
+//         multi-threaded execution model but the logging assumes otherwise.
+//
+//       The log system _is_ thread-safe, but the output can be non-sensical
+//         when multiple threads are logging calls or even when a recursive
+//           call is logged in a single thread.
+//
+//        * Consdier using a stack-based approach if these logs become
+//            indecipherable in the future.
+//            
 struct bmf_logger_t {
   bool init (const char* const szFilename,
              const char* const szMode);
@@ -128,10 +206,13 @@ struct bmf_logger_t {
 void
 bmf_logger_t::close (void)
 {
-  if (fLog != NULL)
+  if (fLog != NULL) {
+    fflush (fLog);
     fclose (fLog);
+  }
 
-  silent = true;
+  initialized = false;
+  silent      = true;
 
   DeleteCriticalSection (&log_mutex);
 }
@@ -181,8 +262,10 @@ bmf_logger_t::LogEx (bool                 _Timestamp,
   }
 
   va_start (_ArgList, _Format);
-  vfwprintf (fLog, _Format, _ArgList);
-  va_end (_ArgList);
+  {
+    vfwprintf (fLog, _Format, _ArgList);
+  }
+  va_end   (_ArgList);
 
   fflush (fLog);
 
@@ -212,8 +295,10 @@ bmf_logger_t::Log   (_In_z_ _Printf_format_string_
   fwprintf (fLog, L"%s%03u: ", wszLogTime, ms);
 
   va_start (_ArgList, _Format);
-  vfwprintf (fLog, _Format, _ArgList);
-  va_end (_ArgList);
+  {
+    vfwprintf (fLog, _Format, _ArgList);
+  }
+  va_end   (_ArgList);
 
   fwprintf  (fLog, L"\n");
   fflush    (fLog);
@@ -224,14 +309,140 @@ bmf_logger_t::Log   (_In_z_ _Printf_format_string_
 const wchar_t*
 BMF_DescribeHRESULT (HRESULT result)
 {
-  switch (result) {
+  switch (result)
+  {
+    /* Generic (SUCCEEDED) */
+
     case S_OK:
       return L"S_OK";
+
+    case S_FALSE:
+      return L"S_FALSE";
+
+
+    /* DXGI */
+
+    case DXGI_ERROR_DEVICE_HUNG:
+      return L"DXGI_ERROR_DEVICE_HUNG";
+
+    case DXGI_ERROR_DEVICE_REMOVED:
+      return L"DXGI_ERROR_DEVICE_REMOVED";
+
+    case DXGI_ERROR_DEVICE_RESET:
+      return L"DXGI_ERROR_DEVICE_RESET";
+
+    case DXGI_ERROR_DRIVER_INTERNAL_ERROR:
+      return L"DXGI_ERROR_DRIVER_INTERNAL_ERROR";
+
+    case DXGI_ERROR_FRAME_STATISTICS_DISJOINT:
+      return L"DXGI_ERROR_FRAME_STATISTICS_DISJOINT";
+
+    case DXGI_ERROR_GRAPHICS_VIDPN_SOURCE_IN_USE:
+      return L"DXGI_ERROR_GRAPHICS_VIDPN_SOURCE_IN_USE";
+
+    case DXGI_ERROR_INVALID_CALL:
+      return L"DXGI_ERROR_INVALID_CALL";
+
+    case DXGI_ERROR_MORE_DATA:
+      return L"DXGI_ERROR_MORE_DATA";
+
+    case DXGI_ERROR_NONEXCLUSIVE:
+      return L"DXGI_ERROR_NONEXCLUSIVE";
+
+    case DXGI_ERROR_NOT_CURRENTLY_AVAILABLE:
+      return L"DXGI_ERROR_NOT_CURRENTLY_AVAILABLE";
+
     case DXGI_ERROR_NOT_FOUND:
       return L"DXGI_ERROR_NOT_FOUND";
+
+    case DXGI_ERROR_REMOTE_CLIENT_DISCONNECTED:
+      return L"DXGI_ERROR_REMOTE_CLIENT_DISCONNECTED";
+
+    case DXGI_ERROR_REMOTE_OUTOFMEMORY:
+      return L"DXGI_ERROR_REMOTE_OUTOFMEMORY";
+
+    case DXGI_ERROR_WAS_STILL_DRAWING:
+      return L"DXGI_ERROR_WAS_STILL_DRAWING";
+
+    case DXGI_ERROR_UNSUPPORTED:
+      return L"DXGI_ERROR_UNSUPPORTED";
+
+    case DXGI_ERROR_ACCESS_LOST:
+      return L"DXGI_ERROR_ACCESS_LOST";
+
+    case DXGI_ERROR_WAIT_TIMEOUT:
+      return L"DXGI_ERROR_WAIT_TIMEOUT";
+
+    case DXGI_ERROR_SESSION_DISCONNECTED:
+      return L"DXGI_ERROR_SESSION_DISCONNECTED";
+
+    case DXGI_ERROR_RESTRICT_TO_OUTPUT_STALE:
+      return L"DXGI_ERROR_RESTRICT_TO_OUTPUT_STALE";
+
+    case DXGI_ERROR_CANNOT_PROTECT_CONTENT:
+      return L"DXGI_ERROR_CANNOT_PROTECT_CONTENT";
+
+    case DXGI_ERROR_ACCESS_DENIED:
+      return L"DXGI_ERROR_ACCESS_DENIED";
+
+    case DXGI_ERROR_NAME_ALREADY_EXISTS:
+      return L"DXGI_ERROR_NAME_ALREADY_EXISTS";
+
+    case DXGI_ERROR_SDK_COMPONENT_MISSING:
+      return L"DXGI_ERROR_SDK_COMPONENT_MISSING";
+
+
+    /* D3D11 */
+
+    case D3D11_ERROR_FILE_NOT_FOUND:
+      return L"D3D11_ERROR_FILE_NOT_FOUND";
+
+    case D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS:
+      return L"D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS";
+
+    case D3D11_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS:
+      return L"D3D11_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS";
+
+    case D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD:
+      return L"D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD";
+
+    //case D3DERR_INVALIDCALL:
+      //return L"D3DERR_INVALIDCALL";
+
+    //case D3DERR_WASSTILLDRAWING:
+      //return L"D3DERR_WASSTILLDRAWING";
+
+
+    /* D3D12 */
+
+    //case D3D12_ERROR_FILE_NOT_FOUND:
+      //return L"D3D12_ERROR_FILE_NOT_FOUND";
+
+    //case D3D12_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS:
+      //return L"D3D12_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS";
+
+    //case D3D12_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS:
+      //return L"D3D12_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS";
+
+
+    /* Generic (FAILED) */
+
+    case E_FAIL:
+      return L"E_FAIL";
+
+    case E_INVALIDARG:
+      return L"E_INVALIDARG";
+
+    case E_OUTOFMEMORY:
+      return L"E_OUTOFMEMORY";
+
     case E_NOTIMPL:
       return L"E_NOTIMPL";
+
+
     default:
+      dxgi_log.Log (L" *** Encountered unknown HRESULT: (0x%08X)",
+                    (unsigned long)result);
       return L"UNKNOWN";
   }
 }
@@ -264,17 +475,6 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect)
 
 static BOOL nvapi_init = FALSE;
 
-typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
-  (UINT Flags, REFIID riid,  void** ppFactory);
-typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory1_t) \
-              (REFIID riid,  void** ppFactory);
-typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory_t)  \
-              (REFIID riid,  void** ppFactory);
-
-static CreateDXGIFactory_t  CreateDXGIFactoryEX  = nullptr;
-static CreateDXGIFactory1_t CreateDXGIFactory1EX = nullptr;
-static CreateDXGIFactory2_t CreateDXGIFactory2EX = nullptr;
-
 void
 BMF_Init (void)
 {
@@ -283,8 +483,6 @@ BMF_Init (void)
     LeaveCriticalSection (&init_mutex);
     return;
   }
-
-  HANDLE hProc = GetCurrentProcess ();
 
   FILE*   silent = NULL;
   errno_t err    = fopen_s (&silent, "dxgi.silent", "r");
@@ -307,11 +505,14 @@ BMF_Init (void)
   DWORD   dwProcessSize = MAX_PATH;
   wchar_t wszProcessName [MAX_PATH];
 
+  HANDLE hProc = GetCurrentProcess ();
+
   QueryFullProcessImageName (hProc, 0, wszProcessName, &dwProcessSize);
 
   wchar_t* pwszShortName = wszProcessName + lstrlenW (wszProcessName);
 
-  while (pwszShortName > wszProcessName && *(pwszShortName - 1) != L'\\')
+  while (  pwszShortName      >  wszProcessName &&
+         *(pwszShortName - 1) != L'\\')
     --pwszShortName;
 
   dxgi_log.Log (L">> (%s) <<", pwszShortName);
@@ -320,8 +521,8 @@ BMF_Init (void)
     USE_SLI = false;
 
   dxgi_log.LogEx (false,
-  L"------------------------------------------------------------------------"
-  L"-----------\n");
+    L"----------------------------------------------------------------------"
+    L"-------------\n");
 
   wchar_t wszDxgiDLL [MAX_PATH] = { L'\0' };
   GetSystemDirectory (wszDxgiDLL, MAX_PATH);
@@ -412,16 +613,17 @@ BMF_Init (void)
   dxgi_log.Log (L"================================");
 
   dxgi_log.Log (L"  CreateDXGIFactory:  %08Xh", 
-    (CreateDXGIFactoryEX =  \
+    (CreateDXGIFactory_Import =  \
       (CreateDXGIFactory_t)GetProcAddress (hDxgi, "CreateDXGIFactory")));
   dxgi_log.Log (L"  CreateDXGIFactory1: %08Xh",
-    (CreateDXGIFactory1EX = \
+    (CreateDXGIFactory1_Import = \
       (CreateDXGIFactory1_t)GetProcAddress (hDxgi, "CreateDXGIFactory1")));
   dxgi_log.Log (L"  CreateDXGIFactory2: %08Xh",
-    (CreateDXGIFactory2EX = \
+    (CreateDXGIFactory2_Import = \
       (CreateDXGIFactory2_t)GetProcAddress (hDxgi, "CreateDXGIFactory2")));
 
   dxgi_log.LogEx (true, L" @ Loading Debug Symbols: ");
+
   SymInitializeW       (GetCurrentProcess (), NULL, TRUE);
   SymRefreshModuleList (GetCurrentProcess ());
 
@@ -492,12 +694,12 @@ BMF_Init (void)
 }
 
 #define DXGI_STUB(_Return, _Name, _Proto, _Args)                      \
-  _declspec (dllexport) _Return STDMETHODCALLTYPE                     \
+  __declspec (dllexport) _Return STDMETHODCALLTYPE                    \
   _Name _Proto {                                                      \
+    WaitForInit ();                                                   \
+                                                                      \
     typedef _Return (STDMETHODCALLTYPE *passthrough_t) _Proto;        \
     static passthrough_t _default_impl = nullptr;                     \
-                                                                      \
-    WaitForInit ();                                                   \
                                                                       \
     if (_default_impl == nullptr) {                                   \
       static const char* szName = #_Name;                             \
@@ -530,7 +732,8 @@ typedef struct dxgi_override_t {
 
 extern "C++" {
   std::wstring
-    BMF_GetDXGIFactoryInterfaceEx (const IID& riid) {
+  BMF_GetDXGIFactoryInterfaceEx (const IID& riid)
+  {
     std::wstring interface_name;
 
     if (riid == __uuidof (IDXGIFactory))
@@ -544,7 +747,7 @@ extern "C++" {
     else if (riid == __uuidof (IDXGIFactory4))
       interface_name = L"IDXGIFactory4";
     else {
-      wchar_t* pwszIID;
+      wchar_t *pwszIID;
       StringFromIID (riid, (LPOLESTR *)&pwszIID);
 
       interface_name = pwszIID;
@@ -556,34 +759,40 @@ extern "C++" {
   }
 
   std::wstring
-    BMF_GetDXGIFactoryInterface (IUnknown* pFactory) {
-    IUnknown* pTemp = nullptr;
+  BMF_GetDXGIFactoryInterface (IUnknown *pFactory)
+  {
+    IUnknown *pTemp = nullptr;
 
-    if (pFactory->QueryInterface (__uuidof (IDXGIFactory4), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED (
+         pFactory->QueryInterface (__uuidof (IDXGIFactory4), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory4));
     }
-    if (pFactory->QueryInterface (__uuidof (IDXGIFactory3), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED (
+         pFactory->QueryInterface (__uuidof (IDXGIFactory3), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory3));
     }
 
-    if (pFactory->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED (
+         pFactory->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory2));
     }
 
-    if (pFactory->QueryInterface (__uuidof (IDXGIFactory1), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED (
+         pFactory->QueryInterface (__uuidof (IDXGIFactory1), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory1));
     }
 
-    if (pFactory->QueryInterface (__uuidof (IDXGIFactory), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED (
+         pFactory->QueryInterface (__uuidof (IDXGIFactory), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory));
     }
@@ -592,7 +801,8 @@ extern "C++" {
   }
 
   std::wstring
-    BMF_GetDXGIAdapterInterfaceEx (const IID& riid) {
+  BMF_GetDXGIAdapterInterfaceEx (const IID& riid)
+  {
     std::wstring interface_name;
 
     if (riid == __uuidof (IDXGIAdapter))
@@ -616,29 +826,34 @@ extern "C++" {
   }
 
   std::wstring
-    BMF_GetDXGIAdapterInterface (IUnknown* pAdapter) {
-    IUnknown* pTemp = nullptr;
+  BMF_GetDXGIAdapterInterface (IUnknown *pAdapter)
+  {
+    IUnknown *pTemp = nullptr;
 
-    if (pAdapter->QueryInterface (__uuidof (IDXGIAdapter3), (void **)&pTemp)
-                == S_OK) {
+    if (SUCCEEDED (
+         pAdapter->QueryInterface (__uuidof (IDXGIAdapter3), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter3));
     }
 
-    if (pAdapter->QueryInterface (__uuidof (IDXGIAdapter2), (void **)&pTemp)
-                == S_OK) {
+    if (SUCCEEDED (
+         pAdapter->QueryInterface (__uuidof (IDXGIAdapter2), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter2));
     }
 
-    if (pAdapter->QueryInterface (__uuidof (IDXGIAdapter1), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED (
+         pAdapter->QueryInterface (__uuidof (IDXGIAdapter1), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter1));
     }
 
-    if (pAdapter->QueryInterface (__uuidof (IDXGIAdapter), (void **)&pTemp)
-        == S_OK) {
+    if (SUCCEEDED 
+        (pAdapter->QueryInterface (__uuidof (IDXGIAdapter), (void **)&pTemp)))
+    {
       pTemp->Release ();
       return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter));
     }
@@ -681,149 +896,127 @@ extern "C++" {
 #include <io.h>
 #include <tchar.h>
 
-/////////////////////////////////////////////////////////////////////////////
-BOOL UpdateOSD(LPCSTR lpText)
+BOOL
+UpdateOSD (LPCSTR lpText)
 {
-	BOOL bResult	= FALSE;
+  BOOL bResult = FALSE;
 
-	HANDLE hMapFile =
-    OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
-
-	if (hMapFile)
-	{
-		LPVOID               pMapAddr =
-      MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
-		LPRTSS_SHARED_MEMORY pMem	    =
-      (LPRTSS_SHARED_MEMORY)pMapAddr;
-
-		if (pMem)
-		{
-			if ((pMem->dwSignature == 'RTSS') && 
-				(pMem->dwVersion >= 0x00020000))
-			{
-				for (DWORD dwPass=0; dwPass<2; dwPass++)
-					//1st pass : find previously captured OSD slot
-					//2nd pass : otherwise find the first unused OSD slot and capture it
-				{
-					for (DWORD dwEntry=1; dwEntry<pMem->dwOSDArrSize; dwEntry++)
-						//allow primary OSD clients (i.e. EVGA Precision / MSI Afterburner)
-            //  to use the first slot exclusively, so third party applications
-            //    start scanning the slots from the second one
-					{
-						RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
-              (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
-              ((LPBYTE)pMem + pMem->dwOSDArrOffset +
-                              dwEntry * pMem->dwOSDEntrySize);
-
-						if (dwPass)
-						{
-							if (!strlen(pEntry->szOSDOwner))
-								strcpy(pEntry->szOSDOwner, "Batman Fix");
-						}
-
-						if (!strcmp(pEntry->szOSDOwner, "Batman Fix"))
-						{
-							if (pMem->dwVersion >= 0x00020007)
-								//use extended text slot for v2.7 and higher shared memory,
-                // it allows displaying 4096 symbols instead of 256 for regular
-                //   text slot
-								strncpy(pEntry->szOSDEx, lpText, sizeof(pEntry->szOSDEx) - 1);	
-							else
-								strncpy(pEntry->szOSD, lpText, sizeof(pEntry->szOSD) - 1);
-
-							pMem->dwOSDFrame++;
-
-							bResult = TRUE;
-
-							break;
-						}
-					}
-
-					if (bResult)
-						break;
-				}
-			}
-
-			UnmapViewOfFile(pMapAddr);
-		}
-
-		CloseHandle(hMapFile);
-	}
-
-	return bResult;
-}
-/////////////////////////////////////////////////////////////////////////////
-void ReleaseOSD (void)
-{
-	HANDLE hMapFile =
+  HANDLE hMapFile =
     OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
 
-	if (hMapFile)
-	{
-		LPVOID pMapAddr = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+  if (hMapFile) {
+    LPVOID               pMapAddr =
+      MapViewOfFile (hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 
-		LPRTSS_SHARED_MEMORY pMem = (LPRTSS_SHARED_MEMORY)pMapAddr;
+    LPRTSS_SHARED_MEMORY pMem     =
+      (LPRTSS_SHARED_MEMORY)pMapAddr;
 
-		if (pMem)
-		{
-			if ((pMem->dwSignature == 'RTSS') && 
-				(pMem->dwVersion >= 0x00020000))
-			{
-				for (DWORD dwEntry=1; dwEntry<pMem->dwOSDArrSize; dwEntry++)
-				{
-					RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+    if (pMem)
+    {
+      if ((pMem->dwSignature == 'RTSS') && 
+          (pMem->dwVersion >= 0x00020000))
+      {
+        for (DWORD dwPass = 0; dwPass < 2; dwPass++)
+        {
+          //1st Pass: Find previously captured OSD slot
+          //2nd Pass: Otherwise find the first unused OSD slot and capture it
+
+          for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
+          {
+            // Allow primary OSD clients (i.e. EVGA Precision / MSI Afterburner)
+            //   to use the first slot exclusively, so third party applications
+            //     start scanning the slots from the second one
+
+            RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+              (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+                ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+                      dwEntry * pMem->dwOSDEntrySize);
+
+            if (dwPass)
+            {
+              if (! strlen (pEntry->szOSDOwner))
+                strcpy (pEntry->szOSDOwner, "Batman Fix");
+            }
+
+            if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+            {
+              if (pMem->dwVersion >= 0x00020007)
+                //Use extended text slot for v2.7 and higher shared memory,
+                // it allows displaying 4096 symbols instead of 256 for regular
+                //  text slot
+                strncpy (pEntry->szOSDEx, lpText, sizeof pEntry->szOSDEx - 1);
+              else
+                strncpy (pEntry->szOSD,   lpText, sizeof pEntry->szOSD   - 1);
+
+              pMem->dwOSDFrame++;
+
+              bResult = TRUE;
+              break;
+            }
+          }
+
+          if (bResult)
+            break;
+        }
+      }
+
+      UnmapViewOfFile (pMapAddr);
+    }
+
+    CloseHandle (hMapFile);
+  }
+
+  return bResult;
+}
+/////////////////////////////////////////////////////////////////////////////
+
+void
+ReleaseOSD (void)
+{
+  HANDLE hMapFile =
+    OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+
+  if (hMapFile)
+  {
+    LPVOID               pMapAddr =
+      MapViewOfFile (hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+    LPRTSS_SHARED_MEMORY pMem     =
+      (LPRTSS_SHARED_MEMORY)pMapAddr;
+
+    if (pMem)
+    {
+      if ((pMem->dwSignature == 'RTSS') && 
+          (pMem->dwVersion   >= 0x00020000))
+      {
+        for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
+        {
+          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
             (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
             ((LPBYTE)pMem + pMem->dwOSDArrOffset +
                   dwEntry * pMem->dwOSDEntrySize);
 
-					if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
-					{
-						memset (pEntry, 0, pMem->dwOSDEntrySize);
-						pMem->dwOSDFrame++;
-					}
-				}
-			}
+          if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+          {
+            memset (pEntry, 0, pMem->dwOSDEntrySize);
+            pMem->dwOSDFrame++;
+          }
+        }
+      }
 
-			UnmapViewOfFile(pMapAddr);
-		}
+      UnmapViewOfFile (pMapAddr);
+    }
 
-		CloseHandle(hMapFile);
-	}
+    CloseHandle (hMapFile);
+  }
 }
 
-typedef HRESULT (WINAPI* PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN)( _In_opt_ IDXGIAdapter*, 
-    D3D_DRIVER_TYPE, HMODULE, UINT, 
-    _In_reads_opt_( FeatureLevels ) CONST D3D_FEATURE_LEVEL*, 
-    UINT FeatureLevels, UINT, _In_opt_ CONST DXGI_SWAP_CHAIN_DESC*, 
-    _Out_opt_ IDXGISwapChain**, _Out_opt_ ID3D11Device**, 
-    _Out_opt_ D3D_FEATURE_LEVEL*, _Out_opt_ ID3D11DeviceContext** );
-
-volatile PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN
-  D3D11CreateDeviceAndSwapChainEX = NULL;
-
-typedef HRESULT (STDMETHODCALLTYPE* PFN_PRESENT_SWAP_CHAIN)(
-                                                 IDXGISwapChain* This,
-                                                 UINT            SyncInterval,
-                                                 UINT            Flags);
-PFN_PRESENT_SWAP_CHAIN Present_Original;
-
 HRESULT
-WINAPI
-PresentCallback (IDXGISwapChain* This,
-                 UINT            SyncInterval,
-                 UINT            Flags)
+STDMETHODCALLTYPE PresentCallback (IDXGISwapChain *This,
+                                   UINT            SyncInterval,
+                                   UINT            Flags)
 {
   return Present_Original (This, SyncInterval, Flags);
 }
-
-typedef HRESULT (STDMETHODCALLTYPE *CreateSwapChain_t)(
-                  IDXGIFactory          *This,
-            _In_  IUnknown              *pDevice,
-            _In_  DXGI_SWAP_CHAIN_DESC  *pDesc,
-            _Out_  IDXGISwapChain      **ppSwapChain);
-
-CreateSwapChain_t CreateSwapChain_Original = nullptr;
 
 HRESULT
 STDMETHODCALLTYPE CreateSwapChain_Override (IDXGIFactory          *This,
@@ -840,65 +1033,68 @@ STDMETHODCALLTYPE CreateSwapChain_Override (IDXGIFactory          *This,
   DXGI_CALL(ret, CreateSwapChain_Original (This, pDevice, pDesc, ppSwapChain));
 
   if (ppSwapChain != NULL && (*ppSwapChain) != NULL &&
-      Present_Original == nullptr) {
-    ID3D11Device* pDev;
-    budget_log.silent = false;
-    if (SUCCEEDED (pDevice->QueryInterface (__uuidof (ID3D11Device),
-                                            (void **)&pDev))) {
+      Present_Original == nullptr)
+  {
+    ID3D11Device *pDev;
 
+    if (SUCCEEDED (pDevice->QueryInterface (__uuidof (ID3D11Device),
+                                            (void **)&pDev)))
+    {
+      budget_log.silent = false;
       budget_log.LogEx (true, L"Hooking IDXGISwapChain::Present... ");
       DXGI_VIRTUAL_OVERRIDE (ppSwapChain, 8, "IDXGISwapChain::Present",
                              PresentCallback, Present_Original,
-                             PFN_PRESENT_SWAP_CHAIN);
-      //(*ppSwapChain)->AddRef ();
+                             PresentSwapChain_t);
       budget_log.LogEx (false, L"Done\n");
       budget_log.silent = true;
+
+      pDev->Release ();
     }
   }
 
   return ret;
 }
 
-HRESULT WINAPI D3D11CreateDeviceAndSwapChain (
-  _In_opt_ IDXGIAdapter* pAdapter,
-  D3D_DRIVER_TYPE DriverType,
-  HMODULE Software,
-  UINT Flags,
-  _In_reads_opt_ (FeatureLevels) CONST D3D_FEATURE_LEVEL* pFeatureLevels,
-  UINT FeatureLevels,
-  UINT SDKVersion,
-  _In_opt_ CONST DXGI_SWAP_CHAIN_DESC* pSwapChainDesc,
-  _Out_opt_ IDXGISwapChain** ppSwapChain,
-  _Out_opt_ ID3D11Device** ppDevice,
-  _Out_opt_ D3D_FEATURE_LEVEL* pFeatureLevel,
-  _Out_opt_ ID3D11DeviceContext** ppImmediateContext) {
+HRESULT
+WINAPI D3D11CreateDeviceAndSwapChain(
+_In_opt_                             IDXGIAdapter          *pAdapter,
+                                     D3D_DRIVER_TYPE        DriverType,
+                                     HMODULE                Software,
+                                     UINT                   Flags,
+_In_reads_opt_ (FeatureLevels) CONST D3D_FEATURE_LEVEL     *pFeatureLevels,
+                                     UINT                   FeatureLevels,
+                                     UINT                   SDKVersion,
+_In_opt_                       CONST DXGI_SWAP_CHAIN_DESC  *pSwapChainDesc,
+_Out_opt_                            IDXGISwapChain       **ppSwapChain,
+_Out_opt_                            ID3D11Device         **ppDevice,
+_Out_opt_                            D3D_FEATURE_LEVEL     *pFeatureLevel,
+_Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
+{
   DXGI_LOG_CALL_0 (L"D3D11CreateDeviceAndSwapChain");
-  HRESULT res = D3D11CreateDeviceAndSwapChainEX (pAdapter,
-                                                 DriverType,
-                                                 Software,
-                                                 Flags,
-                                                 pFeatureLevels,
-                                                 FeatureLevels,
-                                                 SDKVersion,
-                                                 pSwapChainDesc,
-                                                 ppSwapChain,
-                                                 ppDevice,
-                                                 pFeatureLevel,
-                                                 ppImmediateContext);
+
+  HRESULT res =
+    D3D11CreateDeviceAndSwapChain_Import (pAdapter,
+                                          DriverType,
+                                          Software,
+                                          Flags,
+                                          pFeatureLevels,
+                                          FeatureLevels,
+                                          SDKVersion,
+                                          pSwapChainDesc,
+                                          ppSwapChain,
+                                          ppDevice,
+                                          pFeatureLevel,
+                                          ppImmediateContext);
 
   if (res == S_OK && (ppDevice != NULL))
     dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
 
   return res;
 }
-typedef HRESULT (STDMETHODCALLTYPE  *GetDesc2_t)(
-                 IDXGIAdapter2      *This,
-          _Out_  DXGI_ADAPTER_DESC2 *pDesc);
 
-GetDesc2_t GetDesc2_Original = NULL;
-
-HRESULT STDMETHODCALLTYPE GetDesc2_Override (IDXGIAdapter2*      This,
-                                      _Out_  DXGI_ADAPTER_DESC2* pDesc)
+HRESULT
+STDMETHODCALLTYPE GetDesc2_Override (IDXGIAdapter2      *This,
+                              _Out_  DXGI_ADAPTER_DESC2 *pDesc)
 {
   std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
@@ -929,14 +1125,9 @@ HRESULT STDMETHODCALLTYPE GetDesc2_Override (IDXGIAdapter2*      This,
   return ret;
 }
 
-typedef HRESULT (STDMETHODCALLTYPE  *GetDesc1_t)(
-                 IDXGIAdapter1      *This,
-          _Out_  DXGI_ADAPTER_DESC1 *pDesc);
-
-GetDesc1_t GetDesc1_Original = NULL;
-
-HRESULT STDMETHODCALLTYPE GetDesc1_Override (IDXGIAdapter1*      This,
-                                      _Out_  DXGI_ADAPTER_DESC1* pDesc)
+HRESULT
+STDMETHODCALLTYPE GetDesc1_Override (IDXGIAdapter1      *This,
+                              _Out_  DXGI_ADAPTER_DESC1 *pDesc)
 {
   std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
@@ -967,14 +1158,9 @@ HRESULT STDMETHODCALLTYPE GetDesc1_Override (IDXGIAdapter1*      This,
   return ret;
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *GetDesc_t)(
-         IDXGIAdapter      *This,
-  _Out_  DXGI_ADAPTER_DESC *pDesc);
-
-GetDesc_t GetDesc_Original = NULL;
-
-HRESULT STDMETHODCALLTYPE GetDesc_Override (IDXGIAdapter      *This,
-                                     _Out_  DXGI_ADAPTER_DESC *pDesc)
+HRESULT
+STDMETHODCALLTYPE GetDesc_Override (IDXGIAdapter      *This,
+                             _Out_  DXGI_ADAPTER_DESC *pDesc)
 {
   std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
@@ -1005,29 +1191,16 @@ HRESULT STDMETHODCALLTYPE GetDesc_Override (IDXGIAdapter      *This,
   return ret;
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *EnumAdapters_t)(
-        IDXGIFactory  *This,
-        UINT           Adapter,
-  _Out_ IDXGIAdapter **ppAdapter);
-
-typedef HRESULT (STDMETHODCALLTYPE *EnumAdapters1_t)(
-        IDXGIFactory1  *This,
-        UINT            Adapter,
-  _Out_ IDXGIAdapter1 **ppAdapter);
-
 typedef enum bmfUndesirableVendors {
   Microsoft = 0x1414,
   Intel     = 0x8086
 } Vendors;
 
-EnumAdapters1_t EnumAdapters1_Original = NULL;
-
 volatile bool init = false;
 
 #if 1
 DWORD
-WINAPI
-HookThread (LPVOID user)
+WINAPI HookThread (LPVOID user)
 {
   if (init) {
     //LeaveCriticalSection (&d3dhook_mutex);
@@ -1040,17 +1213,18 @@ HookThread (LPVOID user)
 
   dxgi_log.LogEx (true, L"Hooking D3D11CreateDeviceAndSwapChain... ");
 
-  MH_STATUS stat = MH_CreateHookApi (L"d3d11.dll",
-                                     "D3D11CreateDeviceAndSwapChain",
-                                     D3D11CreateDeviceAndSwapChain,
-                                     (void **)&D3D11CreateDeviceAndSwapChainEX);
+  MH_STATUS stat =
+    MH_CreateHookApi (L"d3d11.dll",
+                      "D3D11CreateDeviceAndSwapChain",
+                      D3D11CreateDeviceAndSwapChain,
+                      (void **)&D3D11CreateDeviceAndSwapChain_Import);
 
   if (stat != MH_ERROR_ALREADY_CREATED &&
       stat != MH_OK) {
     dxgi_log.LogEx (false, L" failed\n");
   }
   else {
-    dxgi_log.LogEx (false, L" %p\n", D3D11CreateDeviceAndSwapChainEX);
+    dxgi_log.LogEx (false, L" %p\n", D3D11CreateDeviceAndSwapChain_Import);
   }
 
   dxgi_log.LogEx (false, L"\n");
@@ -1068,17 +1242,22 @@ BMF_InstallD3D11DeviceHooks (void)
   WaitForInit ();
 
   EnterCriticalSection (&d3dhook_mutex);
-  HANDLE hThread = CreateThread (NULL, 0, HookThread, NULL, 0, NULL);
-  WaitForSingleObject  (hThread, INFINITE);
+  {
+    HANDLE hThread =
+      CreateThread (NULL, 0, HookThread, NULL, 0, NULL);
+
+    WaitForSingleObject (hThread, INFINITE);
+  }
   LeaveCriticalSection (&d3dhook_mutex);
 }
 
 
-HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
-                                               UINT            Adapter,
-                                        _Out_  IDXGIAdapter  **ppAdapter,
-                                            DXGI_ADAPTER_DESC *pDesc,
-                                               EnumAdapters_t  pFunc)
+HRESULT
+STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
+                                       UINT                Adapter,
+                                _Out_  IDXGIAdapter      **ppAdapter,
+                                       DXGI_ADAPTER_DESC  *pDesc,
+                                       EnumAdapters_t      pFunc)
 {
   // Logic to skip Intel and Microsoft adapters and return only AMD / NV
   if (lstrlenW (pDesc->Description)) {
@@ -1104,22 +1283,29 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
         }
       }
 
+      //
+      // If the adapter implements DXGI 1.3, then create a budget monitoring
+      //  thread...
+      //
       IDXGIAdapter3* pAdapter3;
-      if (S_OK ==
-          (*ppAdapter)->QueryInterface (
-            __uuidof (IDXGIAdapter3), (void **)&pAdapter3)) {
+      if (SUCCEEDED ((*ppAdapter)->QueryInterface (
+                        __uuidof (IDXGIAdapter3), (void **)&pAdapter3)))
+      {
+        // We darn sure better not spawn multiple threads!
         EnterCriticalSection (&budget_mutex);
-        if (hBudgetThread == NULL) {
-          // We're going to Release this interface after this loop, but
+
+        if (budget_thread == nullptr) {
+          // We're going to Release this interface after thread spawnning, but
           //   the running thread still needs a reference counted.
           pAdapter3->AddRef ();
 
           DWORD WINAPI BudgetThread (LPVOID user_data);
 
-          if (budget_thread == nullptr) {
-            budget_thread =
-              new budget_thread_params_t ();
-          }
+          budget_thread =
+            (budget_thread_params_t *)
+              HeapAlloc ( dll_heap,
+                            HEAP_ZERO_MEMORY,
+                              sizeof (budget_thread_params_t) );
 
           dxgi_log.LogEx (true,
                 L"   $ Spawning DXGI 1.3 Memory Budget Change Thread.: ");
@@ -1128,9 +1314,9 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
           budget_thread->tid      = 0;
           budget_thread->event    = 0;
           budget_thread->ready    = false;
-          budget_log.silent = true;
+          budget_log.silent       = true;
 
-          hBudgetThread =
+          budget_thread->handle =
             CreateThread (NULL, 0, BudgetThread, (LPVOID)budget_thread,
                           0, NULL);
 
@@ -1145,16 +1331,12 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
 
             HRESULT result =
               pAdapter3->RegisterVideoMemoryBudgetChangeNotificationEvent (
-              budget_thread->event, &budget_thread->cookie
-            );
+                budget_thread->event, &budget_thread->cookie
+              );
 
-            if (result == S_OK) {
+            if (SUCCEEDED (result)) {
               dxgi_log.LogEx (false, L"eid=0x%x, cookie=%u\n",
                           budget_thread->event, budget_thread->cookie);
-
-              // Immediately run the event loop one time
-              //SignalObjectAndWait (budget_thread->event, hBudgetThread,
-                                //0, TRUE);
             } else {
               dxgi_log.LogEx (false, L"Failed! (%s)\n",
                           BMF_DescribeHRESULT (result));
@@ -1163,6 +1345,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
             dxgi_log.LogEx (false, L"failed!\n");
           }
         }
+
         LeaveCriticalSection (&budget_mutex);
         int i = 0;
 
@@ -1170,14 +1353,18 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
                     L"   [DXGI 1.3]: Local Memory.....:");
 
         DXGI_QUERY_VIDEO_MEMORY_INFO mem_info;
-        while (S_OK ==
-                pAdapter3->QueryVideoMemoryInfo (
-                  i,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&mem_info)) {
-
+        while (SUCCEEDED (pAdapter3->QueryVideoMemoryInfo (
+                            i,
+                              DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                                &mem_info)
+                         )
+              )
+        {
           if (i > 0) {
             dxgi_log.LogEx (false, L"\n");
             dxgi_log.LogEx (true,  L"                                 ");
           }
+
           dxgi_log.LogEx (false,
                       L" Node%u (Reserve: %#5u / %#5u MiB - "
                       L"Budget: %#5u / %#5u MiB)",
@@ -1188,10 +1375,10 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
                       mem_info.Budget                  >> 20ULL);
 
           pAdapter3->SetVideoMemoryReservation (
-                    i-1,
+                    (i - 1),
                       DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
                         (i == 1 || USE_SLI) ? 
-                          mem_info.AvailableForReservation :
+                          uint64_t (mem_info.AvailableForReservation * 0.85f) :
                           0
           );
         }
@@ -1202,13 +1389,12 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
         dxgi_log.LogEx (true,
                     L"   [DXGI 1.3]: Non-Local Memory.:");
 
-        while ( S_OK ==
-                pAdapter3->QueryVideoMemoryInfo (
-                  i,
-                    DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
-                      &mem_info
-                )
-                )
+        while (SUCCEEDED (pAdapter3->QueryVideoMemoryInfo (
+                            i,
+                              DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+                                &mem_info)
+                          )
+              )
         {
           if (i > 0) {
             dxgi_log.LogEx (false, L"\n");
@@ -1224,22 +1410,18 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
                       mem_info.Budget                  >> 20ULL );
 
             pAdapter3->SetVideoMemoryReservation (
-                    i-1,
+                    (i - 1),
                       DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
                         (i == 1 || USE_SLI) ?
-                          mem_info.AvailableForReservation :
+                          uint64_t (mem_info.AvailableForReservation * 0.85f) :
                           0
           );
         }
+
+        pAdapter3->Release ();
       }
 
       dxgi_log.LogEx (false, L"\n");
-
-      // This sounds good in theory, but we have a tendancy to underflow
-      //   the reference counter and I don't know why you'd even really
-      //     care about references to a DXGI adapter. Keep it alvie as
-      //       long as possible to prevent nasty things from happening.
-      //pAdapter3->Release ();
     }
 
     dxgi_log.Log(L"   @ Returning Adapter w/ Name: %s\n",pDesc->Description);
@@ -1248,9 +1430,10 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory   *This,
   return S_OK;
 }
 
-HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
-                                                  UINT            Adapter,
-                                           _Out_  IDXGIAdapter1 **ppAdapter)
+HRESULT
+STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
+                                          UINT            Adapter,
+                                   _Out_  IDXGIAdapter1 **ppAdapter)
 {
   std::wstring iname = BMF_GetDXGIFactoryInterface (This);
 
@@ -1260,7 +1443,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
   HRESULT ret;
   DXGI_CALL (ret, EnumAdapters1_Original (This,Adapter,ppAdapter));
 
-  if (ret == S_OK) {
+  if (SUCCEEDED (ret)) {
     if (! GetDesc1_Original) {
       // Only do this for NVIDIA GPUs
       if (nvapi_init) {
@@ -1282,11 +1465,10 @@ HRESULT STDMETHODCALLTYPE EnumAdapters1_Override (IDXGIFactory1  *This,
   return ret;
 }
 
-static EnumAdapters_t EnumAdapters_Original = NULL;
-
-HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
-                                                 UINT           Adapter,
-                                          _Out_  IDXGIAdapter **ppAdapter)
+HRESULT
+STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
+                                         UINT           Adapter,
+                                  _Out_  IDXGIAdapter **ppAdapter)
 {
   std::wstring iname = BMF_GetDXGIFactoryInterface (This);
 
@@ -1296,7 +1478,7 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
   HRESULT ret;
   DXGI_CALL (ret, EnumAdapters_Original (This, Adapter, ppAdapter));
 
-  if (ret == S_OK) {
+  if (SUCCEEDED (ret)) {
     if (! GetDesc_Original) {
       // Only do this for NVIDIA GPUs
       if (nvapi_init) {
@@ -1318,141 +1500,141 @@ HRESULT STDMETHODCALLTYPE EnumAdapters_Override (IDXGIFactory  *This,
   return ret;
 }
 
-  _declspec (dllexport)
-  HRESULT
-  WINAPI
-  CreateDXGIFactory (REFIID         riid,
-                       _Out_ void** ppFactory) {
-    BMF_InstallD3D11DeviceHooks ();
+__declspec (dllexport)
+HRESULT
+WINAPI CreateDXGIFactory (REFIID   riid,
+                    _Out_ void   **ppFactory)
+{
+  BMF_InstallD3D11DeviceHooks ();
 
-    std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
+  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
 
-    DXGI_LOG_CALL_2 (L"CreateDXGIFactory", L"%s, %08Xh",
-                     iname.c_str (), ppFactory);
+  DXGI_LOG_CALL_2 (L"CreateDXGIFactory", L"%s, %08Xh",
+                   iname.c_str (), ppFactory);
 
-    HRESULT ret;
-    DXGI_CALL (ret, CreateDXGIFactoryEX (riid, ppFactory));
+  HRESULT ret;
+  DXGI_CALL (ret, CreateDXGIFactory_Import (riid, ppFactory));
 
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 7, "IDXGIFactory::EnumAdapters",
-                           EnumAdapters_Override, EnumAdapters_Original,
-                           EnumAdapters_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 7, "IDXGIFactory::EnumAdapters",
+                         EnumAdapters_Override, EnumAdapters_Original,
+                         EnumAdapters_t);
 
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory::CreateSwapChain",
-                           CreateSwapChain_Override, CreateSwapChain_Original,
-                           CreateSwapChain_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory::CreateSwapChain",
+                         CreateSwapChain_Override, CreateSwapChain_Original,
+                         CreateSwapChain_t);
 
-    return ret;
-  }
+  return ret;
+}
 
-  _declspec (dllexport)
-  HRESULT
-  WINAPI
-  CreateDXGIFactory1 (REFIID          riid,
-                         _Out_ void** ppFactory) {
-    BMF_InstallD3D11DeviceHooks ();
+__declspec (dllexport)
+HRESULT
+WINAPI CreateDXGIFactory1 (REFIID   riid,
+                     _Out_ void   **ppFactory)
+{
+  BMF_InstallD3D11DeviceHooks ();
 
-    std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
+  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
 
-    DXGI_LOG_CALL_2 (L"CreateDXGIFactory1", L"%s, %08Xh",
-                     iname.c_str (), ppFactory);
+  DXGI_LOG_CALL_2 (L"CreateDXGIFactory1", L"%s, %08Xh",
+                   iname.c_str (), ppFactory);
 
-    HRESULT ret;
-    DXGI_CALL (ret, CreateDXGIFactory1EX (riid, ppFactory));
+  HRESULT ret;
+  DXGI_CALL (ret, CreateDXGIFactory1_Import (riid, ppFactory));
 
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 7,  "IDXGIFactory1::EnumAdapters",
-                           EnumAdapters_Override,  EnumAdapters_Original,
-                           EnumAdapters_t);
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
-                           EnumAdapters1_Override, EnumAdapters1_Original,
-                           EnumAdapters1_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 7,  "IDXGIFactory1::EnumAdapters",
+                         EnumAdapters_Override,  EnumAdapters_Original,
+                         EnumAdapters_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
+                         EnumAdapters1_Override, EnumAdapters1_Original,
+                         EnumAdapters1_t);
 
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory::CreateSwapChain",
-                           CreateSwapChain_Override, CreateSwapChain_Original,
-                           CreateSwapChain_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory1::CreateSwapChain",
+                         CreateSwapChain_Override, CreateSwapChain_Original,
+                         CreateSwapChain_t);
 
-    return ret;
-  }
+  return ret;
+}
 
-  _declspec (dllexport)
-  HRESULT
-  WINAPI
-  CreateDXGIFactory2 (UINT            Flags,
-                      REFIID          riid,
-                         _Out_ void **ppFactory) {
-    BMF_InstallD3D11DeviceHooks ();
+__declspec (dllexport)
+HRESULT
+WINAPI CreateDXGIFactory2 (UINT     Flags,
+                           REFIID   riid,
+                     _Out_ void   **ppFactory)
+{
+  BMF_InstallD3D11DeviceHooks ();
 
-    std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
+  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
 
-    DXGI_LOG_CALL_3 (L"CreateDXGIFactory2", L"0x%04X, %s, %08Xh",
-                    Flags, iname.c_str (), ppFactory);
+  DXGI_LOG_CALL_3 (L"CreateDXGIFactory2", L"0x%04X, %s, %08Xh",
+                  Flags, iname.c_str (), ppFactory);
 
-    HRESULT ret;
-    DXGI_CALL (ret, CreateDXGIFactory2EX (Flags, riid, ppFactory));
+  HRESULT ret;
+  DXGI_CALL (ret, CreateDXGIFactory2_Import (Flags, riid, ppFactory));
 
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 7, "IDXGIFactory2::EnumAdapters",
-                           EnumAdapters_Override, EnumAdapters_Original,
-                           EnumAdapters_t);
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
-                           EnumAdapters1_Override, EnumAdapters1_Original,
-                           EnumAdapters1_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 7, "IDXGIFactory2::EnumAdapters",
+                         EnumAdapters_Override, EnumAdapters_Original,
+                         EnumAdapters_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
+                         EnumAdapters1_Override, EnumAdapters1_Original,
+                         EnumAdapters1_t);
 
-    DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory::CreateSwapChain",
-                           CreateSwapChain_Override, CreateSwapChain_Original,
-                           CreateSwapChain_t);
+  DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory2::CreateSwapChain",
+                         CreateSwapChain_Override, CreateSwapChain_Original,
+                         CreateSwapChain_t);
 
-    return ret;
-  }
+  return ret;
+}
 
-  DXGI_STUB (HRESULT, DXGID3D10CreateDevice,
+DXGI_STUB (HRESULT, DXGID3D10CreateDevice,
     (HMODULE hModule, IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
      UINT    Flags,   void         *unknown,  void         *ppDevice),
     (hModule, pFactory, pAdapter, Flags, unknown, ppDevice));
 
-  struct UNKNOWN5 {
-    DWORD unknown [5];
-  };
+struct UNKNOWN5 {
+  DWORD unknown [5];
+};
 
-  DXGI_STUB (HRESULT, DXGID3D10CreateLayeredDevice,
-             (UNKNOWN5 Unknown),
-             (Unknown))
+DXGI_STUB (HRESULT, DXGID3D10CreateLayeredDevice,
+           (UNKNOWN5 Unknown),
+           (Unknown))
 
-  DXGI_STUB (SIZE_T, DXGID3D10GetLayeredDeviceSize,
-             (const void *pLayers, UINT NumLayers),
-             (pLayers, NumLayers))
+DXGI_STUB (SIZE_T, DXGID3D10GetLayeredDeviceSize,
+           (const void *pLayers, UINT NumLayers),
+           (pLayers, NumLayers))
 
-  DXGI_STUB (HRESULT, DXGID3D10RegisterLayers,
-             (const void *pLayers, UINT NumLayers),
-             (pLayers, NumLayers))
+DXGI_STUB (HRESULT, DXGID3D10RegisterLayers,
+           (const void *pLayers, UINT NumLayers),
+           (pLayers, NumLayers))
 
-  __declspec (dllexport)
-  HRESULT
-  STDMETHODCALLTYPE
-  DXGIDumpJournal (void)
+__declspec (dllexport)
+HRESULT
+STDMETHODCALLTYPE DXGIDumpJournal (void)
+{
+  DXGI_LOG_CALL_0 (L"DXGIDumpJournal");
+
+  return E_NOTIMPL;
+}
+
+__declspec (dllexport)
+HRESULT
+STDMETHODCALLTYPE DXGIReportAdapterConfiguration (void)
+{
+  DXGI_LOG_CALL_0 (L"DXGIReportAdapterConfiguration");
+
+  return E_NOTIMPL;
+}
+
+DWORD
+WINAPI DllThread (LPVOID param)
+{
+  EnterCriticalSection (&init_mutex);
   {
-    DXGI_LOG_CALL_0 (L"DXGIDumpJournal");
-
-    return E_NOTIMPL;
-  }
-
-  _declspec (dllexport)
-  HRESULT
-  STDMETHODCALLTYPE
-  DXGIReportAdapterConfiguration (void)
-  {
-    DXGI_LOG_CALL_0 (L"DXGIReportAdapterConfiguration");
-
-    return E_NOTIMPL;
-  }
-
-  DWORD
-  WINAPI
-  DllThread (LPVOID param) {
-    EnterCriticalSection (&init_mutex);
     BMF_Init ();
-    LeaveCriticalSection (&init_mutex);
-
-    return 0;
   }
+  LeaveCriticalSection (&init_mutex);
+
+  return 0;
+}
 
 #include <ctime>
 const uint32_t BUDGET_POLL_INTERVAL = 66UL; // How often to sample the budget
@@ -1464,187 +1646,180 @@ const uint32_t BUDGET_POLL_INTERVAL = 66UL; // How often to sample the budget
 #define OSD_PRINTF if (print_mem_stats) { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
-  DWORD
-  WINAPI
-  BudgetThread (LPVOID user_data)
-  {
-    budget_thread_params_t* params =
-      (budget_thread_params_t *)user_data;
+DWORD
+WINAPI BudgetThread (LPVOID user_data)
+{
+  budget_thread_params_t* params =
+    (budget_thread_params_t *)user_data;
 
-    if (budget_log.init ("dxgi_budget.log", "w")) {
-      params->tid       = GetCurrentThreadId ();
-      params->event     = CreateEvent (NULL, FALSE, FALSE, L"DXGIMemoryBudget");
-      budget_log.silent = true;
-      params->ready     = true;
+  if (budget_log.init ("dxgi_budget.log", "w")) {
+    params->tid       = GetCurrentThreadId ();
+    params->event     = CreateEvent (NULL, FALSE, FALSE, L"DXGIMemoryBudget");
+    budget_log.silent = true;
+    params->ready     = true;
+  } else {
+    params->tid    = 0;
+    params->ready  = true; // Not really :P
+    return -1;
+  }
+
+  HANDLE hThreadHeap =        HeapCreate (0, 0, 0);
+  char*  szOSD       =(char *)HeapAlloc  (hThreadHeap, HEAP_ZERO_MEMORY, 4096);
+  char*  pszOSD      =        szOSD;
+
+  enum buffer {
+    Front = 0,
+    Back  = 1,
+    NumBuffers
+  } buffer = Front;
+
+  const int MAX_NODES = 4;
+
+  struct mem_info_t {
+    DXGI_QUERY_VIDEO_MEMORY_INFO local    [MAX_NODES];
+    DXGI_QUERY_VIDEO_MEMORY_INFO nonlocal [MAX_NODES];
+    SYSTEMTIME                   time;
+  } mem_info [NumBuffers];
+
+  while (params->ready) {
+    DWORD dwWaitStatus = WaitForSingleObject (params->event,
+                                              BUDGET_POLL_INTERVAL);
+
+    static bool print_mem_stats = true;
+#if 0
+    BYTE keys [256];
+    GetKeyboardState (keys);
+    if (keys [VK_CONTROL] && keys [VK_SHIFT] && keys ['M'])
+#else
+    static bool toggle = false;
+    if (HIWORD (GetAsyncKeyState (VK_CONTROL)) &&
+        HIWORD (GetAsyncKeyState (VK_SHIFT))   &&
+        HIWORD (GetAsyncKeyState ('M'))) {
+      if (! toggle)
+        print_mem_stats = (! print_mem_stats);
+      toggle = true;
     } else {
-      params->tid    = 0;
-      params->ready  = true; // Not really :P
-      return -1;
+      toggle = false;
+    }
+#endif
+
+    if (! params->ready) {
+      ResetEvent (params->event);
+      break;
     }
 
-    HANDLE hThreadHeap =  HeapCreate (0, 0, 0);
-    char* szOSD  = (char *)HeapAlloc (hThreadHeap, HEAP_ZERO_MEMORY, 4096);
-    char* pszOSD = szOSD;
+    if (buffer == Front)
+      buffer = Back;
+    else
+      buffer = Front;
 
-    enum buffer {
-      Front = 0,
-      Back  = 1,
-      NumBuffers
-    } buffer = Front;
+    GetLocalTime (&mem_info [buffer].time);
 
-    const int MAX_NODES = 4;
+    int node = 0;
 
-    struct mem_info_t {
-      DXGI_QUERY_VIDEO_MEMORY_INFO local    [MAX_NODES];
-      DXGI_QUERY_VIDEO_MEMORY_INFO nonlocal [MAX_NODES];
-      SYSTEMTIME                   time;
-    } mem_info [NumBuffers];
+    while (node < MAX_NODES &&
+           SUCCEEDED (params->pAdapter->QueryVideoMemoryInfo (
+                        node,
+                          DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                            &mem_info [buffer].local [node++])
+                     )
+          ) ;
 
-    while (params->ready) {
-      DWORD dwWaitStatus = WaitForSingleObject (params->event,
-                                                BUDGET_POLL_INTERVAL);
+    node = 0;
 
-      static bool print_mem_stats = true;
+    while (node < MAX_NODES &&
+           SUCCEEDED (params->pAdapter->QueryVideoMemoryInfo (
+                        node,
+                          DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
+                            &mem_info [buffer].nonlocal [node++])
+                     )
+          ) ;
+
+    int nodes = node - 1;
+
 #if 0
-      BYTE keys [256];
-      GetKeyboardState (keys);
-
-      if (keys [VK_CONTROL] && keys [VK_SHIFT] && keys ['M'])
-#else
-      static bool toggle = false;
-      if (HIWORD (GetAsyncKeyState (VK_CONTROL)) &&
-          HIWORD (GetAsyncKeyState (VK_SHIFT))   &&
-          HIWORD (GetAsyncKeyState ('M'))) {
-        if (! toggle)
-          print_mem_stats = (! print_mem_stats);
-        toggle = true;
+    static time_t last_flush = time (NULL);
+    static time_t last_empty = time (NULL);
+    static uint64_t last_budget =
+      mem_info [buffer].local [0].Budget;
+    static bool queued_flush = false;
+    if (dwWaitStatus == WAIT_OBJECT_0 && last_budget >
+                                         mem_info [buffer].local [0].Budget)
+      queued_flush = true;
+    if (FlushAllCaches != nullptr
+        && (last_budget > mem_info [buffer].local [0].Budget && time (NULL) -
+            last_flush > 2 ||
+            (queued_flush && time (NULL) - last_flush > 2)
+           )
+       )
+    {
+      bool silence = budget_log.silent;
+      budget_log.silent = false;
+      if (last_budget > mem_info [buffer].local [0].Budget) {
+        budget_log.Log (
+          L"Flushing caches because budget shrunk... (%05u MiB --> %05u MiB)",
+                        last_budget >> 20ULL,
+                        mem_info [buffer].local [0].Budget >> 20ULL);
       } else {
-        toggle = false;
+        budget_log.Log (
+          L"Flushing caches due to deferred budget shrink... (%u second(s))",
+                        2);
       }
+      SetSystemFileCacheSize (-1, -1, NULL);
+      FlushAllCaches (StreamMgr);
+      last_flush = time (NULL);
+      budget_log.Log (L" >> Compacting Process Heap...");
+      HANDLE hHeap = GetProcessHeap ();
+      HeapCompact (hHeap, 0);
+      struct heap_opt_t {
+        DWORD version;
+        DWORD length;
+      } heap_opt;
+        
+      heap_opt.version = 1;
+      heap_opt.length  = sizeof (heap_opt_t);
+      HeapSetInformation (NULL, (_HEAP_INFORMATION_CLASS)3, &heap_opt,
+                                 heap_opt.length);
+      budget_log.silent = silence;
+      queued_flush = false;
+    }
 #endif
+    //if (dwWaitStatus == WAIT_OBJECT_0)
+    //last_budget = mem_info [buffer].local [0].Budget;
 
-      if (! params->ready) {
-        ResetEvent (params->event);
-        break;
-      }
+    pszOSD = szOSD;
 
-      //if (dwWaitStatus != WAIT_OBJECT_0)
-        //continue;
+    if (nodes > 0) {
+      int i = 0;
 
-      if (buffer == Front)
-        buffer = Back;
-      else
-        buffer = Front;
+      budget_log.LogEx (true, L"   [DXGI 1.3]: Local Memory.....:");
 
-      GetLocalTime (&mem_info [buffer].time);
+      OSD_PRINTF "\n"
+                 "----- [DXGI 1.3]: Local Memory -----------"
+                 "------------------------------------------"
+                 "-\n"
+      OSD_END
 
-      int node = 0;
+      while (i < nodes) {
+        if (dwWaitStatus == WAIT_OBJECT_0)
+          mem_stats [i].budget_changes++;
 
-      while (node < MAX_NODES &&
-             S_OK == params->pAdapter->QueryVideoMemoryInfo (
-               node, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
-               &mem_info [buffer].local [node++])) ;
-
-      node = 0;
-
-      while (node < MAX_NODES &&
-             S_OK == params->pAdapter->QueryVideoMemoryInfo (
-               node, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
-               &mem_info [buffer].nonlocal [node++])) ;
-
-      int nodes = node - 1;
-
-#if 0
-      static time_t last_flush = time (NULL);
-      static time_t last_empty = time (NULL);
-
-
-      static uint64_t last_budget =
-        mem_info [buffer].local [0].Budget;
-
-      static bool queued_flush = false;
-
-      if (dwWaitStatus == WAIT_OBJECT_0 && last_budget > mem_info [buffer].local [0].Budget)
-        queued_flush = true;
-
-      if (FlushAllCaches != nullptr
-          && (last_budget > mem_info [buffer].local [0].Budget && time (NULL) - last_flush > 2 ||
-              (queued_flush && time (NULL) - last_flush > 2)
-             )
-         )
-      {
-        bool silence = budget_log.silent;
-        budget_log.silent = false;
-        if (last_budget > mem_info [buffer].local [0].Budget) {
-          budget_log.Log (
-            L"Flushing caches because budget shrunk... (%05u MiB --> %05u MiB)",
-                          last_budget >> 20ULL,
-                          mem_info [buffer].local [0].Budget >> 20ULL);
-        } else {
-          budget_log.Log (
-            L"Flushing caches due to deferred budget shrink... (%u second(s))",
-                          2);
+        if (i > 0) {
+          budget_log.LogEx (false, L"\n");
+          budget_log.LogEx (true,  L"                                 ");
         }
 
-        SetSystemFileCacheSize (-1, -1, NULL);
-        FlushAllCaches (StreamMgr);
+        OSD_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  - "
+                   " Budget:  %05u / %05u MiB)\n",
+                  nodes > 1 ? (nvapi_init ? "SLI Node" : "CFX Node") : "GPU",
+                  i,
+                  mem_info [buffer].local [i].CurrentReservation      >> 20ULL,
+                  mem_info [buffer].local [i].AvailableForReservation >> 20ULL,
+                  mem_info [buffer].local [i].CurrentUsage            >> 20ULL,
+                  mem_info [buffer].local [i].Budget                  >> 20ULL
+        OSD_END
 
-        last_flush = time (NULL);
-
-        budget_log.Log (L" >> Compacting Process Heap...");
-
-        HANDLE hHeap = GetProcessHeap ();
-        HeapCompact (hHeap, 0);
-
-        struct heap_opt_t {
-          DWORD version;
-          DWORD length;
-        } heap_opt;
-        
-        heap_opt.version = 1;
-        heap_opt.length  = sizeof (heap_opt_t);
-
-        HeapSetInformation (NULL, (_HEAP_INFORMATION_CLASS)3, &heap_opt, heap_opt.length);
-
-        budget_log.silent = silence;
-        queued_flush = false;
-      }
-#endif
-      //if (dwWaitStatus == WAIT_OBJECT_0)
-      //last_budget = mem_info [buffer].local [0].Budget;
-
-      pszOSD = szOSD;
-
-      if (nodes > 0) {
-        int i = 0;
-
-        budget_log.LogEx (true, L"   [DXGI 1.3]: Local Memory.....:");
-
-        OSD_PRINTF "\n"
-                                   "----- [DXGI 1.3]: Local Memory -----------"
-                                   "------------------------------------------"
-                                   "-\n"
-          OSD_END
-
-        while (i < nodes) {
-          if (dwWaitStatus == WAIT_OBJECT_0)
-            mem_stats [i].budget_changes++;
-
-          if (i > 0) {
-            budget_log.LogEx (false, L"\n");
-            budget_log.LogEx (true,  L"                                 ");
-          }
-          OSD_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  - "
-                     " Budget:  %05u / %05u MiB)\n",
-                   nodes > 1 ? (nvapi_init ? "SLI Node" : "CFX Node") : "GPU",
-                   i,
-                   mem_info [buffer].local [i].CurrentReservation >> 20ULL,
-                   mem_info [buffer].local [i].AvailableForReservation >> 20ULL,
-                   mem_info [buffer].local [i].CurrentUsage >> 20ULL,
-                   mem_info [buffer].local [i].Budget >> 20ULL
-            OSD_END
-
-          budget_log.LogEx (false,
+        budget_log.LogEx (false,
                            L" Node%u (Reserve: %#5u / %#5u MiB - "
                            L"Budget: %#5u / %#5u MiB)",
                          i,
@@ -1653,127 +1828,129 @@ const uint32_t BUDGET_POLL_INTERVAL = 66UL; // How often to sample the budget
                  mem_info [buffer].local [i].CurrentUsage            >> 20ULL,
                  mem_info [buffer].local [i].Budget                  >> 20ULL);
 
-          min_max (mem_info [buffer].local [i].AvailableForReservation,
-                   mem_stats [i].min_avail_reserve,
-                   mem_stats [i].max_avail_reserve);
+        min_max (mem_info [buffer].local [i].AvailableForReservation,
+                 mem_stats [i].min_avail_reserve,
+                 mem_stats [i].max_avail_reserve);
 
-          min_max (mem_info [buffer].local [i].CurrentReservation,
-                   mem_stats [i].min_reserve,
-                   mem_stats [i].max_reserve);
+        min_max (mem_info [buffer].local [i].CurrentReservation,
+                 mem_stats [i].min_reserve,
+                 mem_stats [i].max_reserve);
 
-          min_max (mem_info [buffer].local [i].CurrentUsage,
-                   mem_stats [i].min_usage,
-                   mem_stats [i].max_usage);
+        min_max (mem_info [buffer].local [i].CurrentUsage,
+                 mem_stats [i].min_usage,
+                 mem_stats [i].max_usage);
 
-          min_max (mem_info [buffer].local [i].Budget,
-                   mem_stats [i].min_budget,
-                   mem_stats [i].max_budget);
+        min_max (mem_info [buffer].local [i].Budget,
+                 mem_stats [i].min_budget,
+                 mem_stats [i].max_budget);
 
-          if (mem_info [buffer].local [i].CurrentUsage >
-              mem_info [buffer].local [i].Budget) {
-            uint64_t over_budget =
-              mem_info [buffer].local [i].CurrentUsage -
-                mem_info [buffer].local [i].Budget;
+        if (mem_info [buffer].local [i].CurrentUsage >
+            mem_info [buffer].local [i].Budget) {
+          uint64_t over_budget =
+            mem_info [buffer].local [i].CurrentUsage -
+              mem_info [buffer].local [i].Budget;
 
-            min_max (over_budget, mem_stats [i].min_over_budget,
-                                  mem_stats [i].max_over_budget);
-          }
-          i++;
+          min_max (over_budget, mem_stats [i].min_over_budget,
+                                mem_stats [i].max_over_budget);
         }
-        budget_log.LogEx (false, L"\n");
+        i++;
+      }
+      budget_log.LogEx (false, L"\n");
 
-        i = 0;
+      i = 0;
 
-        OSD_PRINTF "----- [DXGI 1.3]: Non-Local Memory -------"
-                   "------------------------------------------"
-                   "\n"
-        OSD_END
+      OSD_PRINTF "----- [DXGI 1.3]: Non-Local Memory -------"
+                 "------------------------------------------"
+                 "\n"
+      OSD_END
 
-        budget_log.LogEx (true,
-                          L"   [DXGI 1.3]: Non-Local Memory.:");
+      budget_log.LogEx (true,
+                        L"   [DXGI 1.3]: Non-Local Memory.:");
 
-        while (i < nodes) {
-          if (i > 0) {
-            budget_log.LogEx (false, L"\n");
-            budget_log.LogEx (true,  L"                                 ");
-          }
+      while (i < nodes) {
+        if (i > 0) {
+          budget_log.LogEx (false, L"\n");
+          budget_log.LogEx (true,  L"                                 ");
+        }
 
-          OSD_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  -  "
-                     "Budget:  %05u / %05u MiB)\n",
-                         nodes > 1 ? "SLI Node" : "GPU",
-                         i,
+        OSD_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  -  "
+                   "Budget:  %05u / %05u MiB)\n",
+                       nodes > 1 ? "SLI Node" : "GPU",
+                       i,
               mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
               mem_info [buffer].nonlocal [i].AvailableForReservation >> 20ULL,
               mem_info [buffer].nonlocal [i].CurrentUsage            >> 20ULL,
               mem_info [buffer].nonlocal [i].Budget                  >> 20ULL
-          OSD_END
+        OSD_END
 
-          budget_log.LogEx (false,
-                           L" Node%u (Reserve: %#5u / %#5u MiB - "
-                           L"Budget: %#5u / %#5u MiB)",
-                         i,
+        budget_log.LogEx (false,
+                          L" Node%u (Reserve: %#5u / %#5u MiB - "
+                          L"Budget: %#5u / %#5u MiB)",
+                        i,
               mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
               mem_info [buffer].nonlocal [i].AvailableForReservation >> 20ULL,
               mem_info [buffer].nonlocal [i].CurrentUsage            >> 20ULL,
               mem_info [buffer].nonlocal [i].Budget                  >> 20ULL);
-          i++;
-        }
-
-        OSD_PRINTF "----- [DXGI 1.3]: Miscellaneous ----------"
-                   "------------------------------------------"
-                   "---\n"
-        OSD_END
-
-        int64_t headroom = mem_info [buffer].local [0].Budget -
-                           mem_info [buffer].local [0].CurrentUsage;
-
-        OSD_PRINTF "  Max. Resident Set:  %05u MiB  -"
-                   "  Max. Over Budget:  %05u MiB\n"
-                   "    Budget Changes:  %06u       -    "
-                   "       Budget Left:  %05i MiB",
-                                        mem_stats [0].max_usage       >> 20ULL,
-                                        mem_stats [0].max_over_budget >> 20ULL,
-                                        mem_stats [0].budget_changes,
-                           headroom / 1024 / 1024
-        OSD_END
-
-        budget_log.LogEx (false, L"\n");
+        i++;
       }
 
-      if (print_mem_stats)
-        UpdateOSD (szOSD);
-      else
-        UpdateOSD (" ");
+      OSD_PRINTF "----- [DXGI 1.3]: Miscellaneous ----------"
+                 "------------------------------------------"
+                 "---\n"
+      OSD_END
 
-      ResetEvent (params->event);
+      int64_t headroom = mem_info [buffer].local [0].Budget -
+                         mem_info [buffer].local [0].CurrentUsage;
+
+      OSD_PRINTF "  Max. Resident Set:  %05u MiB  -"
+                 "  Max. Over Budget:  %05u MiB\n"
+                 "    Budget Changes:  %06u       -    "
+                 "       Budget Left:  %05i MiB",
+                                      mem_stats [0].max_usage       >> 20ULL,
+                                      mem_stats [0].max_over_budget >> 20ULL,
+                                      mem_stats [0].budget_changes,
+                                      headroom / 1024 / 1024
+      OSD_END
+
+      budget_log.LogEx (false, L"\n");
     }
 
-    HeapFree    (hThreadHeap, 0, szOSD);
-    HeapDestroy (hThreadHeap);
+    if (print_mem_stats)
+      UpdateOSD (szOSD);
+    else
+      UpdateOSD (" ");
 
-    return 0;
+    ResetEvent (params->event);
   }
 
-  static volatile HANDLE hInitThread = { 0 };
+  HeapFree    (hThreadHeap, 0, szOSD);
+  HeapDestroy (hThreadHeap);
 
-  void
-  WaitForInit (void) {
-    while (! hInitThread) ;
+  return 0;
+}
 
-    WaitForSingleObject (hInitThread, INFINITE);
-  }
+static volatile HANDLE hInitThread = { 0 };
+
+void
+WaitForInit (void)
+{
+  while (! hInitThread) ;
+
+  WaitForSingleObject (hInitThread, INFINITE);
+}
 }
 
 BOOL
-APIENTRY
-DllMain ( HMODULE hModule,
-          DWORD   ul_reason_for_call,
-          LPVOID  lpReserved )
+APIENTRY DllMain ( HMODULE hModule,
+                   DWORD   ul_reason_for_call,
+                   LPVOID  lpReserved )
 {
   switch (ul_reason_for_call)
   {
     case DLL_PROCESS_ATTACH:
     {
+      dll_heap = HeapCreate (0, 0, 0);
+
       MH_Initialize ();
 
       //LoadLibrary (L"d3d11.dll");
@@ -1783,20 +1960,26 @@ DllMain ( HMODULE hModule,
       InitializeCriticalSection (&d3dhook_mutex);
 
       hInitThread = CreateThread (NULL, 0, DllThread, NULL, 0, NULL);
-      WaitForSingleObject (hInitThread, 100U);
+
+      // Give other DXGI hookers time to queue up before processing any calls
+      //   that they make. But don't wait here infinitely, or we will deadlock!
+
+      WaitForSingleObject (hInitThread, 250UL); /* 0.25 secs seems adequate */
     } break;
 
     case DLL_THREAD_ATTACH:
-      //dxgi_log.Log (L"Custom dxgi.dll Attached (tid=%x)", GetCurrentThreadId ());
+      //dxgi_log.Log (L"Custom dxgi.dll Attached (tid=%x)",
+      //                GetCurrentThreadId ());
       break;
 
     case DLL_THREAD_DETACH:
-      //dxgi_log.Log (L"Custom dxgi.dll Detached (tid=%x)", GetCurrentThreadId ());
+      //dxgi_log.Log (L"Custom dxgi.dll Detached (tid=%x)",
+      //                GetCurrentThreadId ());
       break;
 
     case DLL_PROCESS_DETACH:
     {
-      if (hBudgetThread != NULL) {
+      if (budget_thread != nullptr) {
         dxgi_log.LogEx (
               true,
                 L"Shutting down DXGI 1.3 Memory Budget Change Thread... "
@@ -1804,12 +1987,10 @@ DllMain ( HMODULE hModule,
 
         budget_thread->ready  = false;
 
-        SignalObjectAndWait (budget_thread->event, hBudgetThread, INFINITE,
-                             TRUE);
+        SignalObjectAndWait (budget_thread->event, budget_thread->handle,
+                             INFINITE, TRUE);
 
         dxgi_log.LogEx (false, L"done!\n");
-
-        budget_thread_params_t* params = budget_thread;
 
         // Record the final statistics always
         budget_log.silent = false;
@@ -1846,7 +2027,6 @@ DllMain ( HMODULE hModule,
                     mem_stats [i].min_reserve >> 20ULL);
         BMF_BLogEx (params, true, L"       Max Reserve:       %05u MiB\n",
                     mem_stats [i].max_reserve >> 20ULL);
-
         BMF_BLogEx (params, true, L"       Min Avail Reserve: %05u MiB\n",
                     mem_stats [i].min_avail_reserve >> 20ULL);
         BMF_BLogEx (params, true, L"       Max Avail Reserve: %05u MiB\n",
@@ -1864,20 +2044,21 @@ DllMain ( HMODULE hModule,
           }
         }
 
-        //params->pAdapter->UnregisterVideoMemoryBudgetChangeNotification
-          //(params->cookie);
+        //budget_thread->pAdapter->UnregisterVideoMemoryBudgetChangeNotification
+          //(budget_thread->cookie);
 
-        //params->pAdapter->Release ();
+        //budget_thread->pAdapter->Release ();
 
-        hBudgetThread = NULL;
+        HeapFree (dll_heap, NULL, budget_thread);
+        budget_thread = nullptr;
       }
 
       ReleaseOSD ();
 
-      SymCleanup (GetCurrentProcess ());
-
+      // Hopefully these things are done by now...
       DeleteCriticalSection (&init_mutex);
       DeleteCriticalSection (&d3dhook_mutex);
+      DeleteCriticalSection (&budget_mutex);
 
       MH_Uninitialize ();
 
@@ -1886,6 +2067,10 @@ DllMain ( HMODULE hModule,
 
       budget_log.close ();
       dxgi_log.close   ();
+
+      HeapDestroy (dll_heap);
+
+      SymCleanup (GetCurrentProcess ());
     }
     break;
   }
