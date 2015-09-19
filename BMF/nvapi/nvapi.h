@@ -7,11 +7,11 @@
  /***************************************************************************\
 |*                                                                           *|
 |*      Copyright 2005-2010 NVIDIA Corporation.  All rights reserved.        *|
-|*                                                                           *|     
-|*   NOTICE TO USER:                                                         *|                 
+|*                                                                           *|
+|*   NOTICE TO USER:                                                         *|
 |*                                                                           *|
 |*   This source code is subject to NVIDIA ownership rights under U.S.       *|
-|*   and international Copyright laws.  Users and possessors of this         *| 
+|*   and international Copyright laws.  Users and possessors of this         *|
 |*   source code are hereby granted a nonexclusive, royalty-free             *|
 |*   license to use this code in individual and commercial software.         *|
 |*                                                                           *|
@@ -24,7 +24,7 @@
 |*   INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES          *|
 |*   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN      *|
 |*   AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING     *|
-|*   OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOURCE      *| 
+|*   OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOURCE      *|
 |*   CODE.                                                                   *|
 |*                                                                           *|
 |*   U.S. Government End Users. This source code is a "commercial item"      *|
@@ -36,8 +36,8 @@
 |*   227.7202-4 (JUNE 1995), all U.S. Government End Users acquire the       *|
 |*   source code with only those rights set forth herein.                    *|
 |*                                                                           *|
-|*   Any use of this source code in individual and commercial software must  *| 
-|*   include, in the user documentation and internal comments to the code,   *| 
+|*   Any use of this source code in individual and commercial software must  *|
+|*   include, in the user documentation and internal comments to the code,   *|
 |*   the above Disclaimer and U.S. Government End Users Notice.              *|
 |*                                                                           *|
 |*                                                                           *|
