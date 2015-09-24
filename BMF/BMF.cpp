@@ -52,6 +52,8 @@ int                      gpu_prio;
 
 static ID3D11Device* g_pD3D11Dev;
 
+static IDXGIDevice*  g_pDXGIDev;
+
 extern "C" {
   // We have some really sneaky overlays that manage to call some of our
   //   exported functions before the DLL's even attached -- make them wait,
@@ -893,8 +895,8 @@ STDMETHODCALLTYPE PresentCallback (IDXGISwapChain *This,
                                    UINT            Flags)
 {
   // Prevents stack corruption, this is terrible and should not be needed!
-  //BYTE keys [256];
-  //GetKeyboardState (keys);
+  BYTE keys [256];
+  GetKeyboardState (keys);
 
   BMF_DrawOSD ();
 
@@ -1075,6 +1077,11 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
   if (res == S_OK && (ppDevice != NULL)) {
     dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
     g_pD3D11Dev = (*ppDevice);
+
+    if (g_pDXGIDev == nullptr && g_pD3D11Dev != nullptr) {
+        g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
+                                     (void **)&g_pDXGIDev);
+    }
   }
 
   return res;
@@ -1686,22 +1693,9 @@ WINAPI BudgetThread (LPVOID user_data)
 
   HANDLE hThreadHeap = HeapCreate (0, 0, 0);
 
-  IDXGIDevice*
-         pDXGIDev    = nullptr;
-
-  ID3D11Device*
-         pD3D11Dev   = nullptr;
-
   while (params->ready) {
     DWORD dwWaitStatus = WaitForSingleObject (params->event,
                                               BUDGET_POLL_INTERVAL);
-
-    if (pD3D11Dev == nullptr && g_pD3D11Dev != nullptr) {
-      g_pD3D11Dev->QueryInterface (__uuidof (ID3D11Device),
-                                   (void **)&pD3D11Dev);
-        pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
-                                   (void **)&pDXGIDev);
-    }
 
     if (! params->ready) {
       ResetEvent (params->event);
@@ -1796,8 +1790,8 @@ WINAPI BudgetThread (LPVOID user_data)
     {
       INT prio = 0;
 
-      if (pDXGIDev != nullptr &&
-          SUCCEEDED (pDXGIDev->GetGPUThreadPriority (&prio)))
+      if (g_pDXGIDev != nullptr &&
+          SUCCEEDED (g_pDXGIDev->GetGPUThreadPriority (&prio)))
       {
 
         if (last_budget > mem_info [buffer].local [0].Budget &&
@@ -1806,7 +1800,7 @@ WINAPI BudgetThread (LPVOID user_data)
         {
           if (prio > -7)
           {
-            pDXGIDev->SetGPUThreadPriority (--prio);
+            g_pDXGIDev->SetGPUThreadPriority (--prio);
           }
         }
 
@@ -1816,7 +1810,7 @@ WINAPI BudgetThread (LPVOID user_data)
         {
           if (prio < 7)
           {
-            pDXGIDev->SetGPUThreadPriority (++prio);
+            g_pDXGIDev->SetGPUThreadPriority (++prio);
           }
         }
       }
@@ -1899,17 +1893,17 @@ WINAPI BudgetThread (LPVOID user_data)
         i++;
       }
 
-      if (pDXGIDev != nullptr)
+      if (g_pDXGIDev != nullptr)
       {
         if (config.load_balance)
         {
-          if (SUCCEEDED (pDXGIDev->GetGPUThreadPriority (&gpu_prio)))
+          if (SUCCEEDED (g_pDXGIDev->GetGPUThreadPriority (&gpu_prio)))
           {
           }
         } else {
           if (gpu_prio != 0) {
             gpu_prio = 0;
-            pDXGIDev->SetGPUThreadPriority (gpu_prio);
+            g_pDXGIDev->SetGPUThreadPriority (gpu_prio);
           }
         }
       }
@@ -1922,11 +1916,11 @@ WINAPI BudgetThread (LPVOID user_data)
     mem_info [0].buffer = buffer;
   }
 
-  if (pDXGIDev != nullptr) {
+  if (g_pDXGIDev != nullptr) {
     // Releasing this actually causes driver crashes, so ...
     //   let it leak, what do we care?
     //pDXGIDev->Release ();
-    pDXGIDev = nullptr;
+    g_pDXGIDev = nullptr;
   }
 
   HeapDestroy (hThreadHeap);
