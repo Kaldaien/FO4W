@@ -29,7 +29,7 @@ namespace bmf {
 namespace NVAPI {
 
 // r353_23
-#define MINIMUM_DRIVER_VERSION 35330
+#define MINIMUM_DRIVER_VERSION 35582
 
   BOOL InitializeLibrary (void);
   BOOL UnloadLibrary     (void);
@@ -40,6 +40,9 @@ namespace NVAPI {
        EnumGPUs_DXGI     (void);
   DXGI_ADAPTER_DESC*
        EnumSLIGPUs       (void);
+
+  NV_GET_CURRENT_SLI_STATE
+       GetSLIState       (IUnknown* pDev);
 
   DXGI_ADAPTER_DESC*
        FindGPUByDXGIName (const wchar_t* wszName);

@@ -171,23 +171,35 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.h" />
+    <ClInclude Include="ini.h" />
+    <ClInclude Include="io_monitor.h" />
     <ClInclude Include="minhook\HDE\hde64.h" />
     <ClInclude Include="minhook\HDE\table64.h" />
     <ClInclude Include="minhook\MinHook.h" />
     <ClInclude Include="minhook\trampoline.h" />
     <ClInclude Include="nvapi.h" />
+    <ClInclude Include="osd.h" />
+    <ClInclude Include="parameter.h" />
     <ClInclude Include="RTSSSharedMemory.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="utility.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BMF.cpp" />
+    <ClCompile Include="config.cpp" />
+    <ClCompile Include="ini.cpp" />
+    <ClCompile Include="io_monitor.cpp" />
     <ClCompile Include="minhook\buffer.c" />
     <ClCompile Include="minhook\HDE\hde64.c" />
     <ClCompile Include="minhook\hook.c" />
     <ClCompile Include="minhook\trampoline.c" />
     <ClCompile Include="nvapi.cpp" />
+    <ClCompile Include="osd.cpp" />
+    <ClCompile Include="parameter.cpp" />
     <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="utility.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

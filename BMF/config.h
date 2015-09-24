@@ -1,0 +1,45 @@
+/**
+* This file is part of Batman "Fix".
+*
+* Batman "Fix" is free software : you can redistribute it and / or modify
+* it under the terms of the GNU General Public License as published by
+* The Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* Batman "Fix" is distributed in the hope that it will be useful,
+* But WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
+**/
+#ifndef __BMF__CONFIG_H__
+#define __BMF__CONFIG_H__
+
+#include <Windows.h>
+
+struct bmf_config_t
+{
+  bool   mem_stats    = true;
+  BYTE   mem_keys [4] = { VK_CONTROL, VK_SHIFT, 'M', 0 };
+  float  mem_reserve  = 85.0f;
+
+  bool  io_stats      = true;
+  BYTE  io_keys [4]   = { VK_CONTROL, VK_SHIFT, 'I', 0 };
+  float io_interval   = 0.25f;
+
+  bool  sli_stats     = false;
+  BYTE  sli_keys [4]  = { VK_CONTROL, VK_SHIFT, 'S', 0 };
+
+  bool  load_balance  = false;
+  BYTE  load_keys [4] = { VK_CONTROL, VK_SHIFT, 'B', 0 };
+
+  int   init_delay    = 250;
+  bool  silent        = false;
+} extern config;
+
+bool BMF_LoadConfig (void);
+void BMF_SaveConfig (void);
+
+#endif __BMF__CONFIG_H__
