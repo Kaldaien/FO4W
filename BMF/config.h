@@ -21,19 +21,31 @@
 
 struct bmf_config_t
 {
-  bool   mem_stats    = true;
-  BYTE   mem_keys [4] = { VK_CONTROL, VK_SHIFT, 'M', 0 };
-  float  mem_reserve  = 85.0f;
+  bool   mem_stats        = true;
+  BYTE   mem_keys [4]     = { VK_CONTROL, VK_SHIFT, 'M', 0 };
+  float  mem_reserve      = 85.0f;
 
-  bool  io_stats      = true;
-  BYTE  io_keys [4]   = { VK_CONTROL, VK_SHIFT, 'I', 0 };
-  float io_interval   = 0.25f;
+  bool  io_stats          = true;
+  BYTE  io_keys [4]       = { VK_CONTROL, VK_SHIFT, 'I', 0 };
+  float io_interval       = 0.25f;
 
-  bool  sli_stats     = false;
-  BYTE  sli_keys [4]  = { VK_CONTROL, VK_SHIFT, 'S', 0 };
+  bool  sli_stats         = false;
+  BYTE  sli_keys [4]      = { VK_CONTROL, VK_SHIFT, 'S', 0 };
 
-  bool  load_balance  = false;
-  BYTE  load_keys [4] = { VK_CONTROL, VK_SHIFT, 'B', 0 };
+  bool  load_balance      = false;
+  BYTE  load_keys [4]     = { VK_CONTROL, VK_SHIFT, 'B', 0 };
+
+  bool  cpu_stats         = false;
+  BYTE  cpu_keys  [4]     = { VK_CONTROL, VK_SHIFT, 'C', 0 };
+  float cpu_interval      = 0.166666f;
+
+  bool  disk_stats        = false;
+  BYTE  disk_keys [4]     = { VK_CONTROL, VK_SHIFT, 'D', 0 };
+  float disk_interval     = 0.333333f;
+
+  bool  pagefile_stats    = false;
+  BYTE  pagefile_keys [4] = { VK_CONTROL, VK_SHIFT, 'P', 0 };
+  float pagefile_interval = 0.5f;
 
   int   init_delay    = 250;
   bool  silent        = false;

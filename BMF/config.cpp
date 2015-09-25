@@ -26,10 +26,33 @@ bmf_config_t config;
 bmf::ParameterFactory g_ParameterFactory;
 
 struct {
-  bmf::ParameterBool*  enable_io;
-  bmf::ParameterFloat* io_interval;
-  bmf::ParameterBool*  enable_memory;
-  bmf::ParameterBool*  enable_SLI;
+  struct {
+    bmf::ParameterBool*  enable;
+    bmf::ParameterFloat* interval;
+  } io;
+
+  struct {
+    bmf::ParameterBool*  enable;
+  } memory;
+
+  struct {
+    bmf::ParameterBool*  enable;
+  } SLI;
+
+  struct {
+    bmf::ParameterBool*  enable;
+    bmf::ParameterFloat* interval;
+  } cpu;
+
+  struct {
+    bmf::ParameterBool*  enable;
+    bmf::ParameterFloat* interval;
+  } disk;
+
+  struct {
+    bmf::ParameterBool*  enable;
+    bmf::ParameterFloat* interval;
+  } pagefile;
 } monitoring;
 
 bmf::ParameterFloat* mem_reserve;
@@ -47,25 +70,79 @@ BMF_LoadConfig (void) {
   //
   // Create Parameters
   //
-  monitoring.enable_io =
+  monitoring.io.enable =
     static_cast <bmf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (L"Enable IO Monitoring"));
-  monitoring.enable_io->register_to_ini (dll_ini, L"Monitor.IO", L"Enable");
+  monitoring.io.enable->register_to_ini (dll_ini, L"Monitor.IO", L"Enable");
 
-  monitoring.io_interval =
+  monitoring.io.interval =
     static_cast <bmf::ParameterFloat *>
      (g_ParameterFactory.create_parameter <float> (L"IO Monitoring Interval"));
-  monitoring.io_interval->register_to_ini(dll_ini, L"Monitor.IO", L"Interval");
+  monitoring.io.interval->register_to_ini(dll_ini, L"Monitor.IO", L"Interval");
 
-  monitoring.enable_memory =
+  monitoring.disk.enable =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (L"Enable Disk Monitoring"));
+  monitoring.disk.enable->register_to_ini(dll_ini, L"Monitor.Disk", L"Enable");
+
+  monitoring.disk.interval =
+    static_cast <bmf::ParameterFloat *>
+     (g_ParameterFactory.create_parameter <float> (
+       L"Disk Monitoring Interval")
+     );
+  monitoring.disk.interval->register_to_ini (
+    dll_ini,
+      L"Monitor.Disk",
+        L"Interval" );
+
+
+  monitoring.cpu.enable =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (L"Enable CPU Monitoring"));
+  monitoring.cpu.enable->register_to_ini(dll_ini, L"Monitor.CPU", L"Enable");
+
+  monitoring.cpu.interval =
+    static_cast <bmf::ParameterFloat *>
+     (g_ParameterFactory.create_parameter <float> (
+       L"CPU Monitoring Interval")
+     );
+  monitoring.cpu.interval->register_to_ini (
+    dll_ini,
+      L"Monitor.CPU",
+        L"Interval" );
+
+
+  monitoring.pagefile.enable =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Enable Pagefile Monitoring")
+      );
+  monitoring.pagefile.enable->register_to_ini (
+    dll_ini,
+      L"Monitor.Pagefile",
+        L"Enable" );
+
+  monitoring.pagefile.interval =
+    static_cast <bmf::ParameterFloat *>
+     (g_ParameterFactory.create_parameter <float> (
+       L"Pagefile Monitoring Interval")
+     );
+  monitoring.pagefile.interval->register_to_ini (
+    dll_ini,
+      L"Monitor.Pagefile",
+        L"Interval" );
+
+
+  monitoring.memory.enable =
     static_cast <bmf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (
         L"Enable Memory Monitoring")
       );
-  monitoring.enable_memory->register_to_ini (
+  monitoring.memory.enable->register_to_ini (
     dll_ini,
       L"Monitor.Memory",
         L"Enable" );
+
 
   mem_reserve =
     static_cast <bmf::ParameterFloat *>
@@ -76,6 +153,7 @@ BMF_LoadConfig (void) {
     dll_ini,
       L"Manage.Memory",
         L"ReservePercent" );
+
 
   init_delay =
     static_cast <bmf::ParameterInt *>
@@ -97,12 +175,12 @@ BMF_LoadConfig (void) {
       L"DXGI.System",
         L"Silent" );
 
-  monitoring.enable_SLI =
+  monitoring.SLI.enable =
     static_cast <bmf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (
         L"Enable SLI Monitoring")
       );
-  monitoring.enable_SLI->register_to_ini (
+  monitoring.SLI.enable->register_to_ini (
     dll_ini,
       L"Monitor.SLI",
         L"Enable" );
@@ -110,18 +188,33 @@ BMF_LoadConfig (void) {
   //
   // Load Parameters
   //
-  if (monitoring.enable_io->load ())
-    config.io_stats = monitoring.enable_io->get_value ();
-  if (monitoring.io_interval->load ())
-    config.io_interval = monitoring.io_interval->get_value ();
+  if (monitoring.io.enable->load ())
+    config.io_stats = monitoring.io.enable->get_value ();
+  if (monitoring.io.interval->load ())
+    config.io_interval = monitoring.io.interval->get_value ();
 
-  if (monitoring.enable_memory->load ())
-    config.mem_stats = monitoring.enable_memory->get_value ();
+  if (monitoring.memory.enable->load ())
+    config.mem_stats = monitoring.memory.enable->get_value ();
   if (mem_reserve->load ())
     config.mem_reserve = mem_reserve->get_value ();
 
-  if (monitoring.enable_SLI->load ())
-    config.sli_stats = monitoring.enable_SLI->get_value ();
+  if (monitoring.cpu.enable->load ())
+    config.cpu_stats = monitoring.cpu.enable->get_value ();
+  if (monitoring.cpu.interval->load ())
+    config.cpu_interval = monitoring.cpu.interval->get_value ();
+
+  if (monitoring.disk.enable->load ())
+    config.disk_stats = monitoring.disk.enable->get_value ();
+  if (monitoring.disk.interval->load ())
+    config.disk_interval = monitoring.disk.interval->get_value ();
+
+  if (monitoring.pagefile.enable->load ())
+    config.pagefile_stats = monitoring.pagefile.enable->get_value ();
+  if (monitoring.pagefile.interval->load ())
+    config.pagefile_interval = monitoring.pagefile.interval->get_value ();
+
+  if (monitoring.SLI.enable->load ())
+    config.sli_stats = monitoring.SLI.enable->get_value ();
 
   if (init_delay->load ())
     config.init_delay = init_delay->get_value ();
@@ -137,25 +230,45 @@ BMF_LoadConfig (void) {
 
 void
 BMF_SaveConfig (void) {
-  monitoring.enable_memory->set_value (config.mem_stats);
-  mem_reserve->set_value (config.mem_reserve);
+  monitoring.memory.enable->set_value     (config.mem_stats);
+  mem_reserve->set_value                  (config.mem_reserve);
 
-  monitoring.enable_io->set_value     (config.io_stats);
-  monitoring.io_interval->set_value   (config.io_interval);
-  monitoring.enable_SLI->set_value    (config.sli_stats);
+  monitoring.io.enable->set_value         (config.io_stats);
+  monitoring.io.interval->set_value       (config.io_interval);
 
-  init_delay->set_value               (config.init_delay);
-  silent->set_value                   (config.silent);
+  monitoring.cpu.enable->set_value        (config.cpu_stats);
+  monitoring.cpu.interval->set_value      (config.cpu_interval);
 
-  monitoring.enable_memory->store ();
-  mem_reserve->store              ();
+  monitoring.disk.enable->set_value       (config.disk_stats);
+  monitoring.disk.interval->set_value     (config.disk_interval);
 
-  monitoring.enable_SLI->store    ();
-  monitoring.enable_io->store     ();
-  monitoring.io_interval->store   ();
+  monitoring.pagefile.enable->set_value   (config.pagefile_stats);
+  monitoring.pagefile.interval->set_value (config.pagefile_interval);
 
-  init_delay->store               ();
-  silent->store                   ();
+  monitoring.SLI.enable->set_value        (config.sli_stats);
+
+  init_delay->set_value                   (config.init_delay);
+  silent->set_value                       (config.silent);
+
+  monitoring.memory.enable->store     ();
+  mem_reserve->store                  ();
+
+  monitoring.SLI.enable->store        ();
+
+  monitoring.io.enable->store         ();
+  monitoring.io.interval->store       ();
+
+  monitoring.cpu.enable->store        ();
+  monitoring.cpu.interval->store      ();
+
+  monitoring.disk.enable->store       ();
+  monitoring.disk.interval->store     ();
+
+  monitoring.pagefile.enable->store   ();
+  monitoring.pagefile.interval->store ();
+
+  init_delay->store                   ();
+  silent->store                       ();
 
   dll_ini->write (L"dxgi.ini");
 

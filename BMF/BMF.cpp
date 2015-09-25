@@ -60,6 +60,9 @@ extern "C" {
   //     so we don't crash and burn!
   void WaitForInit (void);
 
+#undef STDMETHODCALLTYPE
+#define STDMETHODCALLTYPE __fastcall
+
 typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
   (UINT Flags, REFIID riid,  void** ppFactory);
 typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory1_t) \
@@ -485,15 +488,8 @@ BMF_Init (void)
     return;
   }
 
-  if (config.silent) {
-    dxgi_log.silent = true;
-  }
-  else {
-    dxgi_log.init ("dxgi.log", "w");
-    dxgi_log.silent = false;
-  }
-
-  dxgi_log.Log (L"dxgi.log created");
+  dxgi_log.init ("dxgi.log", "w");
+  dxgi_log.Log  (L"dxgi.log created");
 
   dxgi_log.LogEx (false,
   L"------------------------------------------------------------------------"
@@ -542,6 +538,19 @@ BMF_Init (void)
   dxgi_log.LogEx (false,
     L"----------------------------------------------------------------------"
     L"-------------\n");
+
+
+  dxgi_log.LogEx (true, L"Loading user preferences from dxgi.ini... ");
+  BMF_LoadConfig ();
+  dxgi_log.LogEx (false, L"done!\n\n");
+
+  if (config.silent) {
+    dxgi_log.silent = true;
+    dxgi_log.close ();
+    DeleteFile     (L"dxgi.log");
+  } else {
+    dxgi_log.silent = false;
+  }
 
   dxgi_log.LogEx (true, L"Initializing NvAPI: ");
 
@@ -627,6 +636,34 @@ BMF_Init (void)
   dxgi_log.LogEx (false, L"done!\n");
 
   dxgi_log.Log (L"=== Initialization Finished! ===\n");
+
+  //
+  // Spawn CPU Refresh Thread
+  //
+  if (cpu_stats.hThread == 0) {
+    dxgi_log.LogEx (true, L" [WMI] Spawning CPU Monitor...      ");
+    cpu_stats.hThread = CreateThread (NULL, 0, BMF_MonitorCPU, NULL, 0, NULL);
+    dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (cpu_stats.hThread));
+  }
+
+  Sleep (16);
+
+  if (disk_stats.hThread == 0) {
+    dxgi_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
+    disk_stats.hThread =
+      CreateThread (NULL, 0, BMF_MonitorDisk, NULL, 0, NULL);
+    dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (disk_stats.hThread));
+  }
+
+  Sleep (16);
+
+  if (pagefile_stats.hThread == 0) {
+    dxgi_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
+    pagefile_stats.hThread =
+      CreateThread (NULL, 0, BMF_MonitorPagefile, NULL, 0, NULL);
+    dxgi_log.LogEx (false, L"tid=0x%04x\n",
+                    GetThreadId (pagefile_stats.hThread));
+  }
 
   LeaveCriticalSection (&init_mutex);
 }
@@ -890,14 +927,10 @@ extern "C++" {
                              if ((ref) < (min)) (min) = (ref);
 
 HRESULT
-STDMETHODCALLTYPE PresentCallback (IDXGISwapChain *This,
-                                   UINT            SyncInterval,
-                                   UINT            Flags)
+__cdecl PresentCallback (IDXGISwapChain *This,
+                         UINT            SyncInterval,
+                         UINT            Flags)
 {
-  // Prevents stack corruption, this is terrible and should not be needed!
-  BYTE keys [256];
-  GetKeyboardState (keys);
-
   BMF_DrawOSD ();
 
   HRESULT hr = Present_Original (This, SyncInterval, Flags);
@@ -950,6 +983,42 @@ STDMETHODCALLTYPE PresentCallback (IDXGISwapChain *This,
     toggle_io = false;
   }
 
+  static bool toggle_cpu = false;
+  if (HIWORD (GetAsyncKeyState (config.cpu_keys [0])) &&
+      HIWORD (GetAsyncKeyState (config.cpu_keys [1])) &&
+      HIWORD (GetAsyncKeyState (config.cpu_keys [2])))
+  {
+    if (! toggle_cpu)
+      config.cpu_stats = (! config.cpu_stats);
+    toggle_cpu = true;
+  } else {
+    toggle_cpu = false;
+  }
+
+  static bool toggle_disk = false;
+  if (HIWORD (GetAsyncKeyState (config.disk_keys [0])) &&
+      HIWORD (GetAsyncKeyState (config.disk_keys [1])) &&
+      HIWORD (GetAsyncKeyState (config.disk_keys [2])))
+  {
+    if (! toggle_disk)
+      config.disk_stats = (! config.disk_stats);
+    toggle_disk = true;
+  } else {
+    toggle_disk = false;
+  }
+
+  static bool toggle_pagefile = false;
+  if (HIWORD (GetAsyncKeyState (config.pagefile_keys [0])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile_keys [1])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile_keys [2])))
+  {
+    if (! toggle_pagefile)
+      config.pagefile_stats = (! config.pagefile_stats);
+    toggle_pagefile = true;
+  } else {
+    toggle_pagefile = false;
+  }
+
   if (config.sli_stats)
   {
     // Get SLI status for the frame we just displayed... this will show up
@@ -992,11 +1061,33 @@ STDMETHODCALLTYPE CreateSwapChain_Override (IDXGIFactory          *This,
                                             (void **)&pDev)))
     {
       budget_log.silent = false;
+
       budget_log.LogEx (true, L"Hooking IDXGISwapChain::Present... ");
+
+#if 0
+      void** vftable = *(void***)*ppSwapChain;
+
+      MH_STATUS stat =
+        MH_CreateHook (vftable [8], PresentCallback, (void **)&Present_Original);
+
+      if (stat != MH_ERROR_ALREADY_CREATED &&
+          stat != MH_OK) {
+        budget_log.LogEx (false, L" failed\n");
+      }
+      else {
+        budget_log.LogEx (false, L" %p\n", Present_Original);
+      }
+
+      MH_ApplyQueued ();
+      MH_EnableHook  (MH_ALL_HOOKS);
+#else
       DXGI_VIRTUAL_OVERRIDE (ppSwapChain, 8, "IDXGISwapChain::Present",
                              PresentCallback, Present_Original,
                              PresentSwapChain_t);
+
       budget_log.LogEx (false, L"Done\n");
+#endif
+
       budget_log.silent = true;
 
       pDev->Release ();
@@ -1793,7 +1884,6 @@ WINAPI BudgetThread (LPVOID user_data)
       if (g_pDXGIDev != nullptr &&
           SUCCEEDED (g_pDXGIDev->GetGPUThreadPriority (&prio)))
       {
-
         if (last_budget > mem_info [buffer].local [0].Budget &&
               mem_info [buffer].local [0].CurrentUsage >
               mem_info [buffer].local [0].Budget)
@@ -1950,8 +2040,6 @@ APIENTRY DllMain ( HMODULE hModule,
     {
       dll_heap = HeapCreate (0, 0, 0);
 
-      BMF_LoadConfig ();
-
       MH_Initialize ();
 
       //LoadLibrary (L"d3d11.dll");
@@ -1982,12 +2070,14 @@ APIENTRY DllMain ( HMODULE hModule,
     case DLL_PROCESS_DETACH:
     {
       if (budget_thread != nullptr) {
+        config.load_balance = false; // Turn this off while shutting down
+
         dxgi_log.LogEx (
               true,
                 L"Shutting down DXGI 1.4 Memory Budget Change Thread... "
         );
 
-        budget_thread->ready  = false;
+        budget_thread->ready = false;
 
         SignalObjectAndWait (budget_thread->event, budget_thread->handle,
                              INFINITE, TRUE);
@@ -2055,7 +2145,49 @@ APIENTRY DllMain ( HMODULE hModule,
         budget_thread = nullptr;
       }
 
+      if (cpu_stats.hThread != 0) {
+        dxgi_log.LogEx (true,L"[WMI] Shutting down CPU Monitor... ");
+        // Signal the thread to shutdown
+        cpu_stats.lID = 0;
+        WaitForSingleObject (cpu_stats.hThread, 1000UL); // Give 1 second, and
+                                                         // then we're killing
+                                                         // the thing!
+        TerminateThread (cpu_stats.hThread, 0);
+        cpu_stats.hThread  = 0;
+        cpu_stats.num_cpus = 0;
+        dxgi_log.LogEx (false, L"done!\n");
+      }
+
+      if (disk_stats.hThread != 0) {
+        dxgi_log.LogEx(true,L"[WMI] Shutting down Disk Monitor... ");
+        // Signal the thread to shutdown
+        disk_stats.lID = 0;
+        WaitForSingleObject (disk_stats.hThread, 1000UL); // Give 1 second, and
+                                                          // then we're killing
+                                                          // the thing!
+        TerminateThread (disk_stats.hThread, 0);
+        disk_stats.hThread   = 0;
+        disk_stats.num_disks = 0;
+        dxgi_log.LogEx (false, L"done!\n");
+      }
+
+      if (pagefile_stats.hThread != 0) {
+        dxgi_log.LogEx(true,L"[WMI] Shutting down Pagefile Monitor... ");
+        // Signal the thread to shutdown
+        pagefile_stats.lID = 0;
+        WaitForSingleObject (
+          pagefile_stats.hThread, 1000UL); // Give 1 second, and
+                                           // then we're killing
+                                           // the thing!
+        TerminateThread (pagefile_stats.hThread, 0);
+        pagefile_stats.hThread       = 0;
+        pagefile_stats.num_pagefiles = 0;
+        dxgi_log.LogEx (false, L"done!\n");
+      }
+
+      dxgi_log.LogEx (true, L"Saving user preferences to dxgi.ini... ");
       BMF_SaveConfig ();
+      dxgi_log.LogEx (false, L"done!\n");
 
       BMF_ReleaseOSD ();
 

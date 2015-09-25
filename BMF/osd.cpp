@@ -14,6 +14,10 @@
 #define OSD_B_PRINTF if (config.load_balance) { pszOSD += sprintf (pszOSD,
 #define OSD_S_PRINTF if (config.mem_stats &&\
                          config.sli_stats)    { pszOSD += sprintf (pszOSD,
+#define OSD_C_PRINTF if (config.cpu_stats)    { pszOSD += sprintf (pszOSD,
+#define OSD_D_PRINTF if (config.disk_stats)   { pszOSD += sprintf (pszOSD,
+#define OSD_P_PRINTF if (config.pagefile_stats)\
+                                              { pszOSD += sprintf (pszOSD,
 #define OSD_I_PRINTF if (config.io_stats)     { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
@@ -126,7 +130,7 @@ BMF_DrawOSD (void)
                                     headroom / 1024 / 1024
     OSD_END
   }
-
+  
   extern int gpu_prio;
 
   OSD_B_PRINTF "\n  GPU Priority: %+1i\n",
@@ -141,6 +145,65 @@ BMF_DrawOSD (void)
                io_counter.read_mb_sec,  io_counter.read_iop_sec,
                io_counter.write_mb_sec, io_counter.write_iop_sec,
                io_counter.other_mb_sec, io_counter.other_iop_sec
+  OSD_END
+
+  for (int i = 0; i < disk_stats.num_disks; i++) {
+    OSD_D_PRINTF "\n  Disk %16s %#3u%%  -  (Read: %#3u%%   Write: %#3u%%) - "
+                                   "(Read: %#5.01f MiB   Write: %#5.01f MiB)",
+      disk_stats.disks [i].name,
+        disk_stats.disks [i].percent_load, 
+          disk_stats.disks [i].percent_read,
+            disk_stats.disks [i].percent_write,
+              (float)disk_stats.disks [i].read_bytes_sec / (1024.0f * 1024.0f),
+              (float)disk_stats.disks [i].write_bytes_sec / (1024.0f * 1024.0f)
+    OSD_END
+
+    if (i == 0) {
+      OSD_D_PRINTF "\n"
+      OSD_END
+    }
+  }
+
+  OSD_D_PRINTF "\n"
+  OSD_END
+
+  OSD_C_PRINTF "\n  Total %#3u%%  -  (Kernel: %#3u%%   User: %#3u%%   "
+                 "Interrupt: %#3u%%)\n",
+        cpu_stats.cpus [0].percent_load, 
+          cpu_stats.cpus [0].percent_kernel, 
+            cpu_stats.cpus [0].percent_user, 
+              cpu_stats.cpus [0].percent_interrupt
+  OSD_END
+
+  for (int i = 1; i < cpu_stats.num_cpus; i++) {
+    OSD_C_PRINTF "\n  CPU%d: %#3u%%  -  (Kernel: %#3u%%   User: %#3u%%   "
+                 "Interrupt: %#3u%%)",
+      i-1,
+        cpu_stats.cpus [i].percent_load, 
+          cpu_stats.cpus [i].percent_kernel, 
+            cpu_stats.cpus [i].percent_user, 
+              cpu_stats.cpus [i].percent_interrupt
+    OSD_END
+  }
+
+  OSD_C_PRINTF "\n"
+  OSD_END
+
+  for (int i = 0; i < pagefile_stats.num_pagefiles; i++) {
+    OSD_P_PRINTF "\n  Pagefile %16s %#3u MiB / %#3u MiB  (Peak: %#3u MiB)",
+      pagefile_stats.pagefiles [i].name,
+        pagefile_stats.pagefiles [i].usage          >> 20ULL,
+          pagefile_stats.pagefiles [i].size         >> 20ULL,
+            pagefile_stats.pagefiles [i].usage_peak >> 20ULL
+    OSD_END
+
+    if (i == 0) {
+      OSD_P_PRINTF "\n"
+      OSD_END
+    }
+  }
+
+  OSD_P_PRINTF "\n"
   OSD_END
 
   BMF_UpdateOSD (szOSD);
