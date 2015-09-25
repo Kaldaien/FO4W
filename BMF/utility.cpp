@@ -105,10 +105,12 @@ BMF_FullCopy (std::wstring from, std::wstring to)
   WideCharToMultiByte (CP_OEMCP, 0, to.c_str (), -1, szFileTo, MAX_PATH, NULL, NULL);
   HFILE hfTo = OpenFile (szFileTo, &ofTo, NULL);
 
-  CloseHandle ((HANDLE)hfTo);
+  
+  HANDLE hTo = HandleToHandle64 (&hfTo);
+  CloseHandle (hTo);
 
   // Here's where the magic happens, apply the attributes from the original file to the new one!
-  SetFileTime ((HANDLE)hfTo, &FromFileData.ftCreationTime, &FromFileData.ftLastAccessTime, &FromFileData.ftLastWriteTime);
+  SetFileTime (hTo, &FromFileData.ftCreationTime, &FromFileData.ftLastAccessTime, &FromFileData.ftLastWriteTime);
 
   FindClose   (hFrom);
 }

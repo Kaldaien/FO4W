@@ -273,7 +273,7 @@ NVAPI::FindGPUByDXGIName (const wchar_t* wszName)
   //"NVIDIA "
   // 01234567
 
-  wchar_t* wszFixedName = wcsdup (wszName + 7);
+  wchar_t* wszFixedName = _wcsdup (wszName + 7);
   int      fixed_len    = lstrlenW (wszFixedName);
 
   // Remove trailing whitespace.

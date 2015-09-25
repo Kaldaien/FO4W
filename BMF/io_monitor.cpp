@@ -15,6 +15,8 @@
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "io_monitor.h"
 
 void
@@ -367,7 +369,7 @@ BMF_MonitorCPU (LPVOID user)
       }
     }
            
-    for (int i = 0; i < cpu.dwNumReturned; i++)
+    for (unsigned int i = 0; i < cpu.dwNumReturned; i++)
     {
       uint64_t interrupt;
       uint64_t kernel;
@@ -432,7 +434,7 @@ BMF_MonitorCPU (LPVOID user)
     }
 
     // Sleep for 500 ms.
-    Sleep (update * 1000.0);
+    Sleep (DWORD (update * 1000.0));
 
     ++iter;
   }
@@ -440,7 +442,7 @@ BMF_MonitorCPU (LPVOID user)
 CPU_CLEANUP:
   if (cpu.apEnumAccess != nullptr)
   {
-    for (int i = 0; i < cpu.dwNumReturned; i++)
+    for (unsigned int i = 0; i < cpu.dwNumReturned; i++)
     {
       if (cpu.apEnumAccess [i] != nullptr)
       {
@@ -653,7 +655,7 @@ BMF_MonitorDisk (LPVOID user)
       }
     }
            
-    for (int i = 0; i < disk.dwNumReturned; i++)
+    for (unsigned int i = 0; i < disk.dwNumReturned; i++)
     {
       uint64_t percent_read;
       uint64_t percent_write;
@@ -731,9 +733,9 @@ BMF_MonitorDisk (LPVOID user)
       if (i == 0)
         strcpy (disk.disks [i].name, "Total");
 
-      int len = strlen (disk.disks [i].name);
+      size_t len = strlen (disk.disks [i].name);
 
-      for (int j = len; j < 16; j++)
+      for (size_t j = len; j < 16; j++)
         disk.disks [i].name [j] = '.';
 
       disk.disks [i].name [15] = '\0';
@@ -761,7 +763,7 @@ BMF_MonitorDisk (LPVOID user)
     }
 
     // Sleep for 500 ms.
-    Sleep (update * 1000.0);
+    Sleep (DWORD (update * 1000.0));
 
     ++iter;
   }
@@ -769,7 +771,7 @@ BMF_MonitorDisk (LPVOID user)
 DISK_CLEANUP:
   if (disk.apEnumAccess != nullptr)
   {
-    for (int i = 0; i < disk.dwNumReturned; i++)
+    for (unsigned int i = 0; i < disk.dwNumReturned; i++)
     {
       if (disk.apEnumAccess [i] != nullptr)
       {
@@ -941,7 +943,7 @@ BMF_MonitorPagefile (LPVOID user)
       }
     }
            
-    for (int i = 0; i < pagefile.dwNumReturned; i++)
+    for (unsigned int i = 0; i < pagefile.dwNumReturned; i++)
     {
       DWORD size;
       DWORD usage;
@@ -988,7 +990,7 @@ BMF_MonitorPagefile (LPVOID user)
       if (i == (pagefile.dwNumReturned - 1))
         strcpy (pagefile.pagefiles [i].name, "Total");
 
-      int len = strlen (pagefile.pagefiles [i].name);
+     size_t len = strlen (pagefile.pagefiles [i].name);
 
       // Fix-up some characters RivaTuner does not like
       for (int j = 0; j < len; j++)
@@ -997,7 +999,7 @@ BMF_MonitorPagefile (LPVOID user)
 
       len = strlen (pagefile.pagefiles [i].name);
 
-      for (int j = len; j < 32; j++)
+      for (size_t j = len; j < 32; j++)
         pagefile.pagefiles [i].name [j] = '.';
 
       pagefile.pagefiles [i].name [31] = '\0';
@@ -1023,7 +1025,7 @@ BMF_MonitorPagefile (LPVOID user)
     }
 
     // Sleep for 500 ms.
-    Sleep (update * 1000.0);
+    Sleep ((DWORD)(update * 1000.0));
 
     ++iter;
   }
@@ -1031,7 +1033,7 @@ BMF_MonitorPagefile (LPVOID user)
 PAGEFILE_CLEANUP:
   if (pagefile.apEnumAccess != nullptr)
   {
-    for (int i = 0; i < pagefile.dwNumReturned; i++)
+    for (unsigned int i = 0; i < pagefile.dwNumReturned; i++)
     {
       if (pagefile.apEnumAccess [i] != nullptr)
       {

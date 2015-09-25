@@ -57,8 +57,8 @@ BMF_DrawOSD (void)
     OSD_END
 
     while (i < nodes) {
-      OSD_M_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  - "
-                   " Budget:  %05u / %05u MiB)",
+      OSD_M_PRINTF "  %8s %u  (Reserve:  %05llu / %05llu MiB  - "
+                   " Budget:  %05llu / %05llu MiB)",
                   nodes > 1 ? (nvapi_init ? "SLI Node" : "CFX Node") : "GPU",
                   i,
                   mem_info [buffer].local [i].CurrentReservation      >> 20ULL,
@@ -99,8 +99,8 @@ BMF_DrawOSD (void)
     OSD_END
 
     while (i < nodes) {
-      OSD_M_PRINTF "  %8s %u  (Reserve:  %05u / %05u MiB  -  "
-                   "Budget:  %05u / %05u MiB)\n",
+      OSD_M_PRINTF "  %8s %u  (Reserve:  %05llu / %05llu MiB  -  "
+                   "Budget:  %05llu / %05llu MiB)\n",
                        nodes > 1 ? "SLI Node" : "GPU",
                        i,
               mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
@@ -120,10 +120,10 @@ BMF_DrawOSD (void)
     int64_t headroom = mem_info [buffer].local [0].Budget -
                        mem_info [buffer].local [0].CurrentUsage;
 
-    OSD_M_PRINTF "  Max. Resident Set:  %05u MiB  -"
-                 "  Max. Over Budget:  %05u MiB\n"
-                 "    Budget Changes:  %06u       -    "
-                 "       Budget Left:  %05i MiB\n",
+    OSD_M_PRINTF "  Max. Resident Set:  %05llu MiB  -"
+                 "  Max. Over Budget:  %05llu MiB\n"
+                 "    Budget Changes:  %06llu       -    "
+                 "       Budget Left:  %05lli MiB\n",
                                     mem_stats [0].max_usage       >> 20ULL,
                                     mem_stats [0].max_over_budget >> 20ULL,
                                     mem_stats [0].budget_changes,
@@ -148,7 +148,7 @@ BMF_DrawOSD (void)
   OSD_END
 
   for (int i = 0; i < disk_stats.num_disks; i++) {
-    OSD_D_PRINTF "\n  Disk %16s %#3u%%  -  (Read: %#3u%%   Write: %#3u%%) - "
+    OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
                                    "(Read: %#5.01f MiB   Write: %#5.01f MiB)",
       disk_stats.disks [i].name,
         disk_stats.disks [i].percent_load, 
@@ -167,8 +167,8 @@ BMF_DrawOSD (void)
   OSD_D_PRINTF "\n"
   OSD_END
 
-  OSD_C_PRINTF "\n  Total %#3u%%  -  (Kernel: %#3u%%   User: %#3u%%   "
-                 "Interrupt: %#3u%%)\n",
+  OSD_C_PRINTF "\n  Total %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
+                 "Interrupt: %#3llu%%)\n",
         cpu_stats.cpus [0].percent_load, 
           cpu_stats.cpus [0].percent_kernel, 
             cpu_stats.cpus [0].percent_user, 
@@ -176,8 +176,8 @@ BMF_DrawOSD (void)
   OSD_END
 
   for (int i = 1; i < cpu_stats.num_cpus; i++) {
-    OSD_C_PRINTF "\n  CPU%d: %#3u%%  -  (Kernel: %#3u%%   User: %#3u%%   "
-                 "Interrupt: %#3u%%)",
+	 OSD_C_PRINTF "\n  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
+                 "Interrupt: %#3llu%%)",
       i-1,
         cpu_stats.cpus [i].percent_load, 
           cpu_stats.cpus [i].percent_kernel, 

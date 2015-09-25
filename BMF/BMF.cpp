@@ -221,14 +221,15 @@ bmf_logger_t::init (const char* const szFileName,
 
   fLog = fopen (szFileName, szMode);
 
-  InitializeCriticalSectionAndSpinCount (&log_mutex, 2500);
+  BOOL bRet = InitializeCriticalSectionAndSpinCount (&log_mutex, 2500);
 
-  if (fLog == NULL) {
+  if ((! bRet) || (fLog == NULL)) {
     silent = true;
     return false;
   }
 
-  return (initialized = true);
+  initialized = true;
+  return initialized;
 }
 
 void
@@ -643,7 +644,10 @@ BMF_Init (void)
   if (cpu_stats.hThread == 0) {
     dxgi_log.LogEx (true, L" [WMI] Spawning CPU Monitor...      ");
     cpu_stats.hThread = CreateThread (NULL, 0, BMF_MonitorCPU, NULL, 0, NULL);
-    dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (cpu_stats.hThread));
+	if (cpu_stats.hThread != 0)
+      dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (cpu_stats.hThread));
+	else
+	  dxgi_log.LogEx (false, L"Failed!\n");
   }
 
   Sleep (16);
@@ -652,7 +656,10 @@ BMF_Init (void)
     dxgi_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
     disk_stats.hThread =
       CreateThread (NULL, 0, BMF_MonitorDisk, NULL, 0, NULL);
-    dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (disk_stats.hThread));
+	if (disk_stats.hThread != 0)
+      dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (disk_stats.hThread));
+	else
+	  dxgi_log.LogEx (false, L"failed!\n");
   }
 
   Sleep (16);
@@ -661,8 +668,11 @@ BMF_Init (void)
     dxgi_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
     pagefile_stats.hThread =
       CreateThread (NULL, 0, BMF_MonitorPagefile, NULL, 0, NULL);
-    dxgi_log.LogEx (false, L"tid=0x%04x\n",
-                    GetThreadId (pagefile_stats.hThread));
+	if (pagefile_stats.hThread != 0)
+      dxgi_log.LogEx (false, L"tid=0x%04x\n",
+                        GetThreadId (pagefile_stats.hThread));
+	else
+	  dxgi_log.LogEx (false, L"failed!\n");
   }
 
   LeaveCriticalSection (&init_mutex);
@@ -782,11 +792,12 @@ extern "C++" {
       interface_name = L"IDXGIFactory4";
     else {
       wchar_t *pwszIID;
-      StringFromIID (riid, (LPOLESTR *)&pwszIID);
 
-      interface_name = pwszIID;
-
-      CoTaskMemFree (pwszIID);
+      if (SUCCEEDED (StringFromIID (riid, (LPOLESTR *)&pwszIID)))
+	  {
+        interface_name = pwszIID;
+        CoTaskMemFree (pwszIID);
+      }
     }
 
     return interface_name;
@@ -849,11 +860,12 @@ extern "C++" {
       interface_name = L"IDXGIAdapter3";
     else {
       wchar_t* pwszIID;
-      StringFromIID (riid, (LPOLESTR *)&pwszIID);
 
-      interface_name = pwszIID;
-
-      CoTaskMemFree (pwszIID);
+	  if (SUCCEEDED (StringFromIID (riid, (LPOLESTR *)&pwszIID)))
+	  {
+		  interface_name = pwszIID;
+          CoTaskMemFree (pwszIID);
+	  }
     }
 
     return interface_name;
@@ -1114,9 +1126,9 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
 {
   DXGI_LOG_CALL_0 (L"D3D11CreateDeviceAndSwapChain");
 
-  dxgi_log.LogEx (true, L" Preferred Feature Level(s): ", FeatureLevels);
+  dxgi_log.LogEx (true, L" Preferred Feature Level(s): <%u> - ", FeatureLevels);
 
-  for (int i = 0; i < FeatureLevels; i++) {
+  for (UINT i = 0; i < FeatureLevels; i++) {
     switch (pFeatureLevels [i])
     {
       case D3D_FEATURE_LEVEL_9_1:
@@ -1332,7 +1344,8 @@ BMF_InstallD3D11DeviceHooks (void)
     HANDLE hThread =
       CreateThread (NULL, 0, HookThread, NULL, 0, NULL);
 
-    WaitForSingleObject (hThread, INFINITE);
+    if (hThread != 0)
+      WaitForSingleObject (hThread, INFINITE);
   }
   LeaveCriticalSection (&d3dhook_mutex);
 }
@@ -1366,8 +1379,8 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
         if (match != NULL &&
             pDesc->DedicatedVideoMemory > match->DedicatedVideoMemory) {
           dxgi_log.Log (
-            L"   # SLI Detected (Corrected Memory Total: %u MiB -- "
-            L"Original: %u MiB)",
+            L"   # SLI Detected (Corrected Memory Total: %llu MiB -- "
+            L"Original: %llu MiB)",
                           match->DedicatedVideoMemory >> 20ULL,
                           pDesc->DedicatedVideoMemory >> 20ULL);
         }
@@ -1487,8 +1500,8 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
           }
 
           dxgi_log.LogEx (false,
-                      L" Node%u (Reserve: %#5u / %#5u MiB - "
-                      L"Budget: %#5u / %#5u MiB)",
+                      L" Node%u (Reserve: %#5llu / %#5llu MiB - "
+                      L"Budget: %#5llu / %#5llu MiB)",
                       i++,
                       mem_info.CurrentReservation      >> 20ULL,
                       mem_info.AvailableForReservation >> 20ULL,
@@ -1523,8 +1536,8 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
             dxgi_log.LogEx (true,  L"                                 ");
           }
           dxgi_log.LogEx (false,
-                      L" Node%u (Reserve: %#5u / %#5u MiB - "
-                      L"Budget: %#5u / %#5u MiB)",
+                      L" Node%u (Reserve: %#5llu / %#5llu MiB - "
+                      L"Budget: %#5llu / %#5llu MiB)",
                     i++,
                       mem_info.CurrentReservation      >> 20ULL,
                       mem_info.AvailableForReservation >> 20ULL,
@@ -1785,6 +1798,9 @@ WINAPI BudgetThread (LPVOID user_data)
   HANDLE hThreadHeap = HeapCreate (0, 0, 0);
 
   while (params->ready) {
+    if (params->event == 0)
+      break;
+
     DWORD dwWaitStatus = WaitForSingleObject (params->event,
                                               BUDGET_POLL_INTERVAL);
 
@@ -1923,8 +1939,8 @@ WINAPI BudgetThread (LPVOID user_data)
         }
 
         budget_log.LogEx (false,
-                           L" Node%u (Reserve: %#5u / %#5u MiB - "
-                           L"Budget: %#5u / %#5u MiB)",
+                           L" Node%u (Reserve: %#5llu / %#5llu MiB - "
+                           L"Budget: %#5llu / %#5llu MiB)",
                          i,
                  mem_info [buffer].local [i].CurrentReservation      >> 20ULL,
                  mem_info [buffer].local [i].AvailableForReservation >> 20ULL,
@@ -1973,8 +1989,8 @@ WINAPI BudgetThread (LPVOID user_data)
         }
 
         budget_log.LogEx (false,
-                          L" Node%u (Reserve: %#5u / %#5u MiB - "
-                          L"Budget: %#5u / %#5u MiB)",
+                          L" Node%u (Reserve: %#5llu / %#5llu MiB - "
+                          L"Budget: %#5llu / %#5llu MiB)",
                         i,
               mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
               mem_info [buffer].nonlocal [i].AvailableForReservation >> 20ULL,
@@ -2001,7 +2017,8 @@ WINAPI BudgetThread (LPVOID user_data)
       budget_log.LogEx (false, L"\n");
     }
 
-    ResetEvent (params->event);
+	if (params->event != 0)
+      ResetEvent (params->event);
 
     mem_info [0].buffer = buffer;
   }
@@ -2013,7 +2030,8 @@ WINAPI BudgetThread (LPVOID user_data)
     g_pDXGIDev = nullptr;
   }
 
-  HeapDestroy (hThreadHeap);
+  if (hThreadHeap != 0)
+    HeapDestroy (hThreadHeap);
 
   return 0;
 }
@@ -2025,7 +2043,8 @@ WaitForInit (void)
 {
   while (! hInitThread) ;
 
-  WaitForSingleObject (hInitThread, INFINITE);
+ if (hInitThread)
+    WaitForSingleObject (hInitThread, INFINITE);
 }
 }
 
@@ -2044,9 +2063,9 @@ APIENTRY DllMain ( HMODULE hModule,
 
       //LoadLibrary (L"d3d11.dll");
 
-      InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
-      InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
-      InitializeCriticalSectionAndSpinCount (&init_mutex,    50000);
+      BOOL bRet = InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
+           bRet = InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
+           bRet = InitializeCriticalSectionAndSpinCount (&init_mutex,    50000);
 
       hInitThread = CreateThread (NULL, 0, DllThread, NULL, 0, NULL);
 
@@ -2054,7 +2073,8 @@ APIENTRY DllMain ( HMODULE hModule,
       //   that they make. But don't wait here infinitely, or we will deadlock!
 
       /* Default: 0.25 secs seems adequate */
-      WaitForSingleObject (hInitThread, config.init_delay);
+	  if (hInitThread != 0)
+        WaitForSingleObject (hInitThread, config.init_delay);
     } break;
 
     case DLL_THREAD_ATTACH:
@@ -2093,7 +2113,7 @@ APIENTRY DllMain ( HMODULE hModule,
         budget_log.Log   (L"--------------------\n");
 
                                          // in %10u seconds\n",
-        budget_log.Log (L" Memory Budget Changed %d times\n",
+        budget_log.Log (L" Memory Budget Changed %llu times\n",
               mem_stats [0].budget_changes);
 
         for (int i = 0; i < 4; i++) {
@@ -2104,14 +2124,14 @@ APIENTRY DllMain ( HMODULE hModule,
             if (mem_stats [i].min_over_budget == UINT64_MAX)
               mem_stats [i].min_over_budget = 0ULL;
 
-        budget_log.LogEx (true, L" GPU%u: Min Budget:        %05u MiB\n", i,
+        budget_log.LogEx (true, L" GPU%u: Min Budget:        %05llu MiB\n", i,
                     mem_stats [i].min_budget >> 20ULL);
-        budget_log.LogEx (true, L"       Max Budget:        %05u MiB\n",
+        budget_log.LogEx (true, L"       Max Budget:        %05llu MiB\n",
                     mem_stats [i].max_budget >> 20ULL);
 
-        budget_log.LogEx (true, L"       Min Usage:         %05u MiB\n",
+        budget_log.LogEx (true, L"       Min Usage:         %05llu MiB\n",
                     mem_stats [i].min_usage >> 20ULL);
-        budget_log.LogEx (true, L"       Max Usage:         %05u MiB\n",
+        budget_log.LogEx (true, L"       Max Usage:         %05llu MiB\n",
                     mem_stats [i].max_usage >> 20ULL);
 
         /*
@@ -2126,9 +2146,9 @@ APIENTRY DllMain ( HMODULE hModule,
         */
 
         budget_log.LogEx (true, L"------------------------------------\n");
-        budget_log.LogEx (true, L" Minimum Over Budget:     %05u MiB\n",
+        budget_log.LogEx (true, L" Minimum Over Budget:     %05llu MiB\n",
                     mem_stats [i].min_over_budget >> 20ULL);
-        budget_log.LogEx (true, L" Maximum Over Budget:     %05u MiB\n",
+        budget_log.LogEx (true, L" Maximum Over Budget:     %05llu MiB\n",
                     mem_stats [i].max_over_budget >> 20ULL);
         budget_log.LogEx (true, L"------------------------------------\n");
 
