@@ -148,7 +148,7 @@ BMF_InitCOM (void)
   }
 
   // Connect to the desired namespace.
-  bstrNameSpace = SysAllocString (L"\\\\.\\root\\cimv2");
+  bstrNameSpace = SysAllocString (L"\\\\.\\Root\\CIMv2");
   if (bstrNameSpace == nullptr)
   {
     hr = E_OUTOFMEMORY;
@@ -168,11 +168,13 @@ BMF_InitCOM (void)
     goto COM_CLEANUP;
   }
 
+#if 0
   pWbemLocator->Release ();
   pWbemLocator = nullptr;
 
   SysFreeString (bstrNameSpace);
   bstrNameSpace = nullptr;
+#endif
 
   com_init = true;
 
@@ -268,10 +270,12 @@ BMF_MonitorCPU (LPVOID user)
 
   int iter = 0;
 
+  cpu.dwNumReturned = 0;
+  cpu.dwNumObjects  = 0;
+
   while (cpu_stats.lID != 0)
   {
     cpu.dwNumReturned = 0;
-    cpu.dwNumObjects  = 0;
 
     if (FAILED (hr = cpu.pRefresher->Refresh (0L)))
     {
@@ -310,7 +314,7 @@ BMF_MonitorCPU (LPVOID user)
     }
     else
     {
-      if (hr == WBEM_S_NO_ERROR)
+      if (hr != WBEM_S_NO_ERROR)
       {
         hr = WBEM_E_NOT_FOUND;
         goto CPU_CLEANUP;
@@ -427,12 +431,6 @@ BMF_MonitorCPU (LPVOID user)
 
     cpu.num_cpus = cpu.dwNumReturned;
 
-    if (cpu.apEnumAccess != nullptr)
-    {
-      delete [] cpu.apEnumAccess;
-      cpu.apEnumAccess = NULL;
-    }
-
     // Sleep for 500 ms.
     Sleep (DWORD (update * 1000.0));
 
@@ -471,7 +469,7 @@ CPU_CLEANUP:
     cpu.pRefresher = nullptr;
   }
 
-  //BMF_ShutdownCOM ();
+  BMF_ShutdownCOM ();
 
   return 0;
 }
@@ -507,11 +505,28 @@ BMF_MonitorDisk (LPVOID user)
   {
     goto DISK_CLEANUP;
   }
+  //Win32_PerfFormattedData_PerfOS_Memory
 
+#if 1
+  //IWbemClassObject*  pObj = nullptr;
+  //IWbemObjectAccess* pAcc = nullptr;
+
+#if 0
+  disk.pConfig->AddObjectByPath (pNameSpace,
+	  L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk=@",
+	  0L,
+	  NULL,
+	  &pObj,
+	  &disk.lID);
+#endif
+
+  //pObj->QueryInterface(IID_IWbemObjectAccess,
+	  //(void**)&pAcc);
+//#else
   // Add an enumerator to the refresher.
   if (FAILED (hr = disk.pConfig->AddEnum (
       pNameSpace,
-      L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk",
+      L"Win32_PerfFormattedData_PerfDisk_LogicalDisk",
       0, 
       NULL,
       &disk.pEnum,
@@ -519,16 +534,19 @@ BMF_MonitorDisk (LPVOID user)
   {
     goto DISK_CLEANUP;
   }
+#endif
 
   disk.pConfig->Release ();
   disk.pConfig = nullptr;
 
   int iter = 0;
 
+  disk.dwNumReturned = 0;
+  disk.dwNumObjects = 0;
+
   while (disk_stats.lID != 0)
   {
-    disk.dwNumReturned = 0;
-    disk.dwNumObjects  = 0;
+	disk.dwNumReturned = 0;
 
     if (FAILED (hr = disk.pRefresher->Refresh (0L)))
     {
@@ -536,8 +554,8 @@ BMF_MonitorDisk (LPVOID user)
     }
 
     hr = disk.pEnum->GetObjects (0L, 
-                                disk.dwNumObjects, 
-                                disk.apEnumAccess, 
+                                 disk.dwNumObjects, 
+                                 disk.apEnumAccess, 
                                 &disk.dwNumReturned);
     
     // If the buffer was not big enough,
@@ -567,7 +585,7 @@ BMF_MonitorDisk (LPVOID user)
     }
     else
     {
-      if (hr == WBEM_S_NO_ERROR)
+      if (hr != WBEM_S_NO_ERROR)
       {
         hr = WBEM_E_NOT_FOUND;
         goto DISK_CLEANUP;
@@ -745,9 +763,9 @@ BMF_MonitorDisk (LPVOID user)
       disk.disks [i].percent_read   = (disk.disks [i].percent_read   + percent_read)   / 2;
       disk.disks [i].percent_write  = (disk.disks [i].percent_write  + percent_write)  / 2;
 
-      disk.disks [i].bytes_sec       = (disk.disks [i].bytes_sec       + bytes_sec)       / 2;
-      disk.disks [i].write_bytes_sec = (disk.disks [i].write_bytes_sec + bytes_write_sec) / 2;
-      disk.disks [i].read_bytes_sec  = (disk.disks [i].read_bytes_sec  + bytes_read_sec)  / 2;
+      disk.disks [i].bytes_sec       = (disk.disks [i].bytes_sec       + bytes_sec)       >> 1;
+      disk.disks [i].write_bytes_sec = (disk.disks [i].write_bytes_sec + bytes_write_sec) >> 1;
+      disk.disks [i].read_bytes_sec  = (disk.disks [i].read_bytes_sec  + bytes_read_sec)  >> 1;
 
       // Done with the object
       disk.apEnumAccess [i]->Release ();
@@ -755,12 +773,6 @@ BMF_MonitorDisk (LPVOID user)
     }
 
     disk.num_disks = disk.dwNumReturned;
-
-    if (disk.apEnumAccess != nullptr)
-    {
-      delete [] disk.apEnumAccess;
-      disk.apEnumAccess = nullptr;
-    }
 
     // Sleep for 500 ms.
     Sleep (DWORD (update * 1000.0));
@@ -800,7 +812,7 @@ DISK_CLEANUP:
     disk.pRefresher = nullptr;
   }
 
-  //BMF_ShutdownCOM ();
+  BMF_ShutdownCOM ();
 
   return 0;
 }
@@ -838,7 +850,8 @@ BMF_MonitorPagefile (LPVOID user)
   // Add an enumerator to the refresher.
   if (FAILED (hr = pagefile.pConfig->AddEnum (
       pNameSpace,
-      L"Win32_PerfRawData_PerfOS_PagingFile",
+	  L"Win32_PerfRawData_PerfOS_PagingFile",
+      //L"Win32_PerfFormattedData_PerfOS_PagingFile",
       0, 
       NULL,
       &pagefile.pEnum,
@@ -852,10 +865,12 @@ BMF_MonitorPagefile (LPVOID user)
 
   int iter = 0;
 
-  while (pagefile_stats.lID != 0)
+  pagefile.dwNumReturned = 0;
+  pagefile.dwNumObjects  = 0;
+
+  while (pagefile.lID != 0)
   {
     pagefile.dwNumReturned = 0;
-    pagefile.dwNumObjects  = 0;
 
     if (FAILED (hr = pagefile.pRefresher->Refresh (0L)))
     {
@@ -894,7 +909,7 @@ BMF_MonitorPagefile (LPVOID user)
     }
     else
     {
-      if (hr == WBEM_S_NO_ERROR)
+      if (hr != WBEM_S_NO_ERROR)
       {
         hr = WBEM_E_NOT_FOUND;
         goto PAGEFILE_CLEANUP;
@@ -1018,12 +1033,6 @@ BMF_MonitorPagefile (LPVOID user)
 
     pagefile.num_pagefiles = pagefile.dwNumReturned;
 
-    if (pagefile.apEnumAccess != nullptr)
-    {
-      delete [] pagefile.apEnumAccess;
-      pagefile.apEnumAccess = nullptr;
-    }
-
     // Sleep for 500 ms.
     Sleep ((DWORD)(update * 1000.0));
 
@@ -1062,7 +1071,7 @@ PAGEFILE_CLEANUP:
     pagefile.pRefresher = nullptr;
   }
 
-  //BMF_ShutdownCOM ();
+  BMF_ShutdownCOM ();
 
   return 0;
 }

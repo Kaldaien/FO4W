@@ -61,7 +61,7 @@ extern "C" {
   void WaitForInit (void);
 
 #undef STDMETHODCALLTYPE
-#define STDMETHODCALLTYPE __fastcall
+#define STDMETHODCALLTYPE __stdcall
 
 typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
   (UINT Flags, REFIID riid,  void** ppFactory);
@@ -650,7 +650,7 @@ BMF_Init (void)
 	  dxgi_log.LogEx (false, L"Failed!\n");
   }
 
-  Sleep (16);
+  Sleep (250);
 
   if (disk_stats.hThread == 0) {
     dxgi_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
@@ -662,7 +662,7 @@ BMF_Init (void)
 	  dxgi_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (16);
+  Sleep (250);
 
   if (pagefile_stats.hThread == 0) {
     dxgi_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
@@ -674,6 +674,8 @@ BMF_Init (void)
 	else
 	  dxgi_log.LogEx (false, L"failed!\n");
   }
+
+  dxgi_log.LogEx (false, L"\n");
 
   LeaveCriticalSection (&init_mutex);
 }
@@ -1296,7 +1298,6 @@ typedef enum bmfUndesirableVendors {
 
 volatile bool init = false;
 
-#if 1
 DWORD
 WINAPI HookThread (LPVOID user)
 {
@@ -1332,20 +1333,28 @@ WINAPI HookThread (LPVOID user)
 
   return 0;
 }
-#endif
 
 void
 BMF_InstallD3D11DeviceHooks (void)
 {
-  WaitForInit ();
-
   EnterCriticalSection (&d3dhook_mutex);
   {
+    WaitForInit ();
+
+	if (init) {
+      LeaveCriticalSection (&d3dhook_mutex);
+	  return;
+    }
+
     HANDLE hThread =
       CreateThread (NULL, 0, HookThread, NULL, 0, NULL);
 
     if (hThread != 0)
       WaitForSingleObject (hThread, INFINITE);
+	else
+	  Sleep (20);
+
+	init = true;
   }
   LeaveCriticalSection (&d3dhook_mutex);
 }
@@ -1890,6 +1899,22 @@ WINAPI BudgetThread (LPVOID user_data)
       queued_flush = false;
     }
 #endif
+
+#if 0
+	SetSystemFileCacheSize(-1, -1, NULL);
+	HANDLE hHeap = GetProcessHeap();
+	HeapCompact(hHeap, 0);
+	struct heap_opt_t {
+		DWORD version;
+		DWORD length;
+	} heap_opt;
+    heap_opt.version = 1;
+	heap_opt.length = sizeof(heap_opt_t);
+	HeapSetInformation(NULL, (_HEAP_INFORMATION_CLASS)3, &heap_opt,
+		heap_opt.length);
+	//SetProcessWorkingSetSize (GetCurrentProcess (), (SIZE_T)-1, (SIZE_T)-1);
+#endif
+
     static uint64_t last_budget =
       mem_info [buffer].local [0].Budget;
 

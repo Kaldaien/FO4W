@@ -45,7 +45,7 @@ struct bmf_config_t
 
   bool  pagefile_stats    = false;
   BYTE  pagefile_keys [4] = { VK_CONTROL, VK_SHIFT, 'P', 0 };
-  float pagefile_interval = 0.5f;
+  float pagefile_interval = 5.0f;
 
   int   init_delay    = 250;
   bool  silent        = false;

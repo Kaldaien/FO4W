@@ -147,22 +147,50 @@ BMF_DrawOSD (void)
                io_counter.other_mb_sec, io_counter.other_iop_sec
   OSD_END
 
-  for (int i = 0; i < disk_stats.num_disks; i++) {
-    OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
-                                   "(Read: %#5.01f MiB   Write: %#5.01f MiB)",
-      disk_stats.disks [i].name,
-        disk_stats.disks [i].percent_load, 
-          disk_stats.disks [i].percent_read,
-            disk_stats.disks [i].percent_write,
-              (float)disk_stats.disks [i].read_bytes_sec / (1024.0f * 1024.0f),
-              (float)disk_stats.disks [i].write_bytes_sec / (1024.0f * 1024.0f)
-    OSD_END
+#if 0
+  bool use_mib_sec = disk_stats.num_disks > 0 ?
+	                   (disk_stats.disks [0].bytes_sec > (1024 * 1024 * 2)) : false;
 
-    if (i == 0) {
-      OSD_D_PRINTF "\n"
+  if (use_mib_sec) {
+#endif
+    for (int i = 0; i < disk_stats.num_disks; i++) {
+      OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
+                                     "(Read: %#5.01f MiB   Write: %#5.01f MiB)",
+        disk_stats.disks [i].name,
+          disk_stats.disks [i].percent_load, 
+            disk_stats.disks [i].percent_read,
+              disk_stats.disks [i].percent_write,
+                (float)disk_stats.disks [i].read_bytes_sec / (1024.0f * 1024.0f),
+                (float)disk_stats.disks [i].write_bytes_sec / (1024.0f * 1024.0f)
       OSD_END
+
+      if (i == 0) {
+        OSD_D_PRINTF "\n"
+        OSD_END
+      }
+    }
+#if 0
+  }
+  else
+  {
+    for (int i = 0; i < disk_stats.num_disks; i++) {
+      OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
+			                            "(Read: %#5.01f KiB   Write: %#5.01f KiB)",
+        disk_stats.disks[i].name,
+          disk_stats.disks[i].percent_load,
+            disk_stats.disks[i].percent_read,
+              disk_stats.disks[i].percent_write,
+                (float)disk_stats.disks[i].read_bytes_sec / (1024.0f),
+                (float)disk_stats.disks[i].write_bytes_sec / (1024.0f)
+      OSD_END
+
+      if (i == 0) {
+        OSD_D_PRINTF "\n"
+        OSD_END
+      }
     }
   }
+#endif
 
   OSD_D_PRINTF "\n"
   OSD_END
@@ -190,11 +218,11 @@ BMF_DrawOSD (void)
   OSD_END
 
   for (int i = 0; i < pagefile_stats.num_pagefiles; i++) {
-    OSD_P_PRINTF "\n  Pagefile %16s %#3u MiB / %#3u MiB  (Peak: %#3u MiB)",
+    OSD_P_PRINTF "\n  Pagefile %16s %05.02f KiB / %05.02f KiB  (Peak: %05.02f KiB)",
       pagefile_stats.pagefiles [i].name,
-        pagefile_stats.pagefiles [i].usage          >> 20ULL,
-          pagefile_stats.pagefiles [i].size         >> 20ULL,
-            pagefile_stats.pagefiles [i].usage_peak >> 20ULL
+        (float)pagefile_stats.pagefiles [i].usage / 1024.0f,
+          (float)pagefile_stats.pagefiles [i].size / 1024.0f,
+            (float)pagefile_stats.pagefiles [i].usage_peak / 1024.0f
     OSD_END
 
     if (i == 0) {
