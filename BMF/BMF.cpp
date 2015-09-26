@@ -1027,9 +1027,12 @@ __cdecl PresentCallback (IDXGISwapChain *This,
                          UINT            SyncInterval,
                          UINT            Flags)
 {
-  BMF_DrawOSD ();
+  BOOL    osd = BMF_DrawOSD      ();
+  HRESULT hr  = Present_Original (This, SyncInterval, Flags);
 
-  HRESULT hr = Present_Original (This, SyncInterval, Flags);
+  // Early-out if the OSD is not functional
+  if (! osd)
+    return hr;
 
   static bool toggle_mem = false;
   if (HIWORD (GetAsyncKeyState (config.mem_keys [0])) &&
@@ -2215,6 +2218,9 @@ APIENTRY DllMain ( HMODULE hModule,
 
     case DLL_PROCESS_DETACH:
     {
+      // Shutdown the OSD as early as possible to avoid complications
+      BMF_ReleaseOSD ();
+
       if (budget_thread != nullptr) {
         config.load_balance = false; // Turn this off while shutting down
 
@@ -2334,8 +2340,6 @@ APIENTRY DllMain ( HMODULE hModule,
       dxgi_log.LogEx (true, L"Saving user preferences to dxgi.ini... ");
       BMF_SaveConfig ();
       dxgi_log.LogEx (false, L"done!\n");
-
-      BMF_ReleaseOSD ();
 
       // Hopefully these things are done by now...
       DeleteCriticalSection (&init_mutex);

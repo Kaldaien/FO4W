@@ -44,9 +44,106 @@ static char szOSD [4096];
 extern NV_GET_CURRENT_SLI_STATE sli_state;
 extern BOOL nvapi_init;
 
-void
+// Probably need to use a critical section to make this foolproof, we will
+//   cross that bridge later though. The OSD is performance critical
+static bool osd_shutting_down = false;
+
+BOOL
+BMF_ReleaseSharedMemory (LPVOID lpMemory)
+{
+  if (lpMemory != nullptr) {
+    UnmapViewOfFile (lpMemory);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+LPVOID
+BMF_GetSharedMemory (DWORD dwProcID)
+{
+  if (osd_shutting_down)
+    return nullptr;
+
+  HANDLE hMapFile =
+    OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+
+  if (hMapFile) {
+    LPVOID               pMapAddr =
+      MapViewOfFile (hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+
+    // We got our pointer, now close the file... we'll clean this pointer up later
+    CloseHandle (hMapFile);
+
+    LPRTSS_SHARED_MEMORY pMem     =
+      (LPRTSS_SHARED_MEMORY)pMapAddr;
+
+    if (pMem)
+    {
+      if ((pMem->dwSignature == 'RTSS') && 
+          (pMem->dwVersion >= 0x00020000))
+      {
+        // ProcID is a wild-card, just return memory without checking to see if RTSS
+        //   knows about a particular process.
+        if (dwProcID == 0)
+          return pMapAddr;
+
+        for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
+        {
+          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
+            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
+              ((LPBYTE)pMem + pMem->dwAppArrOffset +
+                      dwApp * pMem->dwAppEntrySize);
+
+          if (pApp->dwProcessID == dwProcID)
+          {
+#if 0
+            wchar_t wszFlags [1024];
+            wsprintf (wszFlags, L"Flags=%X, StatFlags=%X, ScreenCaptureFlags=%X",
+               pApp->dwFlags, pApp->dwStatFlags, pApp->dwScreenCaptureFlags);
+            if (pApp->dwFlags != 0x1000000 &&
+              pApp->dwFlags != 0x0 || pApp->dwStatFlags != 0x0)
+            MessageBox(NULL, wszFlags, L"OSD Flags", MB_OK);
+            //pApp->dwFlags &= ~0x1000000;
+            //pApp->
+            //sprintf (pEntry->szOSDEx, ");
+            //*((float *)&pApp->dwOSDPixel) = 200.0f;
+            //pApp->dwOSDPixel++;
+            //pApp->dwOSDX++;
+            //pApp->dwOSDY++;
+            //pApp->dwOSDColor     = 0xffffffff;
+            //pApp->dwOSDBgndColor = 0xffffffff;
+            //pApp->dwFlags |= OSDFLAG_UPDATED;
+#endif
+            // Everything is good and RTSS knows about dwProcID!
+            return pMapAddr;
+          }
+        }
+      }
+    }
+
+    // We got a pointer, but... it was not to useable RivaTuner memory
+    UnmapViewOfFile (pMapAddr);
+  }
+
+  return nullptr;
+}
+
+LPVOID
+BMF_GetSharedMemory (void)
+{
+  return BMF_GetSharedMemory (GetCurrentProcessId ());
+}
+
+BOOL
 BMF_DrawOSD (void)
 {
+  // Bail-out early when shutting down, or RTSS does not know about our process
+  LPVOID pMemory = BMF_GetSharedMemory ();
+
+  if (! pMemory)
+    return false;
+
   char* pszOSD = szOSD;
   *pszOSD = '\0';
 
@@ -248,107 +345,83 @@ BMF_DrawOSD (void)
   OSD_P_PRINTF "\n"
   OSD_END
 
-  BMF_UpdateOSD (szOSD);
+  bool ret = BMF_UpdateOSD (szOSD, pMemory);
+
+  BMF_ReleaseSharedMemory (pMemory);
+
+  return ret;
 }
 
 BOOL
-BMF_UpdateOSD (LPCSTR lpText)
+BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
 {
   static DWORD dwProcID =
     GetCurrentProcessId ();
 
   BOOL bResult = FALSE;
 
-  HANDLE hMapFile =
-    OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+  if (osd_shutting_down)
+    return bResult;
 
-  if (hMapFile) {
-    LPVOID               pMapAddr =
-      MapViewOfFile (hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+  // If pMapAddr == nullptr, manage memory ourselves
+  bool own_memory = false;
+  if (pMapAddr == nullptr) {
+    pMapAddr = BMF_GetSharedMemory (dwProcID);
+    own_memory = true;
+  }
 
-    LPRTSS_SHARED_MEMORY pMem     =
-      (LPRTSS_SHARED_MEMORY)pMapAddr;
+  LPRTSS_SHARED_MEMORY pMem     =
+    (LPRTSS_SHARED_MEMORY)pMapAddr;
 
-    if (pMem)
+  if (pMem)
+  {
+    for (DWORD dwPass = 0; dwPass < 2; dwPass++)
     {
-      if ((pMem->dwSignature == 'RTSS') && 
-          (pMem->dwVersion >= 0x00020000))
+      //1st Pass: Find previously captured OSD slot
+      //2nd Pass: Otherwise find the first unused OSD slot and capture it
+
+      for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
       {
-        for (DWORD dwPass = 0; dwPass < 2; dwPass++)
+        // Allow primary OSD clients (i.e. EVGA Precision / MSI Afterburner)
+        //   to use the first slot exclusively, so third party applications
+        //     start scanning the slots from the second one
+
+        RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+          (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+            ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+                  dwEntry * pMem->dwOSDEntrySize);
+
+        if (dwPass)
         {
-          //1st Pass: Find previously captured OSD slot
-          //2nd Pass: Otherwise find the first unused OSD slot and capture it
+          if (! strlen (pEntry->szOSDOwner))
+            strcpy (pEntry->szOSDOwner, "Batman Fix");
+        }
 
-          for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
-          {
-            // Allow primary OSD clients (i.e. EVGA Precision / MSI Afterburner)
-            //   to use the first slot exclusively, so third party applications
-            //     start scanning the slots from the second one
+        if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+        {
+          if (pMem->dwVersion >= 0x00020007)
+            //Use extended text slot for v2.7 and higher shared memory,
+            // it allows displaying 4096 symbols instead of 256 for regular
+            //  text slot
+            strncpy (pEntry->szOSDEx, lpText, sizeof pEntry->szOSDEx - 1);
+            //snprintf (pEntry->szOSDEx, sizeof pEntry->szOSDEx - 1, "Frame: %d\n%s", pMem->dwOSDFrame, lpText);
+          else
+            strncpy (pEntry->szOSD,   lpText, sizeof pEntry->szOSD   - 1);
 
-            RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
-              (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
-                ((LPBYTE)pMem + pMem->dwOSDArrOffset +
-                      dwEntry * pMem->dwOSDEntrySize);
+          pMem->dwOSDFrame++;
 
-            if (dwPass)
-            {
-              if (! strlen (pEntry->szOSDOwner))
-                strcpy (pEntry->szOSDOwner, "Batman Fix");
-            }
-
-            if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
-            {
-              if (pMem->dwVersion >= 0x00020007)
-                //Use extended text slot for v2.7 and higher shared memory,
-                // it allows displaying 4096 symbols instead of 256 for regular
-                //  text slot
-                strncpy (pEntry->szOSDEx, lpText, sizeof pEntry->szOSDEx - 1);
-              else
-                strncpy (pEntry->szOSD,   lpText, sizeof pEntry->szOSD   - 1);
-
-#if 0
-              for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
-              {
-                RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
-                  (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
-                    ((LPBYTE)pMem + pMem->dwAppArrOffset +
-                            dwApp * pMem->dwAppEntrySize);
-
-                if (pApp->dwProcessID == dwProcID)
-                {
-                  //pApp->dwFlags &= ~0x1000000;
-                  //pApp->
-                  //sprintf (pEntry->szOSDEx, "Flags=%X, StatFlags=%X, ScreenCaptureFlags=%X",
-                  //pApp->dwFlags, pApp->dwStatFlags, pApp->dwScreenCaptureFlags);
-                  //*((float *)&pApp->dwOSDPixel) = 200.0f;
-                  //pApp->dwOSDPixel++;
-                  //pApp->dwOSDX++;
-                  //pApp->dwOSDY++;
-                  //pApp->dwOSDColor     = 0xffffffff;
-                  //pApp->dwOSDBgndColor = 0xffffffff;
-                  //pApp->dwFlags |= OSDFLAG_UPDATED;
-                  break;
-                }
-              }
-#endif
-
-              pMem->dwOSDFrame++;
-
-              bResult = TRUE;
-              break;
-            }
-          }
-
-          if (bResult)
-            break;
+          bResult = TRUE;
+          break;
         }
       }
 
-      UnmapViewOfFile (pMapAddr);
+      if (bResult)
+        break;
     }
-
-    CloseHandle (hMapFile);
   }
+
+  if (own_memory)
+    BMF_ReleaseSharedMemory (pMapAddr);
 
   return bResult;
 }
@@ -356,39 +429,30 @@ BMF_UpdateOSD (LPCSTR lpText)
 void
 BMF_ReleaseOSD (void)
 {
-  HANDLE hMapFile =
-    OpenFileMappingA (FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+  LPVOID pMapAddr =
+    BMF_GetSharedMemory ();
 
-  if (hMapFile)
+  osd_shutting_down = true;
+
+  LPRTSS_SHARED_MEMORY pMem     =
+    (LPRTSS_SHARED_MEMORY)pMapAddr;
+
+  if (pMem)
   {
-    LPVOID               pMapAddr =
-      MapViewOfFile (hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-    LPRTSS_SHARED_MEMORY pMem     =
-      (LPRTSS_SHARED_MEMORY)pMapAddr;
-
-    if (pMem)
+    for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
     {
-      if ((pMem->dwSignature == 'RTSS') && 
-          (pMem->dwVersion   >= 0x00020000))
-      {
-        for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
-        {
-          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
-            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+      RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+          (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
             ((LPBYTE)pMem + pMem->dwOSDArrOffset +
                   dwEntry * pMem->dwOSDEntrySize);
 
-          if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
-          {
-            memset (pEntry, 0, pMem->dwOSDEntrySize);
-            pMem->dwOSDFrame++;
-          }
-        }
+      if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+      {
+        memset (pEntry, 0, pMem->dwOSDEntrySize);
+        pMem->dwOSDFrame++;
       }
-
-      UnmapViewOfFile (pMapAddr);
     }
 
-    CloseHandle (hMapFile);
+    BMF_ReleaseSharedMemory (pMapAddr);
   }
 }

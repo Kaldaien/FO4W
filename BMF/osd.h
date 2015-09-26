@@ -59,8 +59,11 @@ struct mem_info_t {
   int                          nodes  = MAX_GPU_NODES;
 } extern mem_info [NumBuffers];
 
-void BMF_DrawOSD    (void);
-BOOL BMF_UpdateOSD  (LPCSTR lpText);
-void BMF_ReleaseOSD (void);
+LPVOID BMF_GetSharedMemory     (void);
+BOOL   BMF_ReleaseSharedMemory (LPVOID pMemory);
+
+BOOL BMF_DrawOSD          (void);
+BOOL BMF_UpdateOSD        (LPCSTR lpText, LPVOID pMapAddr = nullptr);
+void BMF_ReleaseOSD       (void);
 
 #endif /* __BMF__OSD_H__ */
