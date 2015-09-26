@@ -23,7 +23,7 @@ struct bmf_config_t
 {
   bool   mem_stats        = true;
   BYTE   mem_keys [4]     = { VK_CONTROL, VK_SHIFT, 'M', 0 };
-  float  mem_reserve      = 85.0f;
+  float  mem_reserve      = 75.0f;
 
   bool  io_stats          = true;
   BYTE  io_keys [4]       = { VK_CONTROL, VK_SHIFT, 'I', 0 };
@@ -45,10 +45,11 @@ struct bmf_config_t
 
   bool  pagefile_stats    = false;
   BYTE  pagefile_keys [4] = { VK_CONTROL, VK_SHIFT, 'P', 0 };
-  float pagefile_interval = 5.0f;
+  float pagefile_interval = 2.5f;
 
-  int   init_delay    = 250;
-  bool  silent        = false;
+  int   init_delay      = 250;
+  bool  silent          = false;
+  bool  allow_dev_trans = false;
 } extern config;
 
 bool BMF_LoadConfig (void);

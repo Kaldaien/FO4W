@@ -1,3 +1,20 @@
+/**
+* This file is part of Batman "Fix".
+*
+* Batman "Fix" is free software : you can redistribute it and / or modify
+* it under the terms of the GNU General Public License as published by
+* The Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* Batman "Fix" is distributed in the hope that it will be useful,
+* But WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
+**/
+
 #include "osd.h"
 
 #include "RTSSSharedMemory.h"
@@ -21,14 +38,11 @@
 #define OSD_I_PRINTF if (config.io_stats)     { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
-char  szOSD [4096];
+static char szOSD [4096];
 
 #include "nvapi.h"
 extern NV_GET_CURRENT_SLI_STATE sli_state;
 extern BOOL nvapi_init;
-
-memory_stats_t mem_stats [MAX_GPU_NODES];
-mem_info_t     mem_info  [NumBuffers];
 
 void
 BMF_DrawOSD (void)
@@ -79,7 +93,7 @@ BMF_DrawOSD (void)
         OSD_S_PRINTF "!"
         OSD_END
       }
-        
+
       if (afr_next == i) {
         OSD_S_PRINTF "#"
         OSD_END
@@ -149,7 +163,7 @@ BMF_DrawOSD (void)
 
 #if 0
   bool use_mib_sec = disk_stats.num_disks > 0 ?
-	                   (disk_stats.disks [0].bytes_sec > (1024 * 1024 * 2)) : false;
+                       (disk_stats.disks [0].bytes_sec > (1024 * 1024 * 2)) : false;
 
   if (use_mib_sec) {
 #endif
@@ -175,7 +189,7 @@ BMF_DrawOSD (void)
   {
     for (int i = 0; i < disk_stats.num_disks; i++) {
       OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
-			                            "(Read: %#5.01f KiB   Write: %#5.01f KiB)",
+                                        "(Read: %#5.01f KiB   Write: %#5.01f KiB)",
         disk_stats.disks[i].name,
           disk_stats.disks[i].percent_load,
             disk_stats.disks[i].percent_read,
@@ -204,7 +218,7 @@ BMF_DrawOSD (void)
   OSD_END
 
   for (int i = 1; i < cpu_stats.num_cpus; i++) {
-	 OSD_C_PRINTF "\n  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
+    OSD_C_PRINTF "\n  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
                  "Interrupt: %#3llu%%)",
       i-1,
         cpu_stats.cpus [i].percent_load, 
@@ -240,6 +254,9 @@ BMF_DrawOSD (void)
 BOOL
 BMF_UpdateOSD (LPCSTR lpText)
 {
+  static DWORD dwProcID =
+    GetCurrentProcessId ();
+
   BOOL bResult = FALSE;
 
   HANDLE hMapFile =
@@ -289,6 +306,32 @@ BMF_UpdateOSD (LPCSTR lpText)
               else
                 strncpy (pEntry->szOSD,   lpText, sizeof pEntry->szOSD   - 1);
 
+#if 0
+              for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
+              {
+                RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
+                  (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
+                    ((LPBYTE)pMem + pMem->dwAppArrOffset +
+                            dwApp * pMem->dwAppEntrySize);
+
+                if (pApp->dwProcessID == dwProcID)
+                {
+                  //pApp->dwFlags &= ~0x1000000;
+                  //pApp->
+                  //sprintf (pEntry->szOSDEx, "Flags=%X, StatFlags=%X, ScreenCaptureFlags=%X",
+                  //pApp->dwFlags, pApp->dwStatFlags, pApp->dwScreenCaptureFlags);
+                  //*((float *)&pApp->dwOSDPixel) = 200.0f;
+                  //pApp->dwOSDPixel++;
+                  //pApp->dwOSDX++;
+                  //pApp->dwOSDY++;
+                  //pApp->dwOSDColor     = 0xffffffff;
+                  //pApp->dwOSDBgndColor = 0xffffffff;
+                  //pApp->dwFlags |= OSDFLAG_UPDATED;
+                  break;
+                }
+              }
+#endif
+
               pMem->dwOSDFrame++;
 
               bResult = TRUE;
@@ -309,7 +352,6 @@ BMF_UpdateOSD (LPCSTR lpText)
 
   return bResult;
 }
-/////////////////////////////////////////////////////////////////////////////
 
 void
 BMF_ReleaseOSD (void)

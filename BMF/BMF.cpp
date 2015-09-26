@@ -37,6 +37,9 @@
 #include "osd.h"
 #include "io_monitor.h"
 
+memory_stats_t mem_stats [MAX_GPU_NODES];
+mem_info_t     mem_info  [NumBuffers];
+
 static HANDLE           dll_heap      = { 0 };
 
 static CRITICAL_SECTION d3dhook_mutex = { 0 };
@@ -644,10 +647,10 @@ BMF_Init (void)
   if (cpu_stats.hThread == 0) {
     dxgi_log.LogEx (true, L" [WMI] Spawning CPU Monitor...      ");
     cpu_stats.hThread = CreateThread (NULL, 0, BMF_MonitorCPU, NULL, 0, NULL);
-	if (cpu_stats.hThread != 0)
+    if (cpu_stats.hThread != 0)
       dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (cpu_stats.hThread));
-	else
-	  dxgi_log.LogEx (false, L"Failed!\n");
+    else
+      dxgi_log.LogEx (false, L"Failed!\n");
   }
 
   Sleep (250);
@@ -656,10 +659,10 @@ BMF_Init (void)
     dxgi_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
     disk_stats.hThread =
       CreateThread (NULL, 0, BMF_MonitorDisk, NULL, 0, NULL);
-	if (disk_stats.hThread != 0)
+    if (disk_stats.hThread != 0)
       dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (disk_stats.hThread));
-	else
-	  dxgi_log.LogEx (false, L"failed!\n");
+    else
+      dxgi_log.LogEx (false, L"failed!\n");
   }
 
   Sleep (250);
@@ -668,11 +671,11 @@ BMF_Init (void)
     dxgi_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
     pagefile_stats.hThread =
       CreateThread (NULL, 0, BMF_MonitorPagefile, NULL, 0, NULL);
-	if (pagefile_stats.hThread != 0)
+    if (pagefile_stats.hThread != 0)
       dxgi_log.LogEx (false, L"tid=0x%04x\n",
                         GetThreadId (pagefile_stats.hThread));
-	else
-	  dxgi_log.LogEx (false, L"failed!\n");
+    else
+      dxgi_log.LogEx (false, L"failed!\n");
   }
 
   dxgi_log.LogEx (false, L"\n");
@@ -777,6 +780,24 @@ typedef struct dxgi_override_t {
 #endif
 
 extern "C++" {
+  int
+  BMF_GetDXGIFactoryInterfaceVer (const IID& riid)
+  {
+    if (riid == __uuidof (IDXGIFactory))
+      return 0;
+    if (riid == __uuidof (IDXGIFactory1))
+      return 1;
+    if (riid == __uuidof (IDXGIFactory2))
+      return 2;
+    if (riid == __uuidof (IDXGIFactory3))
+      return 3;
+    if (riid == __uuidof (IDXGIFactory4))
+      return 4;
+
+    //assert (false);
+    return -1;
+  }
+
   std::wstring
   BMF_GetDXGIFactoryInterfaceEx (const IID& riid)
   {
@@ -796,7 +817,7 @@ extern "C++" {
       wchar_t *pwszIID;
 
       if (SUCCEEDED (StringFromIID (riid, (LPOLESTR *)&pwszIID)))
-	  {
+      {
         interface_name = pwszIID;
         CoTaskMemFree (pwszIID);
       }
@@ -805,8 +826,8 @@ extern "C++" {
     return interface_name;
   }
 
-  std::wstring
-  BMF_GetDXGIFactoryInterface (IUnknown *pFactory)
+  int
+  BMF_GetDXGIFactoryInterfaceVer (IUnknown *pFactory)
   {
     IUnknown *pTemp = nullptr;
 
@@ -814,37 +835,77 @@ extern "C++" {
          pFactory->QueryInterface (__uuidof (IDXGIFactory4), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory4));
+      return 4;
     }
     if (SUCCEEDED (
          pFactory->QueryInterface (__uuidof (IDXGIFactory3), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory3));
+      return 3;
     }
 
     if (SUCCEEDED (
          pFactory->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory2));
+      return 2;
     }
 
     if (SUCCEEDED (
          pFactory->QueryInterface (__uuidof (IDXGIFactory1), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory1));
+      return 1;
     }
 
     if (SUCCEEDED (
          pFactory->QueryInterface (__uuidof (IDXGIFactory), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory));
+      return 0;
     }
 
+    //assert (false);
+    return -1;
+  }
+
+  std::wstring
+  BMF_GetDXGIFactoryInterface (IUnknown *pFactory)
+  {
+    int iver = BMF_GetDXGIFactoryInterfaceVer (pFactory);
+
+    if (iver == 4)
+      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory4));
+
+    if (iver == 3)
+      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory3));
+
+    if (iver == 2)
+      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory2));
+
+    if (iver == 1)
+      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory1));
+
+    if (iver == 0)
+      return BMF_GetDXGIFactoryInterfaceEx (__uuidof (IDXGIFactory));
+
     return L"{Invalid-Factory-UUID}";
+  }
+
+  int
+  BMF_GetDXGIAdapterInterfaceVer (const IID& riid)
+  {
+    if (riid == __uuidof (IDXGIAdapter))
+      return 0;
+    if (riid == __uuidof (IDXGIAdapter1))
+      return 1;
+    if (riid == __uuidof (IDXGIAdapter2))
+      return 2;
+    if (riid == __uuidof (IDXGIAdapter3))
+      return 3;
+
+    //assert (false);
+    return -1;
   }
 
   std::wstring
@@ -863,48 +924,69 @@ extern "C++" {
     else {
       wchar_t* pwszIID;
 
-	  if (SUCCEEDED (StringFromIID (riid, (LPOLESTR *)&pwszIID)))
-	  {
-		  interface_name = pwszIID;
-          CoTaskMemFree (pwszIID);
-	  }
+      if (SUCCEEDED (StringFromIID (riid, (LPOLESTR *)&pwszIID)))
+      {
+        interface_name = pwszIID;
+        CoTaskMemFree (pwszIID);
+      }
     }
 
     return interface_name;
   }
 
-  std::wstring
-  BMF_GetDXGIAdapterInterface (IUnknown *pAdapter)
+  int
+  BMF_GetDXGIAdapterInterfaceVer (IUnknown *pAdapter)
   {
     IUnknown *pTemp = nullptr;
 
-    if (SUCCEEDED (
+    if (SUCCEEDED(
          pAdapter->QueryInterface (__uuidof (IDXGIAdapter3), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter3));
+      return 3;
     }
 
-    if (SUCCEEDED (
+    if (SUCCEEDED(
          pAdapter->QueryInterface (__uuidof (IDXGIAdapter2), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter2));
+      return 2;
     }
 
-    if (SUCCEEDED (
+    if (SUCCEEDED(
          pAdapter->QueryInterface (__uuidof (IDXGIAdapter1), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter1));
+      return 1;
     }
 
-    if (SUCCEEDED 
-        (pAdapter->QueryInterface (__uuidof (IDXGIAdapter), (void **)&pTemp)))
+    if (SUCCEEDED(
+         pAdapter->QueryInterface (__uuidof (IDXGIAdapter), (void **)&pTemp)))
     {
       pTemp->Release ();
-      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter));
+      return 0;
     }
+
+    //assert (false);
+    return -1;
+  }
+
+  std::wstring
+  BMF_GetDXGIAdapterInterface (IUnknown *pAdapter)
+  {
+    int iver = BMF_GetDXGIAdapterInterfaceVer (pAdapter);
+
+    if (iver == 3)
+      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter3));
+
+    if (iver == 2)
+      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter2));
+
+    if (iver == 1)
+      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter1));
+
+    if (iver == 0)
+      return BMF_GetDXGIAdapterInterfaceEx (__uuidof (IDXGIAdapter));
 
     return L"{Invalid-Adapter-UUID}";
   }
@@ -1040,9 +1122,8 @@ __cdecl PresentCallback (IDXGISwapChain *This,
     if (This != NULL && nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
       IUnknown* pDev = nullptr;
 
-      This->GetDevice (__uuidof (ID3D11Device), (void **)&pDev);
-
-      if (pDev != nullptr) {
+      if (SUCCEEDED (This->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
+      {
         sli_state = bmf::NVAPI::GetSLIState (pDev);
         pDev->Release ();
       }
@@ -1179,13 +1260,34 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
                                           pFeatureLevel,
                                           ppImmediateContext);
 
-  if (res == S_OK && (ppDevice != NULL)) {
+  if (res == S_OK && (ppDevice != NULL))
+  {
     dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
     g_pD3D11Dev = (*ppDevice);
 
-    if (g_pDXGIDev == nullptr && g_pD3D11Dev != nullptr) {
-        g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
-                                     (void **)&g_pDXGIDev);
+    if (g_pDXGIDev == nullptr && g_pD3D11Dev != nullptr)
+    {
+      // First device created, this is the sane case...
+      g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
+                                   (void **)&g_pDXGIDev);
+    }
+
+    ///
+    // This does not happen often, but sometimes a game creates multiple
+    //   devices, let us just transition the DXGI device to the new D3D
+    //     device.
+    //
+    //   Is this the proper behavior? Who can say? Why do these games need
+    //     multiple devices capable of presenting swapchains in the first
+    //       place?
+    //
+    else if (g_pD3D11Dev != nullptr)
+    {
+      //if (config.allow_dev_trans) {
+      //g_pDXGIDev->Release ();
+      //g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
+        //                           (void **)&g_pDXGIDev);
+      //}
     }
   }
 
@@ -1341,9 +1443,9 @@ BMF_InstallD3D11DeviceHooks (void)
   {
     WaitForInit ();
 
-	if (init) {
+    if (init) {
       LeaveCriticalSection (&d3dhook_mutex);
-	  return;
+      return;
     }
 
     HANDLE hThread =
@@ -1351,10 +1453,10 @@ BMF_InstallD3D11DeviceHooks (void)
 
     if (hThread != 0)
       WaitForSingleObject (hThread, INFINITE);
-	else
-	  Sleep (20);
+    else
+      Sleep (20);
 
-	init = true;
+    init = true;
   }
   LeaveCriticalSection (&d3dhook_mutex);
 }
@@ -1654,7 +1756,8 @@ WINAPI CreateDXGIFactory (REFIID   riid,
 {
   BMF_InstallD3D11DeviceHooks ();
 
-  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
+  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
+  int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
 
   DXGI_LOG_CALL_2 (L"CreateDXGIFactory", L"%s, %08Xh",
                    iname.c_str (), ppFactory);
@@ -1670,6 +1773,13 @@ WINAPI CreateDXGIFactory (REFIID   riid,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
+  // DXGI 1.1+
+  if (iver > 0) {
+    DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory::EnumAdapters1",
+                           EnumAdapters1_Override, EnumAdapters1_Original,
+                           EnumAdapters1_t);
+  }
+
   return ret;
 }
 
@@ -1680,7 +1790,8 @@ WINAPI CreateDXGIFactory1 (REFIID   riid,
 {
   BMF_InstallD3D11DeviceHooks ();
 
-  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
+  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
+  int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
 
   DXGI_LOG_CALL_2 (L"CreateDXGIFactory1", L"%s, %08Xh",
                    iname.c_str (), ppFactory);
@@ -1691,13 +1802,16 @@ WINAPI CreateDXGIFactory1 (REFIID   riid,
   DXGI_VIRTUAL_OVERRIDE (ppFactory, 7,  "IDXGIFactory1::EnumAdapters",
                          EnumAdapters_Override,  EnumAdapters_Original,
                          EnumAdapters_t);
-  DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
-                         EnumAdapters1_Override, EnumAdapters1_Original,
-                         EnumAdapters1_t);
-
   DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory1::CreateSwapChain",
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
+
+  // DXGI 1.1+
+  if (iver > 0) {
+    DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
+                           EnumAdapters1_Override, EnumAdapters1_Original,
+                           EnumAdapters1_t);
+  }
 
   return ret;
 }
@@ -1710,7 +1824,8 @@ WINAPI CreateDXGIFactory2 (UINT     Flags,
 {
   BMF_InstallD3D11DeviceHooks ();
 
-  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx (riid);
+  std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
+  int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
 
   DXGI_LOG_CALL_3 (L"CreateDXGIFactory2", L"0x%04X, %s, %08Xh",
                   Flags, iname.c_str (), ppFactory);
@@ -1721,13 +1836,16 @@ WINAPI CreateDXGIFactory2 (UINT     Flags,
   DXGI_VIRTUAL_OVERRIDE (ppFactory, 7, "IDXGIFactory2::EnumAdapters",
                          EnumAdapters_Override, EnumAdapters_Original,
                          EnumAdapters_t);
-  DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
-                         EnumAdapters1_Override, EnumAdapters1_Original,
-                         EnumAdapters1_t);
-
   DXGI_VIRTUAL_OVERRIDE (ppFactory, 10, "IDXGIFactory2::CreateSwapChain",
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
+
+  // DXGI 1.1+
+  if (iver > 0) {
+    DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
+                           EnumAdapters1_Override, EnumAdapters1_Original,
+                           EnumAdapters1_t);
+  }
 
   return ret;
 }
@@ -1900,21 +2018,6 @@ WINAPI BudgetThread (LPVOID user_data)
     }
 #endif
 
-#if 0
-	SetSystemFileCacheSize(-1, -1, NULL);
-	HANDLE hHeap = GetProcessHeap();
-	HeapCompact(hHeap, 0);
-	struct heap_opt_t {
-		DWORD version;
-		DWORD length;
-	} heap_opt;
-    heap_opt.version = 1;
-	heap_opt.length = sizeof(heap_opt_t);
-	HeapSetInformation(NULL, (_HEAP_INFORMATION_CLASS)3, &heap_opt,
-		heap_opt.length);
-	//SetProcessWorkingSetSize (GetCurrentProcess (), (SIZE_T)-1, (SIZE_T)-1);
-#endif
-
     static uint64_t last_budget =
       mem_info [buffer].local [0].Budget;
 
@@ -2042,7 +2145,7 @@ WINAPI BudgetThread (LPVOID user_data)
       budget_log.LogEx (false, L"\n");
     }
 
-	if (params->event != 0)
+    if (params->event != 0)
       ResetEvent (params->event);
 
     mem_info [0].buffer = buffer;
@@ -2051,7 +2154,7 @@ WINAPI BudgetThread (LPVOID user_data)
   if (g_pDXGIDev != nullptr) {
     // Releasing this actually causes driver crashes, so ...
     //   let it leak, what do we care?
-    //pDXGIDev->Release ();
+    //g_pDXGIDev->Release ();
     g_pDXGIDev = nullptr;
   }
 
@@ -2086,8 +2189,6 @@ APIENTRY DllMain ( HMODULE hModule,
 
       MH_Initialize ();
 
-      //LoadLibrary (L"d3d11.dll");
-
       BOOL bRet = InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
            bRet = InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
            bRet = InitializeCriticalSectionAndSpinCount (&init_mutex,    50000);
@@ -2098,7 +2199,7 @@ APIENTRY DllMain ( HMODULE hModule,
       //   that they make. But don't wait here infinitely, or we will deadlock!
 
       /* Default: 0.25 secs seems adequate */
-	  if (hInitThread != 0)
+      if (hInitThread != 0)
         WaitForSingleObject (hInitThread, config.init_delay);
     } break;
 
@@ -2204,7 +2305,7 @@ APIENTRY DllMain ( HMODULE hModule,
       }
 
       if (disk_stats.hThread != 0) {
-        dxgi_log.LogEx(true,L"[WMI] Shutting down Disk Monitor... ");
+        dxgi_log.LogEx (true, L"[WMI] Shutting down Disk Monitor... ");
         // Signal the thread to shutdown
         disk_stats.lID = 0;
         WaitForSingleObject (disk_stats.hThread, 1000UL); // Give 1 second, and
@@ -2217,7 +2318,7 @@ APIENTRY DllMain ( HMODULE hModule,
       }
 
       if (pagefile_stats.hThread != 0) {
-        dxgi_log.LogEx(true,L"[WMI] Shutting down Pagefile Monitor... ");
+        dxgi_log.LogEx (true, L"[WMI] Shutting down Pagefile Monitor... ");
         // Signal the thread to shutdown
         pagefile_stats.lID = 0;
         WaitForSingleObject (

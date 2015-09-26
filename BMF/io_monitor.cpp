@@ -89,14 +89,14 @@ BMF_CountIO (io_perf_t& ioc, const double update)
     write_iop_sec = (write_iop_sec + (dWC / (1.0e-7 * (double)ioc.dt))) / 2.0;
     other_iop_sec = (other_iop_sec + (dOC / (1.0e-7 * (double)ioc.dt))) / 2.0;
 
-    ioc.accum.ReadTransferCount  = 0;
-    ioc.accum.WriteTransferCount = 0;
-    ioc.accum.OtherTransferCount = 0;
+    ioc.accum.ReadTransferCount   = 0;
+    ioc.accum.WriteTransferCount  = 0;
+    ioc.accum.OtherTransferCount  = 0;
 
     ioc.accum.ReadOperationCount  = 0;
     ioc.accum.WriteOperationCount = 0;
     ioc.accum.OtherOperationCount = 0;
-        
+
     ioc.dt = 0;
   }
 
@@ -107,7 +107,7 @@ BMF_CountIO (io_perf_t& ioc, const double update)
 
 #pragma comment (lib, "wbemuuid.lib")
 
-bool com_init = false;
+bool           com_init   = false;
 IWbemServices* pNameSpace = nullptr;
 
 bool
@@ -204,6 +204,9 @@ COM_CLEANUP:
   return false;
 }
 
+//
+// TODO - Use reference counting for the number of times init was called...
+//
 void
 BMF_ShutdownCOM (void)
 {
@@ -286,7 +289,7 @@ BMF_MonitorCPU (LPVOID user)
                                 cpu.dwNumObjects, 
                                 cpu.apEnumAccess, 
                                 &cpu.dwNumReturned);
-    
+
     // If the buffer was not big enough,
     // allocate a bigger buffer and retry.
     if (hr == WBEM_E_BUFFER_TOO_SMALL 
@@ -450,19 +453,19 @@ CPU_CLEANUP:
     }
     delete [] cpu.apEnumAccess;
   }
-  
+
   if (cpu.pEnum)
   {
     cpu.pEnum->Release ();
     cpu.pEnum = nullptr;
   }
-  
+
   if (cpu.pConfig != nullptr)
   {
     cpu.pConfig->Release ();
     cpu.pConfig = nullptr;
   }
-  
+
   if (cpu.pRefresher != nullptr)
   {
     cpu.pRefresher->Release ();
@@ -505,24 +508,7 @@ BMF_MonitorDisk (LPVOID user)
   {
     goto DISK_CLEANUP;
   }
-  //Win32_PerfFormattedData_PerfOS_Memory
 
-#if 1
-  //IWbemClassObject*  pObj = nullptr;
-  //IWbemObjectAccess* pAcc = nullptr;
-
-#if 0
-  disk.pConfig->AddObjectByPath (pNameSpace,
-	  L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk=@",
-	  0L,
-	  NULL,
-	  &pObj,
-	  &disk.lID);
-#endif
-
-  //pObj->QueryInterface(IID_IWbemObjectAccess,
-	  //(void**)&pAcc);
-//#else
   // Add an enumerator to the refresher.
   if (FAILED (hr = disk.pConfig->AddEnum (
       pNameSpace,
@@ -534,7 +520,6 @@ BMF_MonitorDisk (LPVOID user)
   {
     goto DISK_CLEANUP;
   }
-#endif
 
   disk.pConfig->Release ();
   disk.pConfig = nullptr;
@@ -542,11 +527,11 @@ BMF_MonitorDisk (LPVOID user)
   int iter = 0;
 
   disk.dwNumReturned = 0;
-  disk.dwNumObjects = 0;
+  disk.dwNumObjects  = 0;
 
   while (disk_stats.lID != 0)
   {
-	disk.dwNumReturned = 0;
+    disk.dwNumReturned = 0;
 
     if (FAILED (hr = disk.pRefresher->Refresh (0L)))
     {
@@ -557,7 +542,7 @@ BMF_MonitorDisk (LPVOID user)
                                  disk.dwNumObjects, 
                                  disk.apEnumAccess, 
                                 &disk.dwNumReturned);
-    
+
     // If the buffer was not big enough,
     // allocate a bigger buffer and retry.
     if (hr == WBEM_E_BUFFER_TOO_SMALL 
@@ -607,7 +592,7 @@ BMF_MonitorDisk (LPVOID user)
       CIMTYPE PercentDiskReadTimeType;
       CIMTYPE PercentDiskWriteTimeType;
       CIMTYPE PercentIdleTimeType;
-      
+
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"Name",
                             &NameType,
@@ -672,7 +657,7 @@ BMF_MonitorDisk (LPVOID user)
         goto DISK_CLEANUP;
       }
     }
-           
+
     for (unsigned int i = 0; i < disk.dwNumReturned; i++)
     {
       uint64_t percent_read;
@@ -744,7 +729,7 @@ BMF_MonitorDisk (LPVOID user)
       {
         goto DISK_CLEANUP;
       }
-      
+
       WideCharToMultiByte (CP_OEMCP, 0, name, 31, disk.disks [i].name, 31, " ", NULL);
       disk.disks [i].name [31] = '\0';
 
@@ -793,19 +778,19 @@ DISK_CLEANUP:
     }
     delete [] disk.apEnumAccess;
   }
-  
+
   if (disk.pEnum)
   {
     disk.pEnum->Release ();
     disk.pEnum = nullptr;
   }
-  
+
   if (disk.pConfig != nullptr)
   {
     disk.pConfig->Release ();
     disk.pConfig = nullptr;
   }
-  
+
   if (disk.pRefresher != nullptr)
   {
     disk.pRefresher->Release ();
@@ -850,7 +835,7 @@ BMF_MonitorPagefile (LPVOID user)
   // Add an enumerator to the refresher.
   if (FAILED (hr = pagefile.pConfig->AddEnum (
       pNameSpace,
-	  L"Win32_PerfRawData_PerfOS_PagingFile",
+      L"Win32_PerfRawData_PerfOS_PagingFile",
       //L"Win32_PerfFormattedData_PerfOS_PagingFile",
       0, 
       NULL,
@@ -881,7 +866,7 @@ BMF_MonitorPagefile (LPVOID user)
                                      pagefile.dwNumObjects,
                                      pagefile.apEnumAccess,
                                      &pagefile.dwNumReturned);
-    
+
     // If the buffer was not big enough,
     // allocate a bigger buffer and retry.
     if (hr == WBEM_E_BUFFER_TOO_SMALL 
@@ -893,7 +878,7 @@ BMF_MonitorPagefile (LPVOID user)
         hr = E_OUTOFMEMORY;
         goto PAGEFILE_CLEANUP;
       }
-      
+
       SecureZeroMemory (pagefile.apEnumAccess,
                         pagefile.dwNumReturned * sizeof (IWbemObjectAccess *));
 
@@ -996,7 +981,7 @@ BMF_MonitorPagefile (LPVOID user)
       {
         goto PAGEFILE_CLEANUP;
       }
-      
+
       WideCharToMultiByte (CP_OEMCP, 0, name, 255, pagefile.pagefiles [i].name,
                            255, " ", NULL);
 
@@ -1052,19 +1037,19 @@ PAGEFILE_CLEANUP:
     }
     delete [] pagefile.apEnumAccess;
   }
-  
+
   if (pagefile.pEnum)
   {
     pagefile.pEnum->Release ();
     pagefile.pEnum = nullptr;
   }
-  
+
   if (pagefile.pConfig != nullptr)
   {
     pagefile.pConfig->Release ();
     pagefile.pConfig = nullptr;
   }
-  
+
   if (pagefile.pRefresher != nullptr)
   {
     pagefile.pRefresher->Release ();
