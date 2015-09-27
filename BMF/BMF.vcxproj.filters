@@ -72,6 +72,9 @@
     <ClInclude Include="minhook\HDE\table32.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="gpu_monitor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -114,6 +117,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="minhook\HDE\hde32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gpu_monitor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

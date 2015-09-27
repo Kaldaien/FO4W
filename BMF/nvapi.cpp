@@ -187,6 +187,8 @@ NVAPI::EnumSLIGPUs (void)
 
 /**
  * These were hoisted out of EnumGPUs_DXGI (...) to reduce stack size.
+ *
+ *  ... but, it very likely has caused thread safety issues.
  **/
 static DXGI_ADAPTER_DESC   _nv_dxgi_adapters [64];
 static NvPhysicalGpuHandle _nv_dxgi_gpus     [64];
@@ -248,7 +250,7 @@ bmf::NVAPI::EnumGPUs_DXGI (void)
 
     // NVIDIA's driver measures these numbers in KiB (to store as a 32-bit int)
     //  * We want the numbers in bytes (64-bit)
-    adapterDesc.DedicatedVideoMemory =
+    adapterDesc.DedicatedVideoMemory  =
       (size_t)meminfo.dedicatedVideoMemory << 10;
     adapterDesc.DedicatedSystemMemory =
       (size_t)meminfo.systemVideoMemory    << 10;
@@ -276,7 +278,7 @@ NVAPI::FindGPUByDXGIName (const wchar_t* wszName)
   wchar_t* wszFixedName = _wcsdup (wszName + 7);
   int      fixed_len    = lstrlenW (wszFixedName);
 
-  // Remove trailing whitespace.
+  // Remove trailing whitespace some NV GPUs inexplicably have in their names
   for (int i = fixed_len; i > 0; i--) {
     if (wszFixedName [i - 1] == L' ')
       wszFixedName [i - 1] = L'\0';

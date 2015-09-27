@@ -1,7 +1,7 @@
 /**
 * This file is part of Batman "Fix".
 *
-* Batman Tweak is free software : you can redistribute it and / or modify
+* Batman "Fix" is free software : you can redistribute it and / or modify
 * it under the terms of the GNU General Public License as published by
 * The Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
@@ -12,7 +12,7 @@
 * GNU General Public License for more details.
 *
 * You should have received a copy of the GNU General Public License
-* along with Batman Tweak.If not, see <http://www.gnu.org/licenses/>.
+* along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
 #ifndef __BMF__NVAPI_H__

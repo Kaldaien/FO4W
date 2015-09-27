@@ -33,6 +33,10 @@ struct {
 
   struct {
     bmf::ParameterBool*  enable;
+  } fps;
+
+  struct {
+    bmf::ParameterBool*  enable;
   } memory;
 
   struct {
@@ -43,6 +47,11 @@ struct {
     bmf::ParameterBool*  enable;
     bmf::ParameterFloat* interval;
   } cpu;
+
+  struct {
+    bmf::ParameterBool*  enable;
+    bmf::ParameterFloat* interval;
+  } gpu;
 
   struct {
     bmf::ParameterBool*  enable;
@@ -104,11 +113,26 @@ BMF_LoadConfig (void) {
   monitoring.cpu.interval =
     static_cast <bmf::ParameterFloat *>
      (g_ParameterFactory.create_parameter <float> (
-       L"CPU Monitoring Interval")
+       L"CPU Monitoring Interval (seconds)")
      );
   monitoring.cpu.interval->register_to_ini (
     dll_ini,
       L"Monitor.CPU",
+        L"Interval" );
+
+  monitoring.gpu.enable =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (L"Enable GPU Monitoring"));
+  monitoring.gpu.enable->register_to_ini(dll_ini, L"Monitor.GPU", L"Enable");
+
+  monitoring.gpu.interval =
+    static_cast <bmf::ParameterFloat *>
+     (g_ParameterFactory.create_parameter <float> (
+       L"GPU Monitoring Interval (seconds)")
+     );
+  monitoring.gpu.interval->register_to_ini (
+    dll_ini,
+      L"Monitor.GPU",
         L"Interval" );
 
 
@@ -125,7 +149,7 @@ BMF_LoadConfig (void) {
   monitoring.pagefile.interval =
     static_cast <bmf::ParameterFloat *>
      (g_ParameterFactory.create_parameter <float> (
-       L"Pagefile Monitoring Interval")
+       L"Pagefile Monitoring Interval (seconds)")
      );
   monitoring.pagefile.interval->register_to_ini (
     dll_ini,
@@ -141,6 +165,17 @@ BMF_LoadConfig (void) {
   monitoring.memory.enable->register_to_ini (
     dll_ini,
       L"Monitor.Memory",
+        L"Enable" );
+
+
+  monitoring.fps.enable =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Enable Framerate Monitoring")
+      );
+  monitoring.fps.enable->register_to_ini (
+    dll_ini,
+      L"Monitor.FPS",
         L"Enable" );
 
 
@@ -193,6 +228,9 @@ BMF_LoadConfig (void) {
   if (monitoring.io.interval->load ())
     config.io_interval = monitoring.io.interval->get_value ();
 
+  if (monitoring.fps.enable->load ())
+    config.mem_stats = monitoring.fps.enable->get_value ();
+
   if (monitoring.memory.enable->load ())
     config.mem_stats = monitoring.memory.enable->get_value ();
   if (mem_reserve->load ())
@@ -202,6 +240,11 @@ BMF_LoadConfig (void) {
     config.cpu_stats = monitoring.cpu.enable->get_value ();
   if (monitoring.cpu.interval->load ())
     config.cpu_interval = monitoring.cpu.interval->get_value ();
+
+  if (monitoring.gpu.enable->load ())
+    config.gpu_stats = monitoring.gpu.enable->get_value ();
+  if (monitoring.gpu.interval->load ())
+    config.gpu_interval = monitoring.gpu.interval->get_value ();
 
   if (monitoring.disk.enable->load ())
     config.disk_stats = monitoring.disk.enable->get_value ();
@@ -233,11 +276,16 @@ BMF_SaveConfig (void) {
   monitoring.memory.enable->set_value     (config.mem_stats);
   mem_reserve->set_value                  (config.mem_reserve);
 
+  monitoring.fps.enable->set_value        (config.fps_stats);
+
   monitoring.io.enable->set_value         (config.io_stats);
   monitoring.io.interval->set_value       (config.io_interval);
 
   monitoring.cpu.enable->set_value        (config.cpu_stats);
   monitoring.cpu.interval->set_value      (config.cpu_interval);
+
+  monitoring.gpu.enable->set_value        (config.gpu_stats);
+  monitoring.gpu.interval->set_value      (config.gpu_interval);
 
   monitoring.disk.enable->set_value       (config.disk_stats);
   monitoring.disk.interval->set_value     (config.disk_interval);
@@ -255,11 +303,16 @@ BMF_SaveConfig (void) {
 
   monitoring.SLI.enable->store        ();
 
+  monitoring.fps.enable->store        ();
+
   monitoring.io.enable->store         ();
   monitoring.io.interval->store       ();
 
   monitoring.cpu.enable->store        ();
   monitoring.cpu.interval->store      ();
+
+  monitoring.gpu.enable->store        ();
+  monitoring.gpu.interval->store      ();
 
   monitoring.disk.enable->store       ();
   monitoring.disk.interval->store     ();

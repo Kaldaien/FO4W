@@ -173,6 +173,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.h" />
+    <ClInclude Include="gpu_monitor.h" />
     <ClInclude Include="ini.h" />
     <ClInclude Include="io_monitor.h" />
     <ClInclude Include="minhook\buffer.h" />
@@ -194,6 +195,7 @@
   <ItemGroup>
     <ClCompile Include="BMF.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="gpu_monitor.cpp" />
     <ClCompile Include="ini.cpp" />
     <ClCompile Include="io_monitor.cpp" />
     <ClCompile Include="minhook\buffer.c" />

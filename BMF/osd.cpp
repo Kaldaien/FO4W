@@ -26,16 +26,27 @@
 
 #include "config.h"
 #include "io_monitor.h"
+#include "gpu_monitor.h"
 
-#define OSD_M_PRINTF if (config.mem_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_B_PRINTF if (config.load_balance) { pszOSD += sprintf (pszOSD,
-#define OSD_S_PRINTF if (config.mem_stats &&\
+#define OSD_PRINTF   if (config.show_overlay) { pszOSD += sprintf (pszOSD,
+#define OSD_M_PRINTF if (config.show_overlay &&\
+                         config.mem_stats)    { pszOSD += sprintf (pszOSD,
+#define OSD_B_PRINTF if (config.show_overlay &&\
+                         config.load_balance) { pszOSD += sprintf (pszOSD,
+#define OSD_S_PRINTF if (config.show_overlay &&\
+                         config.mem_stats    &&\
                          config.sli_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_C_PRINTF if (config.cpu_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_D_PRINTF if (config.disk_stats)   { pszOSD += sprintf (pszOSD,
-#define OSD_P_PRINTF if (config.pagefile_stats)\
+#define OSD_C_PRINTF if (config.show_overlay &&\
+                         config.cpu_stats)    { pszOSD += sprintf (pszOSD,
+#define OSD_G_PRINTF if (config.show_overlay &&\
+                         config.gpu_stats)    { pszOSD += sprintf (pszOSD,
+#define OSD_D_PRINTF if (config.show_overlay &&\
+                         config.disk_stats)   { pszOSD += sprintf (pszOSD,
+#define OSD_P_PRINTF if (config.show_overlay &&\
+                         config.pagefile_stats)\
                                               { pszOSD += sprintf (pszOSD,
-#define OSD_I_PRINTF if (config.io_stats)     { pszOSD += sprintf (pszOSD,
+#define OSD_I_PRINTF if (config.show_overlay &&\
+                         config.io_stats)     { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
 static char szOSD [4096];
@@ -52,8 +63,7 @@ BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
 {
   if (lpMemory != nullptr) {
-    UnmapViewOfFile (lpMemory);
-    return TRUE;
+    return UnmapViewOfFile (lpMemory);
   }
 
   return FALSE;
@@ -151,8 +161,122 @@ BMF_DrawOSD (void)
     io_counter;
 
   buffer_t buffer = mem_info [0].buffer;
+  int      nodes  = mem_info [buffer].nodes;
 
-  int nodes = mem_info [buffer].nodes;
+  if (config.fps_stats)
+  {
+    LPRTSS_SHARED_MEMORY pMem =
+      (LPRTSS_SHARED_MEMORY)pMemory;
+
+    if (pMem)
+    {
+      if ((pMem->dwSignature == 'RTSS') && 
+          (pMem->dwVersion >= 0x00020000))
+      {
+        for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
+        {
+          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
+            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
+              ((LPBYTE)pMem + pMem->dwAppArrOffset +
+                      dwApp * pMem->dwAppEntrySize);
+
+          //
+          // Print the API Statistics and Framerate
+          //
+          if (pApp->dwProcessID == GetCurrentProcessId ())
+          {
+            OSD_PRINTF "  %s - %03.1f FPS, %#6.01f ms\n\n",
+              (pApp->dwFlags & APPFLAG_D3D11) ? "D3D11" : "OTHER",
+                // Cast to FP to avoid integer division by zero.
+                1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
+                  pApp->dwFrameTime / 1000.0f
+                //1000000.0f / pApp->dwFrameTime,
+                  //pApp->dwFrameTime / 1000.0f
+            OSD_END
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Poll GPU stats...
+  BMF_PollGPU ();
+
+  for (int i = 0; i < gpu_stats.num_gpus; i++) {
+    OSD_G_PRINTF "  GPU%d %#3lu%% (%#3luC), FB%d %#3lu%%",
+      i, gpu_stats.gpus [i].loads_percent.gpu, gpu_stats.gpus [i].temps_c.gpu,
+        i, gpu_stats.gpus [i].loads_percent.fb
+    OSD_END
+
+    OSD_G_PRINTF ", VID%d %#3lu%%, BUS%d %#3lu%%, %#4lu MHz\n",
+      i, gpu_stats.gpus [i].loads_percent.vid,
+        i, gpu_stats.gpus [i].loads_percent.bus,
+          gpu_stats.gpus [i].clocks_kHz.gpu / 1000UL
+    OSD_END
+  }
+
+  //
+  // DXGI 1.4 Memory Info (VERY accurate)
+  ///
+  if (nodes > 0) {
+    OSD_G_PRINTF "\n"
+    OSD_END
+
+    // We need to be careful here, it's not guaranteed that NvAPI adapter indices
+    //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
+    //     on that in the future.
+    for (int i = 0; i < nodes; i++) {
+      OSD_G_PRINTF "  MEM%d %#4lu MHz, VRAM%d %#4llu MiB, SHARED%d %#3llu MiB",
+        i, gpu_stats.gpus [i].clocks_kHz.ram / 1000UL,
+        i, mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
+        i, mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL
+      OSD_END
+
+      // Add memory temperature if it exists
+      if (i <= gpu_stats.num_gpus &&
+               gpu_stats.gpus [i].temps_c.ram != 0) {
+        OSD_G_PRINTF " (%#3luC)",
+          gpu_stats.gpus [i].temps_c.ram
+        OSD_END
+      }
+
+      OSD_G_PRINTF "\n"
+      OSD_END
+    }
+  }
+
+  //
+  // NvAPI Memory Info (Reasonably Accurate on Windows 8.1 and older)
+  //
+  else {
+    OSD_G_PRINTF "\n"
+    OSD_END
+
+    // We need to be careful here, it's not guaranteed that NvAPI adapter indices
+    //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
+    //     on that in the future.
+    for (int i = 0; i < gpu_stats.num_gpus; i++) {
+      OSD_G_PRINTF "  MEM%d %#4lu MHz, VRAM %#4llu MiB, SHARED%d %#3llu MiB",
+        i, gpu_stats.gpus[i].clocks_kHz.ram / 1000UL,
+        i, gpu_stats.gpus [i].memory_B.local    >> 20ULL,
+        i, gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL
+      OSD_END
+
+      // Add memory temperature if it exists
+      if (gpu_stats.gpus [i].temps_c.ram != 0) {
+        OSD_G_PRINTF " (%#3luC)",
+          gpu_stats.gpus [i].temps_c.ram
+        OSD_END
+      }
+
+      OSD_G_PRINTF "\n"
+      OSD_END
+    }
+  }
+
+  OSD_G_PRINTF "\n"
+  OSD_END
 
   if (nodes > 0) {
     int i = 0;

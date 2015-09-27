@@ -53,8 +53,10 @@ NV_GET_CURRENT_SLI_STATE sli_state;
 BOOL                     nvapi_init = FALSE;
 int                      gpu_prio;
 
-static ID3D11Device* g_pD3D11Dev;
+// Breaks Metal Gear Solid V
+//#define ALLOW_DEVICE_TRANSITION
 
+static ID3D11Device* g_pD3D11Dev;
 static IDXGIDevice*  g_pDXGIDev;
 
 extern "C" {
@@ -1094,6 +1096,30 @@ __cdecl PresentCallback (IDXGISwapChain *This,
     toggle_cpu = false;
   }
 
+  static bool toggle_gpu = false;
+  if (HIWORD (GetAsyncKeyState (config.gpu_keys [0])) &&
+      HIWORD (GetAsyncKeyState (config.gpu_keys [1])) &&
+      HIWORD (GetAsyncKeyState (config.gpu_keys [2])))
+  {
+    if (! toggle_gpu)
+      config.gpu_stats = (! config.gpu_stats);
+    toggle_gpu = true;
+  } else {
+    toggle_gpu = false;
+  }
+
+  static bool toggle_fps = false;
+  if (HIWORD (GetAsyncKeyState (config.fps_keys [0])) &&
+      HIWORD (GetAsyncKeyState (config.fps_keys [1])) &&
+      HIWORD (GetAsyncKeyState (config.fps_keys [2])))
+  {
+    if (! toggle_fps)
+      config.fps_stats = (! config.fps_stats);
+    toggle_fps = true;
+  } else {
+    toggle_fps = false;
+  }
+
   static bool toggle_disk = false;
   if (HIWORD (GetAsyncKeyState (config.disk_keys [0])) &&
       HIWORD (GetAsyncKeyState (config.disk_keys [1])) &&
@@ -1116,6 +1142,18 @@ __cdecl PresentCallback (IDXGISwapChain *This,
     toggle_pagefile = true;
   } else {
     toggle_pagefile = false;
+  }
+
+  static bool toggle_hud = false;
+  if (HIWORD (GetAsyncKeyState (VK_CONTROL)) &&
+      HIWORD (GetAsyncKeyState (VK_SHIFT)) &&
+      HIWORD (GetAsyncKeyState ('H')))
+  {
+    if (! toggle_hud)
+      config.show_overlay = (! config.show_overlay);
+    toggle_hud = true;
+  } else {
+    toggle_hud = false;
   }
 
   if (config.sli_stats)
@@ -1287,9 +1325,11 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
     else if (g_pD3D11Dev != nullptr)
     {
       //if (config.allow_dev_trans) {
-      //g_pDXGIDev->Release ();
-      //g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
-        //                           (void **)&g_pDXGIDev);
+#ifdef ALLOW_DEVICE_TRANSITION
+      g_pDXGIDev->Release ();
+      g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
+                                   (void **)&g_pDXGIDev);
+#endif
       //}
     }
   }
@@ -2157,7 +2197,9 @@ WINAPI BudgetThread (LPVOID user_data)
   if (g_pDXGIDev != nullptr) {
     // Releasing this actually causes driver crashes, so ...
     //   let it leak, what do we care?
-    //g_pDXGIDev->Release ();
+#ifdef ALLOW_DEVICE_TRANSITION
+    g_pDXGIDev->Release ();
+#endif
     g_pDXGIDev = nullptr;
   }
 
@@ -2218,8 +2260,11 @@ APIENTRY DllMain ( HMODULE hModule,
 
     case DLL_PROCESS_DETACH:
     {
+      dxgi_log.LogEx (true,
+                      L"Closing RivaTuner Statistics Server connection... ");
       // Shutdown the OSD as early as possible to avoid complications
       BMF_ReleaseOSD ();
+      dxgi_log.LogEx (false, L"done!\n");
 
       if (budget_thread != nullptr) {
         config.load_balance = false; // Turn this off while shutting down

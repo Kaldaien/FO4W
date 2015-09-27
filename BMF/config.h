@@ -21,6 +21,8 @@
 
 struct bmf_config_t
 {
+  bool   show_overlay     = true;
+
   bool   mem_stats        = true;
   BYTE   mem_keys [4]     = { VK_CONTROL, VK_SHIFT, 'M', 0 };
   float  mem_reserve      = 75.0f;
@@ -38,6 +40,14 @@ struct bmf_config_t
   bool  cpu_stats         = false;
   BYTE  cpu_keys  [4]     = { VK_CONTROL, VK_SHIFT, 'C', 0 };
   float cpu_interval      = 0.166666f;
+
+  bool  fps_stats         = true;
+  BYTE  fps_keys[4]       = { VK_CONTROL, VK_SHIFT, 'F', 0 };
+  //float fps_interval      = 1.0f;
+
+  bool  gpu_stats         = true;
+  BYTE  gpu_keys [4]      = { VK_CONTROL, VK_SHIFT, 'G', 0 };
+  float gpu_interval      = 0.333333f;
 
   bool  disk_stats        = false;
   BYTE  disk_keys [4]     = { VK_CONTROL, VK_SHIFT, 'D', 0 };
