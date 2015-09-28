@@ -40,6 +40,7 @@
 
 #include "log.h"
 #include "osd.h"
+#include "import.h"
 #include "io_monitor.h"
 
 memory_stats_t mem_stats [MAX_GPU_NODES];
@@ -405,6 +406,12 @@ BMF_Init (void)
     dxgi_log.LogEx (false, L"done!\n\n");
   }
 
+   // Load user-defined DLLs (Early)
+#ifdef _WIN64
+  BMF_LoadEarlyImports64 ();
+#else
+  BMF_LoadEarlyImports32 ();
+#endif
 
   if (config.system.silent) {
     dxgi_log.silent = true;
@@ -884,6 +891,13 @@ __cdecl PresentCallback (IDXGISwapChain *This,
                          UINT            SyncInterval,
                          UINT            Flags)
 {
+  // Load user-defined DLLs (Lazy)
+#ifdef _WIN64
+  BMF_LoadLazyImports64 ();
+#else
+  BMF_LoadLazyImports32 ();
+#endif
+
   BOOL    osd = BMF_DrawOSD      ();
   HRESULT hr  = Present_Original (This, SyncInterval, Flags);
 
@@ -897,7 +911,7 @@ __cdecl PresentCallback (IDXGISwapChain *This,
   FILETIME      ftNow;
   LARGE_INTEGER ullNow;
 
-  GetLocalTime         (&stNow);
+  GetSystemTime        (&stNow);
   SystemTimeToFileTime (&stNow, &ftNow);
 
   ullNow.HighPart = ftNow.dwHighDateTime;
@@ -1711,7 +1725,7 @@ WINAPI CreateDXGIFactory (REFIID   riid,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
-#if 0
+#if 1
   // DXGI 1.1+
   if (iver > 0) {
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory::EnumAdapters1",
@@ -1750,7 +1764,7 @@ WINAPI CreateDXGIFactory1 (REFIID   riid,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
-#if 0
+#if 1
   // DXGI 1.1+
   if (iver > 0) {
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
@@ -1790,7 +1804,7 @@ WINAPI CreateDXGIFactory2 (UINT     Flags,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
-#if 0
+#if 1
   // DXGI 1.1+
   if (iver > 0) {
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
@@ -2127,6 +2141,13 @@ WaitForInit (void)
 
  if (hInitThread)
     WaitForSingleObject (hInitThread, INFINITE);
+
+ // Load user-defined DLLs (Late)
+#ifdef _WIN64
+ BMF_LoadLateImports64 ();
+#else
+ BMF_LoadLateImports32 ();
+#endif
 }
 }
 

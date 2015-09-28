@@ -17,6 +17,7 @@
 
 #include "config.h"
 #include "parameter.h"
+#include "import.h"
 #include "ini.h"
 #include "log.h"
 
@@ -88,7 +89,6 @@ bmf::ParameterFloat*     mem_reserve;
 bmf::ParameterInt*       init_delay;
 bmf::ParameterBool*      silent;
 bmf::ParameterStringW*   version;
-
 
 
 bool
@@ -333,6 +333,70 @@ BMF_LoadConfig (void) {
     dll_ini,
       L"Monitor.SLI",
         L"Show" );
+
+  const std::map <std::wstring, bmf::INI::File::Section>& sections =
+    dll_ini->get_sections ();
+
+  std::map <std::wstring, bmf::INI::File::Section>::const_iterator sec =
+    sections.begin ();
+
+  int import = 0;
+
+  while (sec != sections.end ()) {
+    if (wcsstr ((*sec).first.c_str (), L"Import.")) {
+      imports [import].filename = 
+         static_cast <bmf::ParameterStringW *>
+             (g_ParameterFactory.create_parameter <std::wstring> (
+                L"Import Filename")
+             );
+      imports [import].filename->register_to_ini (
+        dll_ini,
+          (*sec).first.c_str (),
+            L"Filename" );
+
+      imports [import].when = 
+         static_cast <bmf::ParameterStringW *>
+             (g_ParameterFactory.create_parameter <std::wstring> (
+                L"Import Timeframe")
+             );
+      imports [import].when->register_to_ini (
+        dll_ini,
+          (*sec).first.c_str (),
+            L"When" );
+
+      imports [import].role = 
+         static_cast <bmf::ParameterStringW *>
+             (g_ParameterFactory.create_parameter <std::wstring> (
+                L"Import Role")
+             );
+      imports [import].role->register_to_ini (
+        dll_ini,
+          (*sec).first.c_str (),
+            L"Role" );
+
+      imports [import].architecture = 
+         static_cast <bmf::ParameterStringW *>
+             (g_ParameterFactory.create_parameter <std::wstring> (
+                L"Import Architecture")
+             );
+      imports [import].architecture->register_to_ini (
+        dll_ini,
+          (*sec).first.c_str (),
+            L"Architecture" );
+
+      imports [import].filename->load     ();
+      imports [import].when->load         ();
+      imports [import].role->load         ();
+      imports [import].architecture->load ();
+
+      ++import;
+
+      if (import >= BMF_MAX_IMPORTS)
+        break;
+    }
+
+    ++sec;
+  }
 
   //
   // Load Parameters

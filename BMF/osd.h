@@ -25,23 +25,25 @@
 const int MAX_GPU_NODES = 4;
 
 struct memory_stats_t {
-  uint64_t min_reserve = UINT64_MAX;
-  uint64_t max_reserve = 0;
+  uint64_t min_reserve       = UINT64_MAX;
+  uint64_t max_reserve       = 0;
 
   uint64_t min_avail_reserve = UINT64_MAX;
   uint64_t max_avail_reserve = 0;
 
-  uint64_t min_budget = UINT64_MAX;
-  uint64_t max_budget = 0;
+  uint64_t min_budget        = UINT64_MAX;
+  uint64_t max_budget        = 0;
 
-  uint64_t min_usage = UINT64_MAX;
-  uint64_t max_usage = 0;
+  uint64_t min_usage         = UINT64_MAX;
+  uint64_t max_usage         = 0;
 
-  uint64_t min_over_budget = UINT64_MAX;
-  uint64_t max_over_budget = 0;
+  uint64_t min_over_budget   = UINT64_MAX;
+  uint64_t max_over_budget   = 0;
 
-  uint64_t budget_changes = 0;
-} extern mem_stats [MAX_GPU_NODES];
+  uint64_t budget_changes    = 0;
+};
+
+extern memory_stats_t mem_stats [MAX_GPU_NODES];
 
 enum buffer_t {
   Front = 0,
@@ -57,7 +59,9 @@ struct mem_info_t {
   SYSTEMTIME                   time;
   buffer_t                     buffer = Front;
   int                          nodes  = MAX_GPU_NODES;
-} extern mem_info [NumBuffers];
+};
+
+extern mem_info_t mem_info [NumBuffers];
 
 LPVOID BMF_GetSharedMemory     (void);
 BOOL   BMF_ReleaseSharedMemory (LPVOID pMemory);
