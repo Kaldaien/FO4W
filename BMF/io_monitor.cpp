@@ -233,7 +233,7 @@ WINAPI
 BMF_MonitorCPU (LPVOID user)
 {
   cpu_perf_t&  cpu    = cpu_stats;
-  const double update = config.cpu_interval;
+  const double update = config.cpu.interval;
 
   BMF_InitCOM ();
 
@@ -486,7 +486,7 @@ BMF_MonitorDisk (LPVOID user)
   //Win32_PerfFormattedData_PerfDisk_LogicalDisk
 
   disk_perf_t&  disk  = disk_stats;
-  const double update = config.disk_interval;
+  const double update = config.disk.interval;
 
   BMF_InitCOM ();
 
@@ -512,7 +512,7 @@ BMF_MonitorDisk (LPVOID user)
   // Add an enumerator to the refresher.
   if (FAILED (hr = disk.pConfig->AddEnum (
       pNameSpace,
-      config.disk_type == 1 ? 
+      config.disk.type == 1 ? 
         L"Win32_PerfFormattedData_PerfDisk_LogicalDisk" :
         L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk",
       0, 
@@ -811,7 +811,7 @@ WINAPI
 BMF_MonitorPagefile (LPVOID user)
 {
   pagefile_perf_t&  pagefile = pagefile_stats;
-  const double update = config.pagefile_interval;
+  const double update = config.pagefile.interval;
 
   BMF_InitCOM ();
 

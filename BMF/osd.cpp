@@ -28,25 +28,26 @@
 #include "io_monitor.h"
 #include "gpu_monitor.h"
 
-#define OSD_PRINTF   if (config.show_overlay) { pszOSD += sprintf (pszOSD,
-#define OSD_M_PRINTF if (config.show_overlay &&\
-                         config.mem_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_B_PRINTF if (config.show_overlay &&\
-                         config.load_balance) { pszOSD += sprintf (pszOSD,
-#define OSD_S_PRINTF if (config.show_overlay &&\
-                         config.mem_stats    &&\
-                         config.sli_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_C_PRINTF if (config.show_overlay &&\
-                         config.cpu_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_G_PRINTF if (config.show_overlay &&\
-                         config.gpu_stats)    { pszOSD += sprintf (pszOSD,
-#define OSD_D_PRINTF if (config.show_overlay &&\
-                         config.disk_stats)   { pszOSD += sprintf (pszOSD,
-#define OSD_P_PRINTF if (config.show_overlay &&\
-                         config.pagefile_stats)\
+#define OSD_PRINTF   if (config.osd.show)     { pszOSD += sprintf (pszOSD,
+#define OSD_M_PRINTF if (config.osd.show &&\
+                         config.mem.show)     { pszOSD += sprintf (pszOSD,
+#define OSD_B_PRINTF if (config.osd.show &&\
+                         config.load_balance\
+                         .use)                { pszOSD += sprintf (pszOSD,
+#define OSD_S_PRINTF if (config.osd.show &&\
+                         config.mem.show &&\
+                         config.sli.show)     { pszOSD += sprintf (pszOSD,
+#define OSD_C_PRINTF if (config.osd.show &&\
+                         config.cpu.show)     { pszOSD += sprintf (pszOSD,
+#define OSD_G_PRINTF if (config.osd.show &&\
+                         config.gpu.show)     { pszOSD += sprintf (pszOSD,
+#define OSD_D_PRINTF if (config.osd.show &&\
+                         config.disk.show)    { pszOSD += sprintf (pszOSD,
+#define OSD_P_PRINTF if (config.osd.show &&\
+                         config.pagefile.show)\
                                               { pszOSD += sprintf (pszOSD,
-#define OSD_I_PRINTF if (config.show_overlay &&\
-                         config.io_stats)     { pszOSD += sprintf (pszOSD,
+#define OSD_I_PRINTF if (config.osd.show &&\
+                         config.io.show)      { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
 static char szOSD [4096];
@@ -58,6 +59,9 @@ extern BOOL nvapi_init;
 // Probably need to use a critical section to make this foolproof, we will
 //   cross that bridge later though. The OSD is performance critical
 static bool osd_shutting_down = false;
+
+// Initialize some things (like color, position and scale) on first use
+static bool osd_init          = false;
 
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
@@ -148,6 +152,14 @@ BMF_GetSharedMemory (void)
 BOOL
 BMF_DrawOSD (void)
 {
+  if (! osd_init) {
+    osd_init = true;
+
+    BMF_SetOSDScale (config.osd.scale);
+    BMF_SetOSDPos   (config.osd.pos_x, config.osd.pos_y);
+    BMF_SetOSDColor (config.osd.red, config.osd.green, config.osd.blue);
+  }
+
   // Bail-out early when shutting down, or RTSS does not know about our process
   LPVOID pMemory = BMF_GetSharedMemory ();
 
@@ -163,7 +175,7 @@ BMF_DrawOSD (void)
   buffer_t buffer = mem_info [0].buffer;
   int      nodes  = mem_info [buffer].nodes;
 
-  if (config.fps_stats)
+  if (config.fps.show)
   {
     LPRTSS_SHARED_MEMORY pMem =
       (LPRTSS_SHARED_MEMORY)pMemory;
@@ -372,7 +384,7 @@ BMF_DrawOSD (void)
     gpu_prio
   OSD_END
 
-  BMF_CountIO (io_counter, config.io_interval / 1.0e-7);
+  BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
 
   OSD_I_PRINTF "\n  Read..: %#6.02f MiB - (%#6.01f IOPs)"
                "\n  Write.: %#6.02f MiB - (%#6.01f IOPs)"
@@ -580,3 +592,170 @@ BMF_ReleaseOSD (void)
     BMF_ReleaseSharedMemory (pMapAddr);
   }
 }
+
+
+void
+BMF_SetOSDPos (int x, int y)
+{
+  LPVOID pMapAddr =
+    BMF_GetSharedMemory ();
+
+  LPRTSS_SHARED_MEMORY pMem     =
+    (LPRTSS_SHARED_MEMORY)pMapAddr;
+
+  if (pMem)
+  {
+    for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
+    {
+      RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+        (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+        ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+          dwEntry * pMem->dwOSDEntrySize);
+
+      if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+      {
+        for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
+        {
+          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
+            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
+            ((LPBYTE)pMem + pMem->dwAppArrOffset +
+              dwApp * pMem->dwAppEntrySize);
+
+          if (pApp->dwProcessID == GetCurrentProcessId ())
+          {
+            config.osd.pos_x = x;
+            config.osd.pos_y = y;
+
+            pApp->dwOSDX = x;
+            pApp->dwOSDX = y;
+
+            pApp->dwFlags |= OSDFLAG_UPDATED;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+  BMF_ReleaseSharedMemory (pMapAddr);
+}
+
+void
+BMF_SetOSDColor (int red, int green, int blue)
+{
+  LPVOID pMapAddr =
+    BMF_GetSharedMemory ();
+
+  LPRTSS_SHARED_MEMORY pMem     =
+    (LPRTSS_SHARED_MEMORY)pMapAddr;
+
+  if (pMem)
+  {
+    for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
+    {
+      RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+        (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+        ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+          dwEntry * pMem->dwOSDEntrySize);
+
+      if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+      {
+        for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
+        {
+          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
+            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
+            ((LPBYTE)pMem + pMem->dwAppArrOffset +
+              dwApp * pMem->dwAppEntrySize);
+
+          if (pApp->dwProcessID == GetCurrentProcessId ())
+          {
+            int red_   = (pApp->dwOSDColor >> 24) & 0xFF;
+            int green_ = (pApp->dwOSDColor >> 16) & 0xFF;
+            int blue_  = (pApp->dwOSDColor >> 8)  & 0xFF;
+
+            if (red >= 0 && red <= 255) {
+              config.osd.red = red;
+              red_ = red;
+            }
+
+            if (green >= 0 && green <= 255) {
+              config.osd.green = green;
+              green_ = green;
+            }
+
+            if (blue >= 0 && blue <= 255) {
+              config.osd.blue = blue;
+              blue_ = blue;
+            }
+
+            pApp->dwOSDColor = ((red_ << 16) & 0xff0000) | ((green_ << 8) & 0xff00) | (blue_ & 0xff);
+
+            pApp->dwFlags |= OSDFLAG_UPDATED;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+  BMF_ReleaseSharedMemory (pMapAddr);
+}
+
+void
+BMF_SetOSDScale (DWORD dwScale, bool relative)
+{
+  LPVOID pMapAddr =
+    BMF_GetSharedMemory ();
+
+  LPRTSS_SHARED_MEMORY pMem     =
+    (LPRTSS_SHARED_MEMORY)pMapAddr;
+
+  if (pMem)
+  {
+    for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
+    {
+      RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
+        (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
+        ((LPBYTE)pMem + pMem->dwOSDArrOffset +
+          dwEntry * pMem->dwOSDEntrySize);
+
+      if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+      {
+        for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
+        {
+          RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY pApp =
+            (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_APP_ENTRY)
+            ((LPBYTE)pMem + pMem->dwAppArrOffset +
+              dwApp * pMem->dwAppEntrySize);
+
+          if (pApp->dwProcessID == GetCurrentProcessId ())
+          {
+            if (! relative)
+              pApp->dwOSDPixel = dwScale;
+
+             else
+               pApp->dwOSDPixel += dwScale;
+
+            // Clamp to a sane range :)
+            if (pApp->dwOSDPixel < 1)
+              pApp->dwOSDPixel = 1;
+
+            config.osd.scale = pApp->dwOSDPixel;
+
+            pApp->dwFlags |= OSDFLAG_UPDATED;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+  BMF_ReleaseSharedMemory (pMapAddr);
+}
+
+void
+BMF_ResizeOSD (int scale_incr)
+{
+  BMF_SetOSDScale (scale_incr, true);
+}
+

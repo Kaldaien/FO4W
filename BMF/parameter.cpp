@@ -1,12 +1,12 @@
 /**
 * This file is part of Batman "Fix".
 *
-* Batman Tweak is free software : you can redistribute it and / or modify
+* Batman "Fix" is free software : you can redistribute it and / or modify
 * it under the terms of the GNU General Public License as published by
 * The Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
 *
-* Batman Tweak is distributed in the hope that it will be useful,
+* Batman "Fix" is distributed in the hope that it will be useful,
 * But WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
 * GNU General Public License for more details.
@@ -148,6 +148,32 @@ bmf::ParameterFloat::set_value_str (std::wstring str)
 }
 
 
+std::wstring
+bmf::ParameterStringW::get_value_str (void)
+{
+  return value;
+}
+
+std::wstring
+bmf::ParameterStringW::get_value (void)
+{
+  return value;
+}
+
+void
+bmf::ParameterStringW::set_value (std::wstring val)
+{
+  value = val;
+}
+
+
+void
+bmf::ParameterStringW::set_value_str (std::wstring str)
+{
+  value = str;
+}
+
+
 template <>
 bmf::iParameter*
 bmf::ParameterFactory::create_parameter <int> (const wchar_t* name)
@@ -183,6 +209,16 @@ bmf::iParameter*
 bmf::ParameterFactory::create_parameter <float> (const wchar_t* name)
 {
   iParameter* param = new ParameterFloat ();
+  params.push_back (param);
+
+  return param;
+}
+
+template <>
+bmf::iParameter*
+bmf::ParameterFactory::create_parameter <std::wstring> (const wchar_t* name)
+{
+  iParameter* param = new ParameterStringW ();
   params.push_back (param);
 
   return param;

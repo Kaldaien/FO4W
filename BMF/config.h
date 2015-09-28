@@ -18,53 +18,129 @@
 #define __BMF__CONFIG_H__
 
 #include <Windows.h>
+#include <string>
 
 struct bmf_config_t
 {
-  bool   show_overlay     = true;
+  struct {
+    bool   show           = true;
+    float  reserve        = 75.0f; // 75%
 
-  bool   mem_stats        = true;
-  BYTE   mem_keys [4]     = { VK_CONTROL, VK_SHIFT, 'M', 0 };
-  float  mem_reserve      = 75.0f;
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'M', 0 };
+    } keys;
+  } mem;
 
-  bool  io_stats          = true;
-  BYTE  io_keys [4]       = { VK_CONTROL, VK_SHIFT, 'I', 0 };
-  float io_interval       = 0.25f;
 
-  bool  sli_stats         = false;
-  BYTE  sli_keys [4]      = { VK_CONTROL, VK_SHIFT, 'S', 0 };
+  struct {
+    bool   show           = true;
+    float  interval       = 0.25f; // 250 msecs (4 Hz)
 
-  bool  load_balance      = false;
-  BYTE  load_keys [4]     = { VK_CONTROL, VK_SHIFT, 'B', 0 };
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'I', 0 };
+    } keys;
+  } io;
 
-  bool  cpu_stats         = false;
-  BYTE  cpu_keys  [4]     = { VK_CONTROL, VK_SHIFT, 'C', 0 };
-  float cpu_interval      = 0.166666f;
 
-  bool  fps_stats         = true;
-  BYTE  fps_keys[4]       = { VK_CONTROL, VK_SHIFT, 'F', 0 };
-  //float fps_interval      = 1.0f;
+  struct {
+    bool   show           = false;
 
-  bool  gpu_stats         = true;
-  BYTE  gpu_keys [4]      = { VK_CONTROL, VK_SHIFT, 'G', 0 };
-  float gpu_interval      = 0.333333f;
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'S', 0 };
+    } keys;
+  } sli;
 
-  bool  disk_stats        = false;
-  BYTE  disk_keys [4]     = { VK_CONTROL, VK_SHIFT, 'D', 0 };
-  float disk_interval     = 0.333333f;
-  int   disk_type         = 0; // Physical = 0,
-                               // Logical  = 1
 
-  bool  pagefile_stats    = false;
-  BYTE  pagefile_keys [4] = { VK_CONTROL, VK_SHIFT, 'P', 0 };
-  float pagefile_interval = 2.5f;
+  struct {
+    bool   use            = false;
 
-  int   init_delay      = 250;
-  bool  silent          = false;
-  bool  allow_dev_trans = false;
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'B', 0 };
+    } keys;
+  } load_balance;
+
+
+  struct {
+    bool   show           = true;
+
+    DWORD  red            = -1;
+    DWORD  green          = -1;
+    DWORD  blue           = -1;
+    DWORD  scale          = 1;
+    DWORD  pos_x          = 0;
+    DWORD  pos_y          = 0;
+
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'O',          0 };
+      BYTE shrink [4]     = { VK_CONTROL, VK_SHIFT, VK_OEM_MINUS, 0 };
+      BYTE expand [4]     = { VK_CONTROL, VK_SHIFT, VK_OEM_PLUS,  0 };
+    } keys;
+  } osd;
+
+
+  struct {
+    bool   show           = false;
+    float  interval       = 0.166666f;
+
+    struct {
+      BYTE toggle  [4]    = { VK_CONTROL, VK_SHIFT, 'C', 0 };
+    } keys;
+  } cpu;
+
+
+  struct {
+    bool   show           = true;
+
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'F', 0 };
+    } keys;
+    //float fps_interval  = 1.0f;
+  } fps;
+
+
+  struct {
+    bool   show           = true;
+    float  interval       = 0.333333f;
+
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'G', 0 };
+    } keys;
+  } gpu;
+
+
+  struct {
+    bool   show            = false;
+
+    float  interval        = 0.333333f;
+    int    type            = 0; // Physical = 0,
+                                // Logical  = 1
+
+    struct {
+      BYTE toggle [4]      = { VK_CONTROL, VK_SHIFT, 'D', 0 };
+    } keys;
+  } disk;
+
+
+  struct {
+    bool   show            = false;
+    float  interval        = 2.5f;
+
+    struct {
+      BYTE toggle [4]      = { VK_CONTROL, VK_SHIFT, 'P', 0 };
+    } keys;
+  } pagefile;
+
+
+  struct {
+    int     init_delay      = 250;
+    bool    silent          = false;
+    bool    allow_dev_trans = false;
+    std::wstring
+            version         = L"0.09";
+  } system;
 } extern config;
 
 bool BMF_LoadConfig (void);
-void BMF_SaveConfig (void);
+void BMF_SaveConfig (bool close_config = false);
 
 #endif __BMF__CONFIG_H__

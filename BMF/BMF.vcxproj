@@ -108,10 +108,14 @@
       <PrecompiledHeader>
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <Optimization>Disabled</Optimization>
+      <Optimization>Full</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;BMF_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalOptions>/EHsc %(AdditionalOptions)</AdditionalOptions>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -176,14 +180,7 @@
     <ClInclude Include="gpu_monitor.h" />
     <ClInclude Include="ini.h" />
     <ClInclude Include="io_monitor.h" />
-    <ClInclude Include="minhook\buffer.h" />
-    <ClInclude Include="minhook\HDE\hde32.h" />
-    <ClInclude Include="minhook\HDE\hde64.h" />
-    <ClInclude Include="minhook\HDE\pstdint.h" />
-    <ClInclude Include="minhook\HDE\table32.h" />
-    <ClInclude Include="minhook\HDE\table64.h" />
-    <ClInclude Include="minhook\MinHook.h" />
-    <ClInclude Include="minhook\trampoline.h" />
+    <ClInclude Include="log.h" />
     <ClInclude Include="nvapi.h" />
     <ClInclude Include="osd.h" />
     <ClInclude Include="parameter.h" />
@@ -198,11 +195,7 @@
     <ClCompile Include="gpu_monitor.cpp" />
     <ClCompile Include="ini.cpp" />
     <ClCompile Include="io_monitor.cpp" />
-    <ClCompile Include="minhook\buffer.c" />
-    <ClCompile Include="minhook\HDE\hde32.c" />
-    <ClCompile Include="minhook\HDE\hde64.c" />
-    <ClCompile Include="minhook\hook.c" />
-    <ClCompile Include="minhook\trampoline.c" />
+    <ClCompile Include="log.cpp" />
     <ClCompile Include="nvapi.cpp" />
     <ClCompile Include="osd.cpp" />
     <ClCompile Include="parameter.cpp" />

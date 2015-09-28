@@ -32,7 +32,7 @@ BMF_PollGPU (void)
 
   double dt = (update_ul.QuadPart - gpu_stats.last_update.QuadPart) * 1.0e-7;
 
-  if (dt > config.gpu_interval) {
+  if (dt > config.gpu.interval) {
     gpu_stats.last_update.QuadPart = update_ul.QuadPart;
 
     NvPhysicalGpuHandle gpus [NVAPI_MAX_PHYSICAL_GPUS];

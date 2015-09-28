@@ -33,7 +33,12 @@
 #  pragma comment (lib, "dbghelp.lib")
 #pragma warning   (pop)
 
+//#define HOOK_D3D11_DEVICE_CREATION
+#ifdef HOOK_D3D11_DEVICE_CREATION
 #include "minhook/MinHook.h"
+#endif
+
+#include "log.h"
 #include "osd.h"
 #include "io_monitor.h"
 
@@ -149,163 +154,6 @@ struct budget_thread_params_t {
   HANDLE           event;
   volatile bool    ready;
 } *budget_thread = nullptr;
-
-WORD
-BMF_Timestamp (wchar_t* const out)
-{
-  SYSTEMTIME stLogTime;
-  GetLocalTime (&stLogTime);
-
-  wchar_t date [64] = { L'\0' };
-  wchar_t time [64] = { L'\0' };
-
-  GetDateFormat (LOCALE_INVARIANT,DATE_SHORTDATE,   &stLogTime,NULL,date,64);
-  GetTimeFormat (LOCALE_INVARIANT,TIME_NOTIMEMARKER,&stLogTime,NULL,time,64);
-
-  out [0] = L'\0';
-
-  lstrcatW (out, date);
-  lstrcatW (out, L" ");
-  lstrcatW (out, time);
-  lstrcatW (out, L".");
-
-  return stLogTime.wMilliseconds;
-}
-
-//
-// NOTE: This is a barbaric approach to the problem... we clearly have a
-//         multi-threaded execution model but the logging assumes otherwise.
-//
-//       The log system _is_ thread-safe, but the output can be non-sensical
-//         when multiple threads are logging calls or even when a recursive
-//           call is logged in a single thread.
-//
-//        * Consdier using a stack-based approach if these logs become
-//            indecipherable in the future.
-//            
-struct bmf_logger_t {
-  bool init (const char* const szFilename,
-             const char* const szMode);
-
-  void close (void);
-
-  void LogEx (bool                 _Timestamp,
-              _In_z_ _Printf_format_string_
-              wchar_t const* const _Format, ...);
-
-  void Log   (_In_z_ _Printf_format_string_
-              wchar_t const* const _Format, ...);
-
-  FILE*            fLog        = NULL;
-  bool             silent      = false;
-  bool             initialized = false;
-  CRITICAL_SECTION log_mutex =   { 0 };
-} dxgi_log, budget_log;
-
-
-void
-bmf_logger_t::close (void)
-{
-  if (fLog != NULL) {
-    fflush (fLog);
-    fclose (fLog);
-  }
-
-  initialized = false;
-  silent      = true;
-
-  DeleteCriticalSection (&log_mutex);
-}
-
-bool
-bmf_logger_t::init (const char* const szFileName,
-                    const char* const szMode)
-{
-  if (initialized)
-    return true;
-
-  fLog = fopen (szFileName, szMode);
-
-  BOOL bRet = InitializeCriticalSectionAndSpinCount (&log_mutex, 2500);
-
-  if ((! bRet) || (fLog == NULL)) {
-    silent = true;
-    return false;
-  }
-
-  initialized = true;
-  return initialized;
-}
-
-void
-bmf_logger_t::LogEx (bool                 _Timestamp,
-                     _In_z_ _Printf_format_string_
-                     wchar_t const* const _Format, ...)
-{
-  va_list _ArgList;
-
-  if (! initialized)
-    return;
-
-  EnterCriticalSection (&log_mutex);
-
-  if ((! fLog) || silent) {
-    LeaveCriticalSection (&log_mutex);
-    return;
-  }
-
-  if (_Timestamp) {
-    wchar_t wszLogTime [128];
-
-    WORD ms = BMF_Timestamp (wszLogTime);
-
-    fwprintf (fLog, L"%s%03u: ", wszLogTime, ms);
-  }
-
-  va_start (_ArgList, _Format);
-  {
-    vfwprintf (fLog, _Format, _ArgList);
-  }
-  va_end   (_ArgList);
-
-  fflush (fLog);
-
-  LeaveCriticalSection (&log_mutex);
-}
-
-void
-bmf_logger_t::Log   (_In_z_ _Printf_format_string_
-                     wchar_t const* const _Format, ...)
-{
-  va_list _ArgList;
-
-  if (! initialized)
-    return;
-
-  EnterCriticalSection (&log_mutex);
-
-  if ((! fLog) || silent) {
-    LeaveCriticalSection (&log_mutex);
-    return;
-  }
-
-  wchar_t wszLogTime [128];
-
-  WORD ms = BMF_Timestamp (wszLogTime);
-
-  fwprintf (fLog, L"%s%03u: ", wszLogTime, ms);
-
-  va_start (_ArgList, _Format);
-  {
-    vfwprintf (fLog, _Format, _ArgList);
-  }
-  va_end   (_ArgList);
-
-  fwprintf  (fLog, L"\n");
-  fflush    (fLog);
-
-  LeaveCriticalSection (&log_mutex);
-}
 
 const wchar_t*
 BMF_DescribeHRESULT (HRESULT result)
@@ -547,12 +395,19 @@ BMF_Init (void)
 
 
   dxgi_log.LogEx (true, L"Loading user preferences from dxgi.ini... ");
-  BMF_LoadConfig ();
-  dxgi_log.LogEx (false, L"done!\n\n");
+  if (BMF_LoadConfig ()) {
+    dxgi_log.LogEx (false, L"done!\n\n");
+  } else {
+    dxgi_log.LogEx (false, L"failed!\n");
+    // If no INI file exists, write one immediately.
+    dxgi_log.LogEx (true, L"  >> Writing base INI file, because none existed... ");
+    BMF_SaveConfig ();
+    dxgi_log.LogEx (false, L"done!\n\n");
+  }
 
-  if (config.silent) {
+
+  if (config.system.silent) {
     dxgi_log.silent = true;
-    dxgi_log.close ();
     DeleteFile     (L"dxgi.log");
   } else {
     dxgi_log.silent = false;
@@ -1036,127 +891,157 @@ __cdecl PresentCallback (IDXGISwapChain *This,
   if (! osd)
     return hr;
 
+  static ULONGLONG last_osd_scale { 0ULL };
+
+  SYSTEMTIME    stNow;
+  FILETIME      ftNow;
+  LARGE_INTEGER ullNow;
+
+  GetLocalTime         (&stNow);
+  SystemTimeToFileTime (&stNow, &ftNow);
+
+  ullNow.HighPart = ftNow.dwHighDateTime;
+  ullNow.LowPart  = ftNow.dwLowDateTime;
+
+  if (ullNow.QuadPart - last_osd_scale > 1000000ULL) {
+    if (HIWORD (GetAsyncKeyState (config.osd.keys.expand [0])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.expand [1])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.expand [2])))
+    {
+      last_osd_scale = ullNow.QuadPart;
+      BMF_ResizeOSD (+1);
+    }
+
+    if (HIWORD (GetAsyncKeyState (config.osd.keys.shrink [0])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.shrink [1])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.shrink [2])))
+    {
+      last_osd_scale = ullNow.QuadPart;
+      BMF_ResizeOSD (-1);
+    }
+  }
+
   static bool toggle_mem = false;
-  if (HIWORD (GetAsyncKeyState (config.mem_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.mem_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.mem_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.mem.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.mem.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.mem.keys.toggle [2])))
   {
     if (! toggle_mem)
-      config.mem_stats = (! config.mem_stats);
+      config.mem.show = (! config.mem.show);
     toggle_mem = true;
   } else {
     toggle_mem = false;
   }
 
   static bool toggle_balance = false;
-  if (HIWORD (GetAsyncKeyState (config.load_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.load_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.load_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [2])))
   {
     if (! toggle_balance)
-      config.load_balance = (! config.load_balance); 
+      config.load_balance.use = (! config.load_balance.use);
     toggle_balance = true;
   } else {
     toggle_balance = false;
   }
 
   static bool toggle_sli = false;
-  if (HIWORD (GetAsyncKeyState (config.sli_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.sli_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.sli_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.sli.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.sli.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.sli.keys.toggle [2])))
   {
     if (! toggle_sli)
-      config.sli_stats = (! config.sli_stats);
+      config.sli.show = (! config.sli.show);
     toggle_sli = true;
   } else {
     toggle_sli = false;
   }
 
   static bool toggle_io = false;
-  if (HIWORD (GetAsyncKeyState (config.io_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.io_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.io_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.io.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.io.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.io.keys.toggle [2])))
   {
     if (! toggle_io)
-      config.io_stats = (! config.io_stats);
+      config.io.show = (! config.io.show);
     toggle_io = true;
   } else {
     toggle_io = false;
   }
 
   static bool toggle_cpu = false;
-  if (HIWORD (GetAsyncKeyState (config.cpu_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.cpu_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.cpu_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [2])))
   {
     if (! toggle_cpu)
-      config.cpu_stats = (! config.cpu_stats);
+      config.cpu.show = (! config.cpu.show);
     toggle_cpu = true;
   } else {
     toggle_cpu = false;
   }
 
   static bool toggle_gpu = false;
-  if (HIWORD (GetAsyncKeyState (config.gpu_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.gpu_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.gpu_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [2])))
   {
     if (! toggle_gpu)
-      config.gpu_stats = (! config.gpu_stats);
+      config.gpu.show = (! config.gpu.show);
     toggle_gpu = true;
   } else {
     toggle_gpu = false;
   }
 
   static bool toggle_fps = false;
-  if (HIWORD (GetAsyncKeyState (config.fps_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.fps_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.fps_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.fps.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.fps.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.fps.keys.toggle [2])))
   {
     if (! toggle_fps)
-      config.fps_stats = (! config.fps_stats);
+      config.fps.show = (! config.fps.show);
     toggle_fps = true;
   } else {
     toggle_fps = false;
   }
 
   static bool toggle_disk = false;
-  if (HIWORD (GetAsyncKeyState (config.disk_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.disk_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.disk_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.disk.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.disk.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.disk.keys.toggle [2])))
   {
     if (! toggle_disk)
-      config.disk_stats = (! config.disk_stats);
+      config.disk.show = (! config.disk.show);
     toggle_disk = true;
   } else {
     toggle_disk = false;
   }
 
   static bool toggle_pagefile = false;
-  if (HIWORD (GetAsyncKeyState (config.pagefile_keys [0])) &&
-      HIWORD (GetAsyncKeyState (config.pagefile_keys [1])) &&
-      HIWORD (GetAsyncKeyState (config.pagefile_keys [2])))
+  if (HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [2])))
   {
     if (! toggle_pagefile)
-      config.pagefile_stats = (! config.pagefile_stats);
+      config.pagefile.show = (! config.pagefile.show);
     toggle_pagefile = true;
   } else {
     toggle_pagefile = false;
   }
 
-  static bool toggle_hud = false;
-  if (HIWORD (GetAsyncKeyState (VK_CONTROL)) &&
-      HIWORD (GetAsyncKeyState (VK_SHIFT)) &&
-      HIWORD (GetAsyncKeyState ('H')))
+  static bool toggle_osd = false;
+  if (HIWORD (GetAsyncKeyState (config.osd.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.osd.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.osd.keys.toggle [2])))
   {
-    if (! toggle_hud)
-      config.show_overlay = (! config.show_overlay);
-    toggle_hud = true;
+    if (! toggle_osd)
+      config.osd.show = (! config.osd.show);
+    toggle_osd = true;
   } else {
-    toggle_hud = false;
+    toggle_osd = false;
   }
 
-  if (config.sli_stats)
+  if (config.sli.show)
   {
     // Get SLI status for the frame we just displayed... this will show up
     //   one frame late, but this is the safest approach.
@@ -1441,6 +1326,7 @@ typedef enum bmfUndesirableVendors {
   Intel     = 0x8086
 } Vendors;
 
+#ifdef HOOK_D3D11_DEVICE_CREATION
 volatile bool init = false;
 
 DWORD
@@ -1503,6 +1389,7 @@ BMF_InstallD3D11DeviceHooks (void)
   }
   LeaveCriticalSection (&d3dhook_mutex);
 }
+#endif
 
 
 HRESULT
@@ -1671,7 +1558,7 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
                       DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
                         (i == 1 || USE_SLI) ? 
                           uint64_t (mem_info.AvailableForReservation *
-                                    config.mem_reserve * 0.01f) :
+                                    config.mem.reserve * 0.01f) :
                           0
           );
         }
@@ -1707,7 +1594,7 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
                       DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL,
                         (i == 1 || USE_SLI) ?
                           uint64_t (mem_info.AvailableForReservation * 
-                                    config.mem_reserve * 0.01f) :
+                                    config.mem.reserve * 0.01f) :
                           0
           );
         }
@@ -1801,7 +1688,11 @@ HRESULT
 WINAPI CreateDXGIFactory (REFIID   riid,
                     _Out_ void   **ppFactory)
 {
-  BMF_InstallD3D11DeviceHooks ();
+#ifdef HOOK_D3D11_DEVICE_CREATION
+  //BMF_InstallD3D11DeviceHooks ();
+#else
+  WaitForInit ();
+#endif
 
   std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
   int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
@@ -1820,12 +1711,14 @@ WINAPI CreateDXGIFactory (REFIID   riid,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
+#if 0
   // DXGI 1.1+
   if (iver > 0) {
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory::EnumAdapters1",
                            EnumAdapters1_Override, EnumAdapters1_Original,
                            EnumAdapters1_t);
   }
+#endif
 
   return ret;
 }
@@ -1835,7 +1728,11 @@ HRESULT
 WINAPI CreateDXGIFactory1 (REFIID   riid,
                      _Out_ void   **ppFactory)
 {
+#ifdef HOOK_D3D11_DEVICE_CREATION
   BMF_InstallD3D11DeviceHooks ();
+#else
+  WaitForInit ();
+#endif
 
   std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
   int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
@@ -1853,12 +1750,14 @@ WINAPI CreateDXGIFactory1 (REFIID   riid,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
+#if 0
   // DXGI 1.1+
   if (iver > 0) {
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
                            EnumAdapters1_Override, EnumAdapters1_Original,
                            EnumAdapters1_t);
   }
+#endif
 
   return ret;
 }
@@ -1869,7 +1768,11 @@ WINAPI CreateDXGIFactory2 (UINT     Flags,
                            REFIID   riid,
                      _Out_ void   **ppFactory)
 {
+#ifdef HOOK_D3D11_DEVICE_CREATION
   BMF_InstallD3D11DeviceHooks ();
+#else
+  WaitForInit ();
+#endif
 
   std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
   int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
@@ -1887,12 +1790,14 @@ WINAPI CreateDXGIFactory2 (UINT     Flags,
                          CreateSwapChain_Override, CreateSwapChain_Original,
                          CreateSwapChain_t);
 
+#if 0
   // DXGI 1.1+
   if (iver > 0) {
     DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
                            EnumAdapters1_Override, EnumAdapters1_Original,
                            EnumAdapters1_t);
   }
+#endif
 
   return ret;
 }
@@ -2068,7 +1973,7 @@ WINAPI BudgetThread (LPVOID user_data)
     static uint64_t last_budget =
       mem_info [buffer].local [0].Budget;
 
-    if (dwWaitStatus == WAIT_OBJECT_0 && config.load_balance)
+    if (dwWaitStatus == WAIT_OBJECT_0 && config.load_balance.use)
     {
       INT prio = 0;
 
@@ -2176,7 +2081,7 @@ WINAPI BudgetThread (LPVOID user_data)
 
       if (g_pDXGIDev != nullptr)
       {
-        if (config.load_balance)
+        if (config.load_balance.use)
         {
           if (SUCCEEDED (g_pDXGIDev->GetGPUThreadPriority (&gpu_prio)))
           {
@@ -2236,10 +2141,14 @@ APIENTRY DllMain ( HMODULE hModule,
     {
       dll_heap = HeapCreate (0, 0, 0);
 
+#ifdef HOOK_D3D11_DEVICE_CREATION
       MH_Initialize ();
+#endif
 
-      BOOL bRet = InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
-           bRet = InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
+      BOOL bRet = InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
+#ifdef HOOK_D3D11_DEVICE_CREATION
+           bRet = InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
+#endif
            bRet = InitializeCriticalSectionAndSpinCount (&init_mutex,    50000);
 
       hInitThread = CreateThread (NULL, 0, DllThread, NULL, 0, NULL);
@@ -2249,7 +2158,7 @@ APIENTRY DllMain ( HMODULE hModule,
 
       /* Default: 0.25 secs seems adequate */
       if (hInitThread != 0)
-        WaitForSingleObject (hInitThread, config.init_delay);
+        WaitForSingleObject (hInitThread, config.system.init_delay);
     } break;
 
     case DLL_THREAD_ATTACH:
@@ -2271,7 +2180,7 @@ APIENTRY DllMain ( HMODULE hModule,
       dxgi_log.LogEx (false, L"done!\n");
 
       if (budget_thread != nullptr) {
-        config.load_balance = false; // Turn this off while shutting down
+        config.load_balance.use = false; // Turn this off while shutting down
 
         dxgi_log.LogEx (
               true,
@@ -2392,10 +2301,14 @@ APIENTRY DllMain ( HMODULE hModule,
 
       // Hopefully these things are done by now...
       DeleteCriticalSection (&init_mutex);
+#ifdef HOOK_D3D11_DEVICE_CREATION
       DeleteCriticalSection (&d3dhook_mutex);
+#endif
       DeleteCriticalSection (&budget_mutex);
 
+#ifdef HOOK_D3D11_DEVICE_CREATION
       MH_Uninitialize ();
+#endif
 
       if (nvapi_init)
         bmf::NVAPI::UnloadLibrary ();

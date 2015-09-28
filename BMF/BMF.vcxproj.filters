@@ -27,18 +27,6 @@
     <ClInclude Include="nvapi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="minhook\MinHook.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="minhook\trampoline.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="minhook\HDE\hde64.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="minhook\HDE\table64.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="RTSSSharedMemory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -60,19 +48,10 @@
     <ClInclude Include="osd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="minhook\buffer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="minhook\HDE\hde32.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="minhook\HDE\pstdint.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="minhook\HDE\table32.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="gpu_monitor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -84,18 +63,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="BMF.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="minhook\HDE\hde64.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="minhook\buffer.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="minhook\hook.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="minhook\trampoline.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ini.cpp">
@@ -116,10 +83,10 @@
     <ClCompile Include="osd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="minhook\HDE\hde32.c">
+    <ClCompile Include="gpu_monitor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gpu_monitor.cpp">
+    <ClCompile Include="log.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

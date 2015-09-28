@@ -66,4 +66,13 @@ BOOL BMF_DrawOSD          (void);
 BOOL BMF_UpdateOSD        (LPCSTR lpText, LPVOID pMapAddr = nullptr);
 void BMF_ReleaseOSD       (void);
 
+void BMF_SetOSDPos        (int x,   int y);
+
+// Any value out of range: [0,255] means IGNORE that color
+void BMF_SetOSDColor      (int red, int green, int blue);
+//void BMF_SetOSDShadow     (int red, int green, int blue);
+
+void BMF_SetOSDScale      (DWORD dwScale, bool relative = false);
+void BMF_ResizeOSD        (int scale_incr);
+
 #endif /* __BMF__OSD_H__ */
