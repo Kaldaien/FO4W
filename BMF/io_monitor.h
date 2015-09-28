@@ -21,68 +21,67 @@
 #include <Windows.h>
 
 struct io_perf_t {
-  bool           init = false;
+  bool           init          = false;
+
   ULARGE_INTEGER last_update;
   IO_COUNTERS    accum;
   ULONGLONG      dt;
   IO_COUNTERS    last_counter;
 
-  double read_mb_sec  = 0.0;
-  double write_mb_sec = 0.0;
-  double other_mb_sec = 0.0;
+  double         read_mb_sec   = 0.0;
+  double         write_mb_sec  = 0.0;
+  double         other_mb_sec  = 0.0;
 
-  double read_iop_sec  = 0.0;
-  double write_iop_sec = 0.0;
-  double other_iop_sec = 0.0;
+  double         read_iop_sec  = 0.0;
+  double         write_iop_sec = 0.0;
+  double         other_iop_sec = 0.0;
 };
 
 void BMF_CountIO (io_perf_t& ioc, const double update = 0.25 / 1.0e-7);
 
+#define _WIN32_DCOM
+#include <Wbemidl.h>
+
+struct WMI_refresh_thread_t
+{
+  HANDLE                   hThread                      = 0;
+
+  IWbemRefresher          *pRefresher                   = nullptr;
+  IWbemConfigureRefresher *pConfig                      = nullptr;
+  IWbemHiPerfEnum         *pEnum                        = nullptr;
+  IWbemObjectAccess      **apEnumAccess                 = nullptr;
+  long                     lID                          = 0;
+
+  DWORD                    dwNumObjects                 = 0;
+  DWORD                    dwNumReturned                = 0;
+};
 
 #include <stdint.h>
 
-#define _WIN32_DCOM
-
-#include <Wbemidl.h>
-
-struct cpu_perf_t {
-  HANDLE                   hThread             = 0;
-
-  IWbemRefresher          *pRefresher          = nullptr;
-  IWbemConfigureRefresher *pConfig             = nullptr;
-  IWbemHiPerfEnum         *pEnum               = nullptr;
-  IWbemObjectAccess      **apEnumAccess        = nullptr;
-  long                     lID                 = 0;
-
+struct cpu_perf_t : WMI_refresh_thread_t
+{
   long                     lPercentInterruptTimeHandle  = 0;
   long                     lPercentPrivilegedTimeHandle = 0;
   long                     lPercentUserTimeHandle       = 0;
   long                     lPercentProcessorTimeHandle  = 0;
   long                     lPercentIdleTimeHandle       = 0;
 
-  DWORD                    dwNumObjects        = 0;
-  DWORD                    dwNumReturned       = 0;
-
+  // Why 64-bit integers are needed for percents is beyond me,
+  //   but this is WMI's doing not mine.
   struct {
-    uint64_t               percent_load      = 0;
-    uint64_t               percent_idle      = 0;
-    uint64_t               percent_kernel    = 0;
-    uint64_t               percent_user      = 0;
-    uint64_t               percent_interrupt = 0;
+    uint64_t               percent_load                 = 0;
+    uint64_t               percent_idle                 = 0;
+    uint64_t               percent_kernel               = 0;
+    uint64_t               percent_user                 = 0;
+    uint64_t               percent_interrupt            = 0;
   } cpus [64];
 
-  int                      num_cpus          = 0;
-} extern cpu_stats;
+  DWORD                    num_cpus                     = 0;
+};
 
-struct disk_perf_t {
-  HANDLE                   hThread             = 0;
 
-  IWbemRefresher          *pRefresher          = nullptr;
-  IWbemConfigureRefresher *pConfig             = nullptr;
-  IWbemHiPerfEnum         *pEnum               = nullptr;
-  IWbemObjectAccess      **apEnumAccess        = nullptr;
-  long                     lID                 = 0;
-
+struct disk_perf_t : WMI_refresh_thread_t
+{
   long                     lNameHandle                  = 0;
 
   long                     lDiskBytesPerSecHandle       = 0;
@@ -94,56 +93,49 @@ struct disk_perf_t {
   long                     lPercentDiskTimeHandle       = 0;
   long                     lPercentIdleTimeHandle       = 0;
 
-  DWORD                    dwNumObjects        = 0;
-  DWORD                    dwNumReturned       = 0;
-
   struct {
     char                   name [32];
 
-    uint64_t               percent_load    = 0;
-    uint64_t               percent_write   = 0;
-    uint64_t               percent_read    = 0;
-    uint64_t               percent_idle    = 0;
+    uint64_t               percent_load                 = 0;
+    uint64_t               percent_write                = 0;
+    uint64_t               percent_read                 = 0;
+    uint64_t               percent_idle                 = 0;
 
-    uint64_t               read_bytes_sec  = 0;
-    uint64_t               write_bytes_sec = 0;
-    uint64_t               bytes_sec       = 0;
+    uint64_t               read_bytes_sec               = 0;
+    uint64_t               write_bytes_sec              = 0;
+    uint64_t               bytes_sec                    = 0;
   } disks [16];
 
-  int                      num_disks       = 0;
-} extern disk_stats;
+  DWORD                    num_disks                    = 0;
+};
 
-struct pagefile_perf_t {
-  HANDLE                   hThread             = 0;
 
-  IWbemRefresher          *pRefresher          = nullptr;
-  IWbemConfigureRefresher *pConfig             = nullptr;
-  IWbemHiPerfEnum         *pEnum               = nullptr;
-  IWbemObjectAccess      **apEnumAccess        = nullptr;
-  long                     lID                 = 0;
+struct pagefile_perf_t : WMI_refresh_thread_t
+{
+  long                     lNameHandle                  = 0;
 
-  long                     lNameHandle               = 0;
-
-  long                     lPercentUsageHandle       = 0;
-  long                     lPercentUsagePeakHandle   = 0;
-  long                     lPercentUsage_BaseHandle  = 0;
-
-  DWORD                    dwNumObjects        = 0;
-  DWORD                    dwNumReturned       = 0;
+  long                     lPercentUsageHandle          = 0;
+  long                     lPercentUsagePeakHandle      = 0;
+  long                     lPercentUsage_BaseHandle     = 0;
 
   struct {
     char                   name [256];
 
-    DWORD                  size            = 0;
-    DWORD                  usage           = 0;
-    DWORD                  usage_peak      = 0;
+    DWORD                  size                         = 0;
+    DWORD                  usage                        = 0;
+    DWORD                  usage_peak                   = 0;
   } pagefiles [16];
 
-  int                      num_pagefiles   = 0;
-} extern pagefile_stats;
+  DWORD                    num_pagefiles                = 0;
+};
+
 
 DWORD WINAPI BMF_MonitorCPU      (LPVOID user);
 DWORD WINAPI BMF_MonitorDisk     (LPVOID user);
 DWORD WINAPI BMF_MonitorPagefile (LPVOID user);
+
+extern cpu_perf_t      cpu_stats;
+extern disk_perf_t     disk_stats;
+extern pagefile_perf_t pagefile_stats;
 
 #endif /* __ BMF__IO_MONITOR_H__ */

@@ -1513,7 +1513,11 @@ STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
                                        EnumAdapters_t      pFunc)
 {
   // Logic to skip Intel and Microsoft adapters and return only AMD / NV
-  if (lstrlenW (pDesc->Description)) {
+  //if (lstrlenW (pDesc->Description)) {
+  if (true) {
+    if (! lstrlenW (pDesc->Description))
+      dxgi_log.LogEx (false, L" >> Assertion filed: Zero-length adapter name!\n");
+
     if (pDesc->VendorId == Microsoft || pDesc->VendorId == Intel) {
       // We need to release the reference we were just handed before
       //   skipping it.

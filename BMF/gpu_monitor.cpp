@@ -50,14 +50,25 @@ BMF_PollGPU (void)
       NvAPI_Status        status =
         NvAPI_GPU_GetDynamicPstatesInfoEx (gpu, &psinfoex);
 
-      gpu_stats.gpus [i].loads_percent.gpu = psinfoex.utilization
-        [NVAPI_GPU_UTILIZATION_DOMAIN_GPU].percentage;
-      gpu_stats.gpus [i].loads_percent.fb  = psinfoex.utilization
-        [NVAPI_GPU_UTILIZATION_DOMAIN_FB].percentage;
-      gpu_stats.gpus [i].loads_percent.vid = psinfoex.utilization
-        [NVAPI_GPU_UTILIZATION_DOMAIN_VID].percentage;
-      gpu_stats.gpus [i].loads_percent.bus = psinfoex.utilization
-        [NVAPI_GPU_UTILIZATION_DOMAIN_BUS].percentage;
+#ifdef SMOOTH_GPU_UPDATES
+      gpu_stats.gpus [i].loads_percent.gpu = (gpu_stats.gpus [i].loads_percent.gpu +
+       psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_GPU].percentage) / 2;
+      gpu_stats.gpus [i].loads_percent.fb  = (gpu_stats.gpus [i].loads_percent.fb +
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_FB].percentage) / 2;
+      gpu_stats.gpus [i].loads_percent.vid = (gpu_stats.gpus [i].loads_percent.vid +
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_VID].percentage) / 2;
+      gpu_stats.gpus [i].loads_percent.bus = (gpu_stats.gpus [i].loads_percent.bus +
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_BUS].percentage) / 2;
+#else
+      gpu_stats.gpus [i].loads_percent.gpu =
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_GPU].percentage;
+      gpu_stats.gpus [i].loads_percent.fb =
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_FB].percentage;
+      gpu_stats.gpus [i].loads_percent.vid =
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_VID].percentage;
+      gpu_stats.gpus [i].loads_percent.bus =
+        psinfoex.utilization [NVAPI_GPU_UTILIZATION_DOMAIN_BUS].percentage;
+#endif
 
       NV_GPU_THERMAL_SETTINGS thermal;
       thermal.version = NV_GPU_THERMAL_SETTINGS_VER;
@@ -67,9 +78,14 @@ BMF_PollGPU (void)
                                              &thermal);
 
       if (status == NVAPI_OK) {
-        for (int j = 0; j < thermal.count; j++) {
+        for (NvU32 j = 0; j < thermal.count; j++) {
+#ifdef SMOOTH_GPU_UPDATES
+          if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_GPU)
+            gpu_stats.gpus [i].temps_c.gpu = (gpu_stats.gpus[i].temps_c.gpu + thermal.sensor [j].currentTemp) / 2;
+#else
           if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_GPU)
             gpu_stats.gpus [i].temps_c.gpu = thermal.sensor [j].currentTemp;
+#endif
           if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_MEMORY)
             gpu_stats.gpus [i].temps_c.ram = thermal.sensor [j].currentTemp;
           if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_POWER_SUPPLY)

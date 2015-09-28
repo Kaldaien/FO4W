@@ -116,6 +116,9 @@ BMF_InitCOM (void)
   if (com_init)
     return true;
 
+  IWbemLocator*  pWbemLocator  = nullptr;
+  BSTR           bstrNameSpace = nullptr;
+
   HRESULT hr;
   if (FAILED (hr = CoInitializeEx (NULL, COINIT_MULTITHREADED)))
   {
@@ -133,9 +136,6 @@ BMF_InitCOM (void)
   {
     goto COM_CLEANUP;
   }
-
-  IWbemLocator*  pWbemLocator  = nullptr;
-  BSTR           bstrNameSpace = nullptr;
 
   if (FAILED (hr = CoCreateInstance(
     CLSID_WbemLocator, 
@@ -512,7 +512,9 @@ BMF_MonitorDisk (LPVOID user)
   // Add an enumerator to the refresher.
   if (FAILED (hr = disk.pConfig->AddEnum (
       pNameSpace,
-      L"Win32_PerfFormattedData_PerfDisk_LogicalDisk",
+      config.disk_type == 1 ? 
+        L"Win32_PerfFormattedData_PerfDisk_LogicalDisk" :
+        L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk",
       0, 
       NULL,
       &disk.pEnum,

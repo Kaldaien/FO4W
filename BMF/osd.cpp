@@ -130,10 +130,10 @@ BMF_GetSharedMemory (DWORD dwProcID)
           }
         }
       }
-    }
 
-    // We got a pointer, but... it was not to useable RivaTuner memory
-    UnmapViewOfFile (pMapAddr);
+      // We got a pointer, but... it was not to useable RivaTuner memory
+      UnmapViewOfFile (pMapAddr);
+    }
   }
 
   return nullptr;
@@ -257,7 +257,7 @@ BMF_DrawOSD (void)
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
     //     on that in the future.
     for (int i = 0; i < gpu_stats.num_gpus; i++) {
-      OSD_G_PRINTF "  MEM%d %#4lu MHz, VRAM %#4llu MiB, SHARED%d %#3llu MiB",
+      OSD_G_PRINTF "  MEM%d %#4lu MHz, VRAM%d %#4llu MiB, SHARED%d %#3llu MiB",
         i, gpu_stats.gpus[i].clocks_kHz.ram / 1000UL,
         i, gpu_stats.gpus [i].memory_B.local    >> 20ULL,
         i, gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL
@@ -388,7 +388,7 @@ BMF_DrawOSD (void)
 
   if (use_mib_sec) {
 #endif
-    for (int i = 0; i < disk_stats.num_disks; i++) {
+    for (DWORD i = 0; i < disk_stats.num_disks; i++) {
       OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
                                      "(Read: %#5.01f MiB   Write: %#5.01f MiB)",
         disk_stats.disks [i].name,
@@ -438,7 +438,7 @@ BMF_DrawOSD (void)
               cpu_stats.cpus [0].percent_interrupt
   OSD_END
 
-  for (int i = 1; i < cpu_stats.num_cpus; i++) {
+  for (DWORD i = 1; i < cpu_stats.num_cpus; i++) {
     OSD_C_PRINTF "\n  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
                  "Interrupt: %#3llu%%)",
       i-1,
@@ -452,7 +452,7 @@ BMF_DrawOSD (void)
   OSD_C_PRINTF "\n"
   OSD_END
 
-  for (int i = 0; i < pagefile_stats.num_pagefiles; i++) {
+  for (DWORD i = 0; i < pagefile_stats.num_pagefiles; i++) {
     OSD_P_PRINTF "\n  Pagefile %16s %05.02f KiB / %05.02f KiB  (Peak: %05.02f KiB)",
       pagefile_stats.pagefiles [i].name,
         (float)pagefile_stats.pagefiles [i].usage / 1024.0f,
@@ -469,7 +469,7 @@ BMF_DrawOSD (void)
   OSD_P_PRINTF "\n"
   OSD_END
 
-  bool ret = BMF_UpdateOSD (szOSD, pMemory);
+  BOOL ret = BMF_UpdateOSD (szOSD, pMemory);
 
   BMF_ReleaseSharedMemory (pMemory);
 

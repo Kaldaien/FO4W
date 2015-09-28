@@ -26,7 +26,10 @@
 
 struct gpu_sensors_t {
   struct {
-    // NV's driver only updates load % once per-second.
+    //
+    // NV's driver only updates load % once per-second...
+    //   (or so the API says, but that is wrong in practice).
+    //
     struct {
       uint32_t gpu; // GPU
       uint32_t fb;  // Memory
@@ -61,21 +64,16 @@ struct gpu_sensors_t {
       uint64_t local;
       uint64_t nonlocal; // COMPUTED: (total - local)
       uint64_t total;
+
+      // Padding for optimal alignment
+      uint64_t padding;
     } memory_B;
   } gpus [MAX_GPUS];
 
-  int num_gpus = 0;
-
+  int_fast32_t   num_gpus    =    0;
   ULARGE_INTEGER last_update = { 0ULL };
 } extern gpu_stats;
 
 void BMF_PollGPU (void);
-
-#if 0
-NV_GPU_THERMAL_SETTINGS thermal;
-thermal.version = NV_GPU_THERMAL_SETTINGS_VER;
-
-NvAPI_GPU_GetThermalSettings(hGPU, NVAPI_THERMAL_TARGET_ALL, &thermal);
-#endif
 
 #endif /* __BMF__GPU_MONITOR_H__ */

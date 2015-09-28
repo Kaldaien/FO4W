@@ -264,8 +264,8 @@ static void ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
 //-------------------------------------------------------------------------
 static VOID EnumerateThreads(PFROZEN_THREADS pThreads)
 {
-	if (pThreads == NULL)
-		return;
+    if (pThreads == NULL)
+        return;
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnapshot != INVALID_HANDLE_VALUE)

@@ -56,6 +56,7 @@ struct {
   struct {
     bmf::ParameterBool*  enable;
     bmf::ParameterFloat* interval;
+    bmf::ParameterInt*   type;
   } disk;
 
   struct {
@@ -103,6 +104,16 @@ BMF_LoadConfig (void) {
     dll_ini,
       L"Monitor.Disk",
         L"Interval" );
+
+  monitoring.disk.type =
+    static_cast <bmf::ParameterInt *>
+     (g_ParameterFactory.create_parameter <int> (
+       L"Disk Monitoring Type (0 = Physical, 1 = Logical)")
+     );
+  monitoring.disk.type->register_to_ini (
+    dll_ini,
+      L"Monitor.Disk",
+        L"Type" );
 
 
   monitoring.cpu.enable =
@@ -250,6 +261,8 @@ BMF_LoadConfig (void) {
     config.disk_stats = monitoring.disk.enable->get_value ();
   if (monitoring.disk.interval->load ())
     config.disk_interval = monitoring.disk.interval->get_value ();
+  if (monitoring.disk.type->load ())
+    config.disk_type = monitoring.disk.type->get_value ();
 
   if (monitoring.pagefile.enable->load ())
     config.pagefile_stats = monitoring.pagefile.enable->get_value ();
@@ -289,6 +302,7 @@ BMF_SaveConfig (void) {
 
   monitoring.disk.enable->set_value       (config.disk_stats);
   monitoring.disk.interval->set_value     (config.disk_interval);
+  monitoring.disk.type->set_value         (config.disk_type);
 
   monitoring.pagefile.enable->set_value   (config.pagefile_stats);
   monitoring.pagefile.interval->set_value (config.pagefile_interval);
@@ -316,6 +330,7 @@ BMF_SaveConfig (void) {
 
   monitoring.disk.enable->store       ();
   monitoring.disk.interval->store     ();
+  monitoring.disk.type->store         ();
 
   monitoring.pagefile.enable->store   ();
   monitoring.pagefile.interval->store ();

@@ -52,6 +52,8 @@ struct bmf_config_t
   bool  disk_stats        = false;
   BYTE  disk_keys [4]     = { VK_CONTROL, VK_SHIFT, 'D', 0 };
   float disk_interval     = 0.333333f;
+  int   disk_type         = 0; // Physical = 0,
+                               // Logical  = 1
 
   bool  pagefile_stats    = false;
   BYTE  pagefile_keys [4] = { VK_CONTROL, VK_SHIFT, 'P', 0 };
