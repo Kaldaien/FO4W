@@ -21,7 +21,7 @@
 #include "ini.h"
 #include "log.h"
 
-#define BMF_VER_STR L"0.09"
+#define BMF_VER_STR L"0.10"
 
 static bmf::INI::File*  dll_ini = nullptr;
 
