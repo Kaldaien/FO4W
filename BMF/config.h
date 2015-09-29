@@ -24,6 +24,15 @@ struct bmf_config_t
 {
   struct {
     bool   show           = true;
+    LONG   format         = LOCALE_CUSTOM_UI_DEFAULT;
+
+    struct {
+      BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'T', 0 };
+    } keys;
+  } time;
+
+  struct {
+    bool   show           = true;
     float  reserve        = 75.0f; // 75%
 
     struct {
@@ -100,6 +109,7 @@ struct bmf_config_t
 
   struct {
     bool   show           = true;
+    bool   print_slowdown = true;
     float  interval       = 0.333333f;
 
     struct {

@@ -219,6 +219,21 @@ BMF_DrawOSD (void)
   buffer_t buffer = mem_info [0].buffer;
   int      nodes  = mem_info [buffer].nodes;
 
+  extern std::wstring BMF_VER_STR;
+
+  if (config.time.show)
+  {
+    SYSTEMTIME st;
+    GetLocalTime (&st);
+
+    wchar_t time [64];
+    GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
+
+    OSD_PRINTF "Batman \"Fix\" v %ws   %ws\n\n\n",
+      BMF_VER_STR.c_str (), time
+    OSD_END
+  }
+
   if (config.fps.show)
   {
     LPRTSS_SHARED_MEMORY pMem =
@@ -293,16 +308,30 @@ BMF_DrawOSD (void)
       OSD_END
     }
 
-    OSD_G_PRINTF "\n"
-    OSD_END
+    if (config.gpu.print_slowdown &&
+        gpu_stats.gpus [i].nv_perf_state != NV_GPU_PERF_DECREASE_NONE) {
+      OSD_G_PRINTF "   SLOWDOWN:" OSD_END
+
+      if (gpu_stats.gpus [i].nv_perf_state & NV_GPU_PERF_DECREASE_REASON_AC_BATT)
+        OSD_G_PRINTF " (Battery)" OSD_END
+      if (gpu_stats.gpus [i].nv_perf_state & NV_GPU_PERF_DECREASE_REASON_API_TRIGGERED)
+        OSD_G_PRINTF " (Driver)" OSD_END
+      if (gpu_stats.gpus [i].nv_perf_state & NV_GPU_PERF_DECREASE_REASON_INSUFFICIENT_POWER)
+        OSD_G_PRINTF " (Power Supply)" OSD_END
+      if (gpu_stats.gpus [i].nv_perf_state & NV_GPU_PERF_DECREASE_REASON_POWER_CONTROL)
+        OSD_G_PRINTF " (Power Limit)" OSD_END
+      if (gpu_stats.gpus [i].nv_perf_state & NV_GPU_PERF_DECREASE_REASON_THERMAL_PROTECTION)
+        OSD_G_PRINTF " (Thermal Limit)" OSD_END
+    }
+
+    OSD_G_PRINTF "\n" OSD_END
   }
 
   //
   // DXGI 1.4 Memory Info (VERY accurate)
   ///
   if (nodes > 0) {
-    OSD_G_PRINTF "\n"
-    OSD_END
+    OSD_G_PRINTF "\n" OSD_END
 
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
@@ -322,8 +351,7 @@ BMF_DrawOSD (void)
         OSD_END
       }
 
-      OSD_G_PRINTF "\n"
-      OSD_END
+      OSD_G_PRINTF "\n" OSD_END
     }
   }
 
@@ -331,8 +359,7 @@ BMF_DrawOSD (void)
   // NvAPI Memory Info (Reasonably Accurate on Windows 8.1 and older)
   //
   else {
-    OSD_G_PRINTF "\n"
-    OSD_END
+    OSD_G_PRINTF "\n" OSD_END
 
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
@@ -351,13 +378,11 @@ BMF_DrawOSD (void)
         OSD_END
       }
 
-      OSD_G_PRINTF "\n"
-      OSD_END
+      OSD_G_PRINTF "\n" OSD_END
     }
   }
 
-  OSD_G_PRINTF "\n"
-  OSD_END
+  OSD_G_PRINTF "\n" OSD_END
 
   if (nodes > 0) {
     int i = 0;
@@ -367,7 +392,7 @@ BMF_DrawOSD (void)
         afr_next = sli_state.nextFrameAFRIndex;
 
     OSD_M_PRINTF "\n"
-                   "----- [DXGI 1.4]: Local Memory -----------"
+                   "----- (DXGI 1.4): Local Memory -----------"
                    "------------------------------------------"
                    "-\n"
     OSD_END
@@ -386,30 +411,23 @@ BMF_DrawOSD (void)
       //
       // SLI Status Indicator
       //
-      if (afr_last == i) {
-        OSD_S_PRINTF "@"
-        OSD_END
-      }
+      if (afr_last == i)
+        OSD_S_PRINTF "@" OSD_END
 
-      if (afr_idx == i) {
-        OSD_S_PRINTF "!"
-        OSD_END
-      }
+      if (afr_idx == i)
+        OSD_S_PRINTF "!" OSD_END
 
-      if (afr_next == i) {
-        OSD_S_PRINTF "#"
-        OSD_END
-      }
-        
-      OSD_M_PRINTF "\n"
-      OSD_END
+      if (afr_next == i)
+        OSD_S_PRINTF "#" OSD_END
+
+      OSD_M_PRINTF "\n" OSD_END
 
       i++;
     }
 
     i = 0;
 
-    OSD_M_PRINTF "----- [DXGI 1.4]: Non-Local Memory -------"
+    OSD_M_PRINTF "----- (DXGI 1.4): Non-Local Memory -------"
                  "------------------------------------------"
                  "-\n"
     OSD_END
@@ -428,7 +446,7 @@ BMF_DrawOSD (void)
       i++;
     }
 
-    OSD_M_PRINTF "----- [DXGI 1.4]: Miscellaneous ----------"
+    OSD_M_PRINTF "----- (DXGI 1.4): Miscellaneous ----------"
                  "------------------------------------------"
                  "-\n"
     OSD_END
@@ -480,10 +498,8 @@ BMF_DrawOSD (void)
                 (float)disk_stats.disks [i].write_bytes_sec / (1024.0f * 1024.0f)
       OSD_END
 
-      if (i == 0) {
-        OSD_D_PRINTF "\n"
-        OSD_END
-      }
+      if (i == 0)
+        OSD_D_PRINTF "\n" OSD_END
     }
 #if 0
   }
@@ -500,16 +516,13 @@ BMF_DrawOSD (void)
                 (float)disk_stats.disks[i].write_bytes_sec / (1024.0f)
       OSD_END
 
-      if (i == 0) {
-        OSD_D_PRINTF "\n"
-        OSD_END
-      }
+      if (i == 0)
+        OSD_D_PRINTF "\n" OSD_END
     }
   }
 #endif
 
-  OSD_D_PRINTF "\n"
-  OSD_END
+  OSD_D_PRINTF "\n" OSD_END
 
   OSD_C_PRINTF "\n  Total %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
                  "Interrupt: %#3llu%%)\n",
@@ -530,8 +543,7 @@ BMF_DrawOSD (void)
     OSD_END
   }
 
-  OSD_C_PRINTF "\n"
-  OSD_END
+  OSD_C_PRINTF "\n" OSD_END
 
   for (DWORD i = 0; i < pagefile_stats.num_pagefiles; i++) {
     OSD_P_PRINTF "\n  Pagefile %16s %05.02f KiB / %05.02f KiB  (Peak: %05.02f KiB)",
@@ -541,14 +553,11 @@ BMF_DrawOSD (void)
             (float)pagefile_stats.pagefiles [i].usage_peak / 1024.0f
     OSD_END
 
-    if (i == 0) {
-      OSD_P_PRINTF "\n"
-      OSD_END
-    }
+    if (i == 0)
+      OSD_P_PRINTF "\n" OSD_END
   }
 
-  OSD_P_PRINTF "\n"
-  OSD_END
+  OSD_P_PRINTF "\n" OSD_END
 
   BOOL ret = BMF_UpdateOSD (szOSD, pMemory);
 

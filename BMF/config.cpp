@@ -21,7 +21,7 @@
 #include "ini.h"
 #include "log.h"
 
-#define BMF_VER_STR L"0.11"
+std::wstring BMF_VER_STR = L"0.12";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -30,6 +30,10 @@ bmf_config_t config;
 bmf::ParameterFactory g_ParameterFactory;
 
 struct {
+  struct {
+    bmf::ParameterBool*  show;
+  } time;
+
   struct {
     bmf::ParameterBool*  show;
     bmf::ParameterFloat* interval;
@@ -54,6 +58,7 @@ struct {
 
   struct {
     bmf::ParameterBool*  show;
+    bmf::ParameterBool*  print_slowdown;
     bmf::ParameterFloat* interval;
   } gpu;
 
@@ -157,6 +162,14 @@ BMF_LoadConfig (void) {
       (g_ParameterFactory.create_parameter <bool> (L"Show GPU Monitoring"));
   monitoring.gpu.show->register_to_ini (dll_ini, L"Monitor.GPU", L"Show");
 
+  monitoring.gpu.print_slowdown =
+    static_cast <bmf::ParameterBool *>
+    (g_ParameterFactory.create_parameter <bool>(L"Print GPU Slowdown Reason"));
+  monitoring.gpu.print_slowdown->register_to_ini (
+    dll_ini,
+      L"Monitor.GPU",
+        L"PrintSlowdown" );
+
   monitoring.gpu.interval =
     static_cast <bmf::ParameterFloat *>
      (g_ParameterFactory.create_parameter <float> (
@@ -208,6 +221,17 @@ BMF_LoadConfig (void) {
   monitoring.fps.show->register_to_ini (
     dll_ini,
       L"Monitor.FPS",
+        L"Show" );
+
+
+  monitoring.time.show =
+    static_cast <bmf::ParameterBool *>
+    (g_ParameterFactory.create_parameter <bool> (
+      L"Show Time")
+    );
+  monitoring.time.show->register_to_ini (
+    dll_ini,
+      L"Monitor.Time",
         L"Show" );
 
 
@@ -423,6 +447,8 @@ BMF_LoadConfig (void) {
 
   if (monitoring.gpu.show->load ())
     config.gpu.show = monitoring.gpu.show->get_value ();
+  if (monitoring.gpu.print_slowdown->load ())
+    config.gpu.print_slowdown = monitoring.gpu.print_slowdown->get_value ();
   if (monitoring.gpu.interval->load ())
     config.gpu.interval = monitoring.gpu.interval->get_value ();
 
@@ -437,6 +463,9 @@ BMF_LoadConfig (void) {
     config.pagefile.show = monitoring.pagefile.show->get_value ();
   if (monitoring.pagefile.interval->load ())
     config.pagefile.interval = monitoring.pagefile.interval->get_value ();
+
+  if (monitoring.time.show->load ())
+    config.time.show = monitoring.time.show->get_value ();
 
   if (osd.show->load ())
     config.osd.show = osd.show->get_value ();
@@ -473,70 +502,74 @@ BMF_LoadConfig (void) {
 
 void
 BMF_SaveConfig (bool close_config) {
-  monitoring.memory.show->set_value       (config.mem.show);
-  mem_reserve->set_value                  (config.mem.reserve);
+  monitoring.memory.show->set_value        (config.mem.show);
+  mem_reserve->set_value                   (config.mem.reserve);
 
-  monitoring.fps.show->set_value          (config.fps.show);
+  monitoring.fps.show->set_value           (config.fps.show);
 
-  monitoring.io.show->set_value           (config.io.show);
-  monitoring.io.interval->set_value       (config.io.interval);
+  monitoring.io.show->set_value            (config.io.show);
+  monitoring.io.interval->set_value        (config.io.interval);
 
-  monitoring.cpu.show->set_value          (config.cpu.show);
-  monitoring.cpu.interval->set_value      (config.cpu.interval);
+  monitoring.cpu.show->set_value           (config.cpu.show);
+  monitoring.cpu.interval->set_value       (config.cpu.interval);
 
-  monitoring.gpu.show->set_value          (config.gpu.show);
-  monitoring.gpu.interval->set_value      (config.gpu.interval);
+  monitoring.gpu.show->set_value           (config.gpu.show);
+  monitoring.gpu.print_slowdown->set_value (config.gpu.print_slowdown);
+  monitoring.gpu.interval->set_value       (config.gpu.interval);
 
-  monitoring.disk.show->set_value         (config.disk.show);
-  monitoring.disk.interval->set_value     (config.disk.interval);
-  monitoring.disk.type->set_value         (config.disk.type);
+  monitoring.disk.show->set_value          (config.disk.show);
+  monitoring.disk.interval->set_value      (config.disk.interval);
+  monitoring.disk.type->set_value          (config.disk.type);
 
-  monitoring.pagefile.show->set_value     (config.pagefile.show);
-  monitoring.pagefile.interval->set_value (config.pagefile.interval);
+  monitoring.pagefile.show->set_value      (config.pagefile.show);
+  monitoring.pagefile.interval->set_value  (config.pagefile.interval);
 
-  osd.show->set_value                     (config.osd.show);
-  osd.text.red->set_value                 (config.osd.red);
-  osd.text.green->set_value               (config.osd.green);
-  osd.text.blue->set_value                (config.osd.blue);
-  osd.viewport.pos_x->set_value           (config.osd.pos_x);
-  osd.viewport.pos_y->set_value           (config.osd.pos_y);
-  osd.viewport.scale->set_value           (config.osd.scale);
+  osd.show->set_value                      (config.osd.show);
+  osd.text.red->set_value                  (config.osd.red);
+  osd.text.green->set_value                (config.osd.green);
+  osd.text.blue->set_value                 (config.osd.blue);
+  osd.viewport.pos_x->set_value            (config.osd.pos_x);
+  osd.viewport.pos_y->set_value            (config.osd.pos_y);
+  osd.viewport.scale->set_value            (config.osd.scale);
 
-  monitoring.SLI.show->set_value          (config.sli.show);
+  monitoring.SLI.show->set_value           (config.sli.show);
+  monitoring.time.show->set_value          (config.time.show);
 
-  init_delay->set_value                   (config.system.init_delay);
-  silent->set_value                       (config.system.silent);
+  init_delay->set_value                    (config.system.init_delay);
+  silent->set_value                        (config.system.silent);
 
-  monitoring.memory.show->store       ();
-  mem_reserve->store                  ();
+  monitoring.memory.show->store        ();
+  mem_reserve->store                   ();
 
-  monitoring.SLI.show->store          ();
+  monitoring.SLI.show->store           ();
+  monitoring.time.show->store          ();
 
-  monitoring.fps.show->store          ();
+  monitoring.fps.show->store           ();
 
-  monitoring.io.show->store           ();
-  monitoring.io.interval->store       ();
+  monitoring.io.show->store            ();
+  monitoring.io.interval->store        ();
 
-  monitoring.cpu.show->store          ();
-  monitoring.cpu.interval->store      ();
+  monitoring.cpu.show->store           ();
+  monitoring.cpu.interval->store       ();
 
-  monitoring.gpu.show->store          ();
-  monitoring.gpu.interval->store      ();
+  monitoring.gpu.show->store           ();
+  monitoring.gpu.print_slowdown->store ();
+  monitoring.gpu.interval->store       ();
 
-  monitoring.disk.show->store         ();
-  monitoring.disk.interval->store     ();
-  monitoring.disk.type->store         ();
+  monitoring.disk.show->store          ();
+  monitoring.disk.interval->store      ();
+  monitoring.disk.type->store          ();
 
-  monitoring.pagefile.show->store     ();
-  monitoring.pagefile.interval->store ();
+  monitoring.pagefile.show->store      ();
+  monitoring.pagefile.interval->store  ();
 
-  osd.show->store                     ();
-  osd.text.red->store                 ();
-  osd.text.green->store               ();
-  osd.text.blue->store                ();
-  osd.viewport.pos_x->store           ();
-  osd.viewport.pos_y->store           ();
-  osd.viewport.scale->store           ();
+  osd.show->store                      ();
+  osd.text.red->store                  ();
+  osd.text.green->store                ();
+  osd.text.blue->store                 ();
+  osd.viewport.pos_x->store            ();
+  osd.viewport.pos_y->store            ();
+  osd.viewport.scale->store            ();
 
   init_delay->store                   ();
   silent->store                       ();

@@ -935,6 +935,18 @@ __cdecl PresentCallback (IDXGISwapChain *This,
     }
   }
 
+  static bool toggle_time = false;
+  if (HIWORD (GetAsyncKeyState (config.time.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.time.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.time.keys.toggle [2])))
+  {
+    if (! toggle_time)
+      config.time.show = (! config.time.show);
+    toggle_time = true;
+  } else {
+    toggle_time = false;
+  }
+
   static bool toggle_mem = false;
   if (HIWORD (GetAsyncKeyState (config.mem.keys.toggle [0])) &&
       HIWORD (GetAsyncKeyState (config.mem.keys.toggle [1])) &&
