@@ -149,22 +149,36 @@ BMF_GetSharedMemory (void)
   return BMF_GetSharedMemory (GetCurrentProcessId ());
 }
 
+#include "log.h"
+
 BOOL
 BMF_DrawOSD (void)
 {
+  static int connect_attempts = 1;
+
+  // Bail-out early when shutting down, or RTSS does not know about our process
+  LPVOID pMemory = BMF_GetSharedMemory ();
+
+  if (! pMemory) {
+    ++connect_attempts;
+    return false;
+  }
+
   if (! osd_init) {
     osd_init = true;
+
+    extern bmf_logger_t dxgi_log;
+
+    dxgi_log.LogEx ( true,
+      L" [RTSS] Opening Connection to RivaTuner Statistics Server... " );
+
+    dxgi_log.LogEx ( false,
+      L"successful after %u attempt(s)!\n", connect_attempts );
 
     BMF_SetOSDScale (config.osd.scale);
     BMF_SetOSDPos   (config.osd.pos_x, config.osd.pos_y);
     BMF_SetOSDColor (config.osd.red, config.osd.green, config.osd.blue);
   }
-
-  // Bail-out early when shutting down, or RTSS does not know about our process
-  LPVOID pMemory = BMF_GetSharedMemory ();
-
-  if (! pMemory)
-    return false;
 
   char* pszOSD = szOSD;
   *pszOSD = '\0';
