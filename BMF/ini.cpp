@@ -63,12 +63,14 @@ ErrorMessage (errno_t        err,
 
 bmf::INI::File::File (wchar_t* filename)
 {
+  sections.clear ();
+
   // We skip a few bytes (Unicode BOM) in crertain cirumstances, so this is the
   //   actual pointer we need to free...
   wchar_t* alloc;
 
   wszName = _wcsdup (filename);
-  
+
   errno_t ret;
   TRY_FILE_IO (_wfopen_s (&fINI, filename, L"rb"), filename, ret);
 

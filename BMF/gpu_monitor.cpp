@@ -220,6 +220,12 @@ BMF_PollGPU (void)
                   } else if (under > 0) {
                     gpu_stats.gpus [i].volts_mV.ov   = -(under / 1000.0f);
                     gpu_stats.gpus [i].volts_mV.over = true;
+                  } else if (over != 0 && over != 0) {
+                    if (over > under)
+                       gpu_stats.gpus [i].volts_mV.ov =  -(over  / 1000.0f);
+                    else if (under > over)
+                      gpu_stats.gpus [i].volts_mV.ov  =   (under / 1000.0f);
+                    gpu_stats.gpus [i].volts_mV.over  = true;
                   }
                   break;
                 }

@@ -21,7 +21,7 @@
 #include "ini.h"
 #include "log.h"
 
-#define BMF_VER_STR L"0.10"
+#define BMF_VER_STR L"0.11"
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -95,6 +95,8 @@ bool
 BMF_LoadConfig (void) {
   // Load INI File
   dll_ini = new bmf::INI::File (L"dxgi.ini");
+
+  bool empty = dll_ini->get_sections ().empty ();
 
   //
   // Create Parameters
@@ -463,10 +465,10 @@ BMF_LoadConfig (void) {
   if (version->load ())
     config.system.version = version->get_value ();
 
-  if (dll_ini->get_sections ().size () > 0)
-    return true;
+  if (empty)
+    return false;
 
-  return false;
+  return true;
 }
 
 void

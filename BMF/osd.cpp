@@ -151,6 +151,36 @@ BMF_GetSharedMemory (void)
 
 #include "log.h"
 
+std::wstring
+BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
+{
+  // Both are DXGI-based and probable
+  if (dwFlags & APPFLAG_D3D11)
+    return L"D3D11";
+  if (dwFlags & APPFLAG_D3D10)
+    return L"D3D10";
+
+  // Never going to happen
+#ifdef HELL_FROZEN_OVER
+  if (dwFlags & APPFLAG_OGL)
+    return L"OpenGL";
+#endif
+
+  // Plan to expand this to D3D9 eventually
+#ifdef OLDER_D3D_SUPPORT
+  if (dwFlags & APPFLAG_D3D9EX)
+    return L"D3D9EX";
+  if (dwFlags & APPFLAG_D3D9)
+    return L"D3D9";
+  if (dwFlags & APPFLAG_D3D8)
+    return L"D3D8";
+  if (dwFlags & APPFLAG_DD)
+    return L"DDRAW";
+#endif
+
+  return L"UNKNOWN";
+}
+
 BOOL
 BMF_DrawOSD (void)
 {
@@ -211,8 +241,8 @@ BMF_DrawOSD (void)
           //
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
-            OSD_PRINTF "  %s - %03.1f FPS, %#6.01f ms\n\n",
-              (pApp->dwFlags & APPFLAG_D3D11) ? "D3D11" : "OTHER",
+            OSD_PRINTF "  %ws - %03.1f FPS, %#6.01f ms\n\n",
+              BMF_GetAPINameFromOSDFlags (pApp->dwFlags).c_str (),
                 // Cast to FP to avoid integer division by zero.
                 1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
                   pApp->dwFrameTime / 1000.0f
@@ -241,13 +271,6 @@ BMF_DrawOSD (void)
           gpu_stats.gpus [i].clocks_kHz.gpu / 1000UL
     OSD_END
 
-    if (gpu_stats.gpus [i].fans_rpm.supported)
-    {
-      OSD_G_PRINTF ", %#4lu RPM",
-        gpu_stats.gpus [i].fans_rpm.gpu
-      OSD_END
-    }
-
     if (gpu_stats.gpus [i].volts_mV.supported)
     {
       // Over (or under) voltage limit!
@@ -261,6 +284,13 @@ BMF_DrawOSD (void)
           gpu_stats.gpus [i].volts_mV.core
         OSD_END
       }
+    }
+
+    if (gpu_stats.gpus [i].fans_rpm.supported)
+    {
+      OSD_G_PRINTF ", %#4lu RPM",
+        gpu_stats.gpus [i].fans_rpm.gpu
+      OSD_END
     }
 
     OSD_G_PRINTF "\n"
@@ -381,7 +411,7 @@ BMF_DrawOSD (void)
 
     OSD_M_PRINTF "----- [DXGI 1.4]: Non-Local Memory -------"
                  "------------------------------------------"
-                 "\n"
+                 "-\n"
     OSD_END
 
     while (i < nodes) {
@@ -400,7 +430,7 @@ BMF_DrawOSD (void)
 
     OSD_M_PRINTF "----- [DXGI 1.4]: Miscellaneous ----------"
                  "------------------------------------------"
-                 "---\n"
+                 "-\n"
     OSD_END
 
     int64_t headroom = mem_info [buffer].local [0].Budget -
@@ -408,8 +438,8 @@ BMF_DrawOSD (void)
 
     OSD_M_PRINTF "  Max. Resident Set:  %05llu MiB  -"
                  "  Max. Over Budget:  %05llu MiB\n"
-                 "    Budget Changes:  %06llu       -    "
-                 "       Budget Left:  %05lli MiB\n",
+                 "    Budget Changes:  %06llu      - "
+                  "      Budget Left:  %05lli MiB\n",
                                     mem_stats [0].max_usage       >> 20ULL,
                                     mem_stats [0].max_over_budget >> 20ULL,
                                     mem_stats [0].budget_changes,
@@ -708,9 +738,9 @@ BMF_SetOSDColor (int red, int green, int blue)
 
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
-            int red_   = (pApp->dwOSDColor >> 24) & 0xFF;
-            int green_ = (pApp->dwOSDColor >> 16) & 0xFF;
-            int blue_  = (pApp->dwOSDColor >> 8)  & 0xFF;
+            int red_   = (pApp->dwOSDColor >> 16) & 0xFF;
+            int green_ = (pApp->dwOSDColor >>  8) & 0xFF;
+            int blue_  = (pApp->dwOSDColor      ) & 0xFF;
 
             if (red >= 0 && red <= 255) {
               config.osd.red = red;
