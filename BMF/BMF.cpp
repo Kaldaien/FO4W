@@ -1754,6 +1754,12 @@ WINAPI CreateDXGIFactory1 (REFIID   riid,
   DXGI_LOG_CALL_2 (L"CreateDXGIFactory1", L"%s, %08Xh",
                    iname.c_str (), ppFactory);
 
+  // Windows Vista does not have this function -- wrap it with CreateDXGIFactory
+  if (CreateDXGIFactory1_Import == nullptr) {
+    dxgi_log.Log (L"  >> Falling back to CreateDXGIFactory on Vista...\n");
+    return CreateDXGIFactory (riid, ppFactory);
+  }
+
   HRESULT ret;
   DXGI_CALL (ret, CreateDXGIFactory1_Import (riid, ppFactory));
 
@@ -1793,6 +1799,12 @@ WINAPI CreateDXGIFactory2 (UINT     Flags,
 
   DXGI_LOG_CALL_3 (L"CreateDXGIFactory2", L"0x%04X, %s, %08Xh",
                   Flags, iname.c_str (), ppFactory);
+
+  // Windows 7 does not have this function -- wrap it with CreateDXGIFactory1
+  if (CreateDXGIFactory2_Import == nullptr) {
+    dxgi_log.Log (L"  >> Falling back to CreateDXGIFactory1 on Vista/7...\n");
+    return CreateDXGIFactory1 (riid, ppFactory);
+  }
 
   HRESULT ret;
   DXGI_CALL (ret, CreateDXGIFactory2_Import (Flags, riid, ppFactory));

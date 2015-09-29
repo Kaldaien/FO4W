@@ -216,15 +216,40 @@ BMF_DrawOSD (void)
   BMF_PollGPU ();
 
   for (int i = 0; i < gpu_stats.num_gpus; i++) {
-    OSD_G_PRINTF "  GPU%d %#3lu%% (%#3luC), FB%d %#3lu%%",
+    OSD_G_PRINTF "  GPU%u %#3lu%% (%#3luC), FB%u %#3lu%%",
       i, gpu_stats.gpus [i].loads_percent.gpu, gpu_stats.gpus [i].temps_c.gpu,
         i, gpu_stats.gpus [i].loads_percent.fb
     OSD_END
 
-    OSD_G_PRINTF ", VID%d %#3lu%%, BUS%d %#3lu%%, %#4lu MHz\n",
+    OSD_G_PRINTF ", VID%u %#3lu%%, BUS%u %#3lu%%, %#4lu MHz",
       i, gpu_stats.gpus [i].loads_percent.vid,
         i, gpu_stats.gpus [i].loads_percent.bus,
           gpu_stats.gpus [i].clocks_kHz.gpu / 1000UL
+    OSD_END
+
+    if (gpu_stats.gpus [i].fans_rpm.supported)
+    {
+      OSD_G_PRINTF ", %#4lu RPM",
+        gpu_stats.gpus [i].fans_rpm.gpu
+      OSD_END
+    }
+
+    if (gpu_stats.gpus [i].volts_mV.supported)
+    {
+      // Over (or under) voltage limit!
+      if (gpu_stats.gpus [i].volts_mV.over)
+      {
+        OSD_G_PRINTF ", %#6.1fmV (%+#6.1fmV)",
+          gpu_stats.gpus [i].volts_mV.core, gpu_stats.gpus [i].volts_mV.ov
+        OSD_END
+      } else {
+        OSD_G_PRINTF ", %#6.1fmV",
+          gpu_stats.gpus [i].volts_mV.core
+        OSD_END
+      }
+    }
+
+    OSD_G_PRINTF "\n"
     OSD_END
   }
 

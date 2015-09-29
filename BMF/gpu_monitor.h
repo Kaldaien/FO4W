@@ -38,13 +38,16 @@ struct gpu_sensors_t {
     } loads_percent;
 
     struct {
-      uint32_t gpu;
-      uint32_t ram;
-      uint32_t shader;
+      uint32_t gpu    = 0;
+      uint32_t ram    = 0;
+      uint32_t shader = 0;
     } clocks_kHz;
 
     struct {
-      uint32_t core;
+      float core      = 0.0f;
+      float ov        = 0.0f;
+      bool  over      = false;
+      bool  supported = false;
     } volts_mV;
 
     struct {
@@ -53,6 +56,11 @@ struct gpu_sensors_t {
       int32_t psu;
       int32_t pcb;
     } temps_c;
+
+    struct {
+      int32_t gpu       = 0;
+      bool    supported = false;
+    } fans_rpm;
 
     //
     // NOTE: This isn't particularly accurate; it is a sum total rather than
@@ -68,11 +76,15 @@ struct gpu_sensors_t {
       // Padding for optimal alignment
       uint64_t padding;
     } memory_B;
+
+    uint32_t nv_perf_state;
   } gpus [MAX_GPUS];
 
   int_fast32_t   num_gpus    =    0;
   ULARGE_INTEGER last_update = { 0ULL };
-} extern gpu_stats;
+};
+
+extern gpu_sensors_t gpu_stats;
 
 void BMF_PollGPU (void);
 
