@@ -278,6 +278,13 @@ BMF_MonitorCPU (LPVOID user)
 
   while (cpu_stats.lID != 0)
   {
+    // Sleep for 500 ms.
+    Sleep (DWORD (update * 1000.0));
+
+    // Only poll WMI while the data view is visible
+    if (! config.cpu.show)
+      continue;
+
     cpu.dwNumReturned = 0;
 
     if (FAILED (hr = cpu.pRefresher->Refresh (0L)))
@@ -434,9 +441,6 @@ BMF_MonitorCPU (LPVOID user)
 
     cpu.num_cpus = cpu.dwNumReturned;
 
-    // Sleep for 500 ms.
-    Sleep (DWORD (update * 1000.0));
-
     ++iter;
   }
 
@@ -533,6 +537,13 @@ BMF_MonitorDisk (LPVOID user)
 
   while (disk_stats.lID != 0)
   {
+    // Sleep for 500 ms.
+    Sleep (DWORD (update * 1000.0));
+
+    // Only poll WMI while the data view is visible
+    if (! config.disk.show)
+      continue;
+
     disk.dwNumReturned = 0;
 
     if (FAILED (hr = disk.pRefresher->Refresh (0L)))
@@ -761,9 +772,6 @@ BMF_MonitorDisk (LPVOID user)
 
     disk.num_disks = disk.dwNumReturned;
 
-    // Sleep for 500 ms.
-    Sleep (DWORD (update * 1000.0));
-
     ++iter;
   }
 
@@ -857,6 +865,13 @@ BMF_MonitorPagefile (LPVOID user)
 
   while (pagefile.lID != 0)
   {
+    // Sleep for 500 ms.
+    Sleep ((DWORD)(update * 1000.0));
+
+    // Only poll WMI while the pagefile stats are shown
+    if (! config.pagefile.show)
+      continue;
+
     pagefile.dwNumReturned = 0;
 
     if (FAILED (hr = pagefile.pRefresher->Refresh (0L)))
@@ -944,7 +959,7 @@ BMF_MonitorPagefile (LPVOID user)
         goto PAGEFILE_CLEANUP;
       }
     }
-           
+
     for (unsigned int i = 0; i < pagefile.dwNumReturned; i++)
     {
       DWORD size;
@@ -1019,9 +1034,6 @@ BMF_MonitorPagefile (LPVOID user)
     }
 
     pagefile.num_pagefiles = pagefile.dwNumReturned;
-
-    // Sleep for 500 ms.
-    Sleep ((DWORD)(update * 1000.0));
 
     ++iter;
   }

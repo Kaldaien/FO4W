@@ -522,7 +522,9 @@ BMF_DrawOSD (void)
     gpu_prio
   OSD_END
 
-  BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
+  // Only do this if the IO data view is active
+  if (config.io.show)
+    BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
 
   OSD_I_PRINTF "\n  Read..: %#6.02f MiBs - (%#6.01f IOPs)"
                "\n  Write.: %#6.02f MiBs - (%#6.01f IOPs)"
