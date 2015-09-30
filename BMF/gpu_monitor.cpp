@@ -99,6 +99,23 @@ BMF_PollGPU (void)
         }
       }
 
+      NvU32 pcie_lanes;
+      if (NVAPI_OK == NvAPI_GPU_GetCurrentPCIEDownstreamWidth(gpu, &pcie_lanes))
+      {
+        gpu_stats.gpus [i].hwinfo.pcie_lanes = pcie_lanes;
+      }
+
+      NvU32 mem_width, mem_loc, mem_type;
+      if (NVAPI_OK == NvAPI_GPU_GetFBWidthAndLocation (gpu, &mem_width, &mem_loc))
+      {
+        gpu_stats.gpus [i].hwinfo.mem_bus_width = mem_width;
+      }
+
+      if (NVAPI_OK == NvAPI_GPU_GetRamType (gpu, &mem_type))
+      {
+        gpu_stats.gpus [i].hwinfo.mem_type = mem_type;
+      }
+
       NV_DISPLAY_DRIVER_MEMORY_INFO meminfo;
       meminfo.version = NV_DISPLAY_DRIVER_MEMORY_INFO_VER;
 

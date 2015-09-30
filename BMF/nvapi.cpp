@@ -28,6 +28,14 @@
 #include <dxgi.h>
 #include <string>
 
+//
+// Undocumented Functions
+//
+//  ** (I am not breaking any NDA; I found these the hard way!)
+//
+NvAPI_GPU_GetRamType_t            NvAPI_GPU_GetRamType;
+NvAPI_GPU_GetFBWidthAndLocation_t NvAPI_GPU_GetFBWidthAndLocation;
+
 #pragma comment (lib, "nvapi/amd64/nvapi64.lib")
 
 using namespace bmf;
@@ -378,6 +386,22 @@ NVAPI::InitializeLibrary (void)
     bLibInit    = TRUE + 1; // Clearly this isn't a boolean, it just looks like one
     return FALSE;
   } else {
+    //
+    // Time to initialize a few undocumented (if you do not sign an NDA)
+    //   parts of NvAPI, hurray!
+    //
+    static HMODULE hLib = LoadLibrary (L"nvapi64.dll");
+
+    typedef void* (*NvAPI_QueryInterface_t)(unsigned int offset);
+
+    static NvAPI_QueryInterface_t NvAPI_QueryInterface =
+      (NvAPI_QueryInterface_t)GetProcAddress (hLib, "nvapi_QueryInterface");
+      
+     NvAPI_GPU_GetRamType =
+        (NvAPI_GPU_GetRamType_t)NvAPI_QueryInterface            (0x57F7CAAC);
+     NvAPI_GPU_GetFBWidthAndLocation =
+        (NvAPI_GPU_GetFBWidthAndLocation_t)NvAPI_QueryInterface (0x11104158);
+
     nv_hardware = true;
   }
 

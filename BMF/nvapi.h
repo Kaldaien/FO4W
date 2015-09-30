@@ -25,6 +25,23 @@
 
 struct DXGI_ADAPTER_DESC;
 
+// Reverse Engineered NDA portions of NvAPI (hush, hush -- *wink*)
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetRamType_t)
+    (NvPhysicalGpuHandle handle, NvU32* memtype);
+typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetFBWidthAndLocation_t)
+    (NvPhysicalGpuHandle handle, NvU32* width, NvU32* loc);
+
+extern NvAPI_GPU_GetRamType_t            NvAPI_GPU_GetRamType;
+extern NvAPI_GPU_GetFBWidthAndLocation_t NvAPI_GPU_GetFBWidthAndLocation;
+
+#ifdef __cplusplus
+}
+#endif
+
 namespace bmf {
 namespace NVAPI {
 

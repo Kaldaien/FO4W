@@ -109,7 +109,7 @@ struct bmf_config_t
 
   struct {
     bool   show           = true;
-    bool   print_slowdown = true;
+    bool   print_slowdown = false;
     float  interval       = 0.333333f;
 
     struct {

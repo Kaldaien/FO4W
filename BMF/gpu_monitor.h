@@ -77,6 +77,12 @@ struct gpu_sensors_t {
       uint64_t padding;
     } memory_B;
 
+    struct {
+      uint32_t mem_type; // 8 == GDDR5
+      uint32_t mem_bus_width;
+      uint32_t pcie_lanes;
+    } hwinfo;
+
     uint32_t nv_perf_state;
   } gpus [MAX_GPUS];
 

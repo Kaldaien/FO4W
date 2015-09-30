@@ -256,7 +256,7 @@ BMF_DrawOSD (void)
           //
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
-            OSD_PRINTF "  %ws - %03.1f FPS, %#6.01f ms\n\n",
+            OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms\n",
               BMF_GetAPINameFromOSDFlags (pApp->dwFlags).c_str (),
                 // Cast to FP to avoid integer division by zero.
                 1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
@@ -275,14 +275,19 @@ BMF_DrawOSD (void)
   BMF_PollGPU ();
 
   for (int i = 0; i < gpu_stats.num_gpus; i++) {
-    OSD_G_PRINTF "  GPU%u %#3lu%% (%#3luC), FB%u %#3lu%%",
-      i, gpu_stats.gpus [i].loads_percent.gpu, gpu_stats.gpus [i].temps_c.gpu,
-        i, gpu_stats.gpus [i].loads_percent.fb
+    OSD_G_PRINTF "  GPU%u   :            %#3lu%%",
+      i, gpu_stats.gpus [i].loads_percent.gpu
     OSD_END
 
-    OSD_G_PRINTF ", VID%u %#3lu%%, BUS%u %#3lu%%, %#4lu MHz",
-      i, gpu_stats.gpus [i].loads_percent.vid,
-        i, gpu_stats.gpus [i].loads_percent.bus,
+    if (gpu_stats.gpus [i].loads_percent.vid > 0) {
+      OSD_G_PRINTF ",  VID%u %#3lu%% ,",
+        i, gpu_stats.gpus [i].loads_percent.vid
+      OSD_END
+    } else {
+      OSD_G_PRINTF ",             " OSD_END
+    }
+
+    OSD_G_PRINTF " %#4lu MHz",
           gpu_stats.gpus [i].clocks_kHz.gpu / 1000UL
     OSD_END
 
@@ -308,6 +313,10 @@ BMF_DrawOSD (void)
       OSD_END
     }
 
+    OSD_G_PRINTF ", (%#2lu°C)",
+      gpu_stats.gpus [i].temps_c.gpu
+    OSD_END
+
     if (config.gpu.print_slowdown &&
         gpu_stats.gpus [i].nv_perf_state != NV_GPU_PERF_DECREASE_NONE) {
       OSD_G_PRINTF "   SLOWDOWN:" OSD_END
@@ -331,27 +340,69 @@ BMF_DrawOSD (void)
   // DXGI 1.4 Memory Info (VERY accurate)
   ///
   if (nodes > 0) {
-    OSD_G_PRINTF "\n" OSD_END
-
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
     //     on that in the future.
     for (int i = 0; i < nodes; i++) {
-      OSD_G_PRINTF "  MEM%d %#4lu MHz, VRAM%d %#4llu MiB, SHARED%d %#3llu MiB",
-        i, gpu_stats.gpus [i].clocks_kHz.ram / 1000UL,
-        i, mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
-        i, mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL
+#if 1
+      OSD_G_PRINTF "  VRAM%u  : %#5llu MiB (%#3lu%%: %#5.01lf GiBs)",
+        i,
+        mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
+                    gpu_stats.gpus [i].loads_percent.fb,
+        (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
+                 (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
+                   (1024.0 * 1024.0 * 1024.0) *
+                  ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
+      OSD_END
+
+      OSD_G_PRINTF ", %#4lu MHz",
+        gpu_stats.gpus [i].clocks_kHz.ram / 1000UL
       OSD_END
 
       // Add memory temperature if it exists
       if (i <= gpu_stats.num_gpus &&
-               gpu_stats.gpus [i].temps_c.ram != 0) {
+          gpu_stats.gpus [i].temps_c.ram != 0) {
         OSD_G_PRINTF " (%#3luC)",
           gpu_stats.gpus [i].temps_c.ram
         OSD_END
       }
 
       OSD_G_PRINTF "\n" OSD_END
+#else
+      OSD_G_PRINTF "  MEM%u %#5.01lf GiBs",
+        i,
+        (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
+          (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
+        (1024.0 * 1024.0 * 1024.0) *
+        ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
+        OSD_END
+      OSD_G_PRINTF ", VRAM%u %#4llu MiB, SHARED%u %#3llu MiB",
+        i, mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
+        i, mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL
+      OSD_END
+
+      OSD_G_PRINTF ", %#4lu MHz",
+       gpu_stats.gpus [i].clocks_kHz.ram / 1000UL
+      OSD_END
+
+      // Add memory temperature if it exists
+      if (i <= gpu_stats.num_gpus &&
+        gpu_stats.gpus [i].temps_c.ram != 0) {
+        OSD_G_PRINTF " (%#3luC)",
+          gpu_stats.gpus [i].temps_c.ram
+          OSD_END
+      }
+#endif
+    }
+
+    for (int i = 0; i < nodes; i++) {
+      OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiBs)\n",
+        i,
+         mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
+                       gpu_stats.gpus [i].loads_percent.bus,
+              (double)(gpu_stats.gpus [i].hwinfo.pcie_lanes) * 0.5 *
+              ((double)gpu_stats.gpus [i].loads_percent.bus / 100.0)
+      OSD_END
     }
   }
 
@@ -398,8 +449,8 @@ BMF_DrawOSD (void)
     OSD_END
 
     while (i < nodes) {
-      OSD_M_PRINTF "  %8s %u  (Reserve:  %05llu / %05llu MiB  - "
-                   " Budget:  %05llu / %05llu MiB)",
+      OSD_M_PRINTF "  %8s %u  (Reserve:  %#5llu / %#5llu MiB  - "
+                   " Budget:  %#5llu / %#5llu MiB)",
                   nodes > 1 ? (nvapi_init ? "SLI Node" : "CFX Node") : "GPU",
                   i,
                   mem_info [buffer].local [i].CurrentReservation      >> 20ULL,
@@ -433,8 +484,8 @@ BMF_DrawOSD (void)
     OSD_END
 
     while (i < nodes) {
-      OSD_M_PRINTF "  %8s %u  (Reserve:  %05llu / %05llu MiB  -  "
-                   "Budget:  %05llu / %05llu MiB)\n",
+      OSD_M_PRINTF "  %8s %u  (Reserve:  %#5llu / %#5llu MiB  -  "
+                   "Budget:  %#5llu / %#5llu MiB)\n",
                        nodes > 1 ? "SLI Node" : "GPU",
                        i,
               mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
@@ -454,10 +505,10 @@ BMF_DrawOSD (void)
     int64_t headroom = mem_info [buffer].local [0].Budget -
                        mem_info [buffer].local [0].CurrentUsage;
 
-    OSD_M_PRINTF "  Max. Resident Set:  %05llu MiB  -"
-                 "  Max. Over Budget:  %05llu MiB\n"
-                 "    Budget Changes:  %06llu      - "
-                  "      Budget Left:  %05lli MiB\n",
+    OSD_M_PRINTF "  Max. Resident Set:  %#5llu MiB  -"
+                 "  Max. Over Budget:  %#5llu MiB\n"
+                 "     Budget Changes:  %#5llu      - "
+                  "      Budget Left:  %#5lli MiB\n",
                                     mem_stats [0].max_usage       >> 20ULL,
                                     mem_stats [0].max_over_budget >> 20ULL,
                                     mem_stats [0].budget_changes,
@@ -473,9 +524,9 @@ BMF_DrawOSD (void)
 
   BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
 
-  OSD_I_PRINTF "\n  Read..: %#6.02f MiB - (%#6.01f IOPs)"
-               "\n  Write.: %#6.02f MiB - (%#6.01f IOPs)"
-               "\n  Other.: %#6.02f MiB - (%#6.01f IOPs)\n",
+  OSD_I_PRINTF "\n  Read..: %#6.02f MiBs - (%#6.01f IOPs)"
+               "\n  Write.: %#6.02f MiBs - (%#6.01f IOPs)"
+               "\n  Other.: %#6.02f MiBs - (%#6.01f IOPs)\n",
                io_counter.read_mb_sec,  io_counter.read_iop_sec,
                io_counter.write_mb_sec, io_counter.write_iop_sec,
                io_counter.other_mb_sec, io_counter.other_iop_sec
@@ -488,13 +539,13 @@ BMF_DrawOSD (void)
   if (use_mib_sec) {
 #endif
     for (DWORD i = 0; i < disk_stats.num_disks; i++) {
-      OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read: %#3llu%%   Write: %#3llu%%) - "
-                                     "(Read: %#5.01f MiB   Write: %#5.01f MiB)",
+      OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read %#3llu%%: %#5.01f MiBs, "
+                                               "Write %#3llu%%: %#5.01f MiBs)",
         disk_stats.disks [i].name,
-          disk_stats.disks [i].percent_load, 
+          disk_stats.disks [i].percent_load,
             disk_stats.disks [i].percent_read,
-              disk_stats.disks [i].percent_write,
-                (float)disk_stats.disks [i].read_bytes_sec / (1024.0f * 1024.0f),
+              (float)disk_stats.disks [i].read_bytes_sec / (1024.0f * 1024.0f),
+                disk_stats.disks [i].percent_write,
                 (float)disk_stats.disks [i].write_bytes_sec / (1024.0f * 1024.0f)
       OSD_END
 
