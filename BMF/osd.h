@@ -52,6 +52,7 @@ enum buffer_t {
 };
 
 #include "stdafx.h"
+//#include "dxgi_interfaces.h"
 
 struct mem_info_t {
   DXGI_QUERY_VIDEO_MEMORY_INFO local    [MAX_GPU_NODES];

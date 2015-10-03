@@ -20,6 +20,8 @@
 #include <Windows.h>
 #include <string>
 
+extern std::wstring BMF_VER_STR;
+
 struct bmf_config_t
 {
   struct {
@@ -34,6 +36,7 @@ struct bmf_config_t
   struct {
     bool   show           = true;
     float  reserve        = 75.0f; // 75%
+    float  interval       = 0.25f;
 
     struct {
       BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'M', 0 };
@@ -75,9 +78,9 @@ struct bmf_config_t
     DWORD  red            = -1;
     DWORD  green          = -1;
     DWORD  blue           = -1;
-    DWORD  scale          = 1;
-    DWORD  pos_x          = 0;
-    DWORD  pos_y          = 0;
+    DWORD  scale          =  1;
+    DWORD  pos_x          =  0;
+    DWORD  pos_y          =  0;
 
     struct {
       BYTE toggle [4]     = { VK_CONTROL, VK_SHIFT, 'O',          0 };
@@ -142,13 +145,16 @@ struct bmf_config_t
 
 
   struct {
-    int     init_delay      = 250;
-    bool    silent          = false;
-    bool    allow_dev_trans = false;
+    int     init_delay        = 250;
+    bool    silent            = false;
+    bool    allow_dev_trans   = false;
+    bool    prefer_fahrenheit = true;
     std::wstring
-            version         = L"0.09";
+            version           = BMF_VER_STR;
   } system;
-} extern config;
+};
+
+extern bmf_config_t config;
 
 bool BMF_LoadConfig (void);
 void BMF_SaveConfig (bool close_config = false);

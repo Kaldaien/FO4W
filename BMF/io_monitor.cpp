@@ -154,7 +154,7 @@ BMF_InitCOM (void)
     hr = E_OUTOFMEMORY;
     goto COM_CLEANUP;
   }
-  
+
   if (FAILED (hr = pWbemLocator->ConnectServer(
       bstrNameSpace,
       NULL, // User name
@@ -331,8 +331,6 @@ BMF_MonitorCPU (LPVOID user)
       }
     }
 
-    //Win32_PerfFormattedData_PerfDisk_LogicalDisk
-
     // First time through, get the handles.
     if (iter == 0)
     {
@@ -382,7 +380,7 @@ BMF_MonitorCPU (LPVOID user)
         goto CPU_CLEANUP;
       }
     }
-           
+
     for (unsigned int i = 0; i < cpu.dwNumReturned; i++)
     {
       uint64_t interrupt;
@@ -567,7 +565,7 @@ BMF_MonitorDisk (LPVOID user)
         hr = E_OUTOFMEMORY;
         goto DISK_CLEANUP;
       }
-      
+
       SecureZeroMemory (disk.apEnumAccess,
                         disk.dwNumReturned * sizeof (IWbemObjectAccess *));
 
@@ -589,8 +587,6 @@ BMF_MonitorDisk (LPVOID user)
         goto DISK_CLEANUP;
       }
     }
-
-    //Win32_PerfFormattedData_PerfDisk_LogicalDisk
 
     // First time through, get the handles.
     if (iter == 0)
@@ -748,11 +744,6 @@ BMF_MonitorDisk (LPVOID user)
 
       if (i == 0)
         strcpy (disk.disks [i].name, "Total");
-
-      size_t len = strlen (disk.disks [i].name);
-
-      for (size_t j = len; j < 16; j++)
-        disk.disks [i].name [j] = '.';
 
       disk.disks [i].name [15] = '\0';
 
@@ -1006,20 +997,6 @@ BMF_MonitorPagefile (LPVOID user)
 
       if (i == (pagefile.dwNumReturned - 1))
         strcpy (pagefile.pagefiles [i].name, "Total");
-
-     size_t len = strlen (pagefile.pagefiles [i].name);
-
-      // Fix-up some characters RivaTuner does not like
-      for (int j = 0; j < len; j++)
-        if (pagefile.pagefiles [i].name [j] == '\\')
-          pagefile.pagefiles [i].name [j] = '?';
-
-      len = strlen (pagefile.pagefiles [i].name);
-
-      for (size_t j = len; j < 32; j++)
-        pagefile.pagefiles [i].name [j] = '.';
-
-      pagefile.pagefiles [i].name [31] = '\0';
 
       pagefile.pagefiles [i].size  = (pagefile.pagefiles [i].size  + size) / 2;
       pagefile.pagefiles [i].usage = (pagefile.pagefiles [i].usage + usage)/ 2;

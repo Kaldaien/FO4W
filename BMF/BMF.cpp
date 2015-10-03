@@ -16,6 +16,8 @@
 **/
 #define _CRT_SECURE_NO_WARNINGS
 
+//#include "dxgi_interfaces.h"
+
 #include "stdafx.h"
 #include "nvapi.h"
 #include "config.h"
@@ -42,6 +44,7 @@
 #include "osd.h"
 #include "import.h"
 #include "io_monitor.h"
+#include "memory_monitor.h"
 
 memory_stats_t mem_stats [MAX_GPU_NODES];
 mem_info_t     mem_info  [NumBuffers];
@@ -517,7 +520,7 @@ BMF_Init (void)
       dxgi_log.LogEx (false, L"Failed!\n");
   }
 
-  Sleep (250);
+  Sleep (333);
 
   if (disk_stats.hThread == 0) {
     dxgi_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
@@ -529,7 +532,7 @@ BMF_Init (void)
       dxgi_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (250);
+  Sleep (333);
 
   if (pagefile_stats.hThread == 0) {
     dxgi_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
@@ -540,6 +543,20 @@ BMF_Init (void)
                         GetThreadId (pagefile_stats.hThread));
     else
       dxgi_log.LogEx (false, L"failed!\n");
+  }
+
+  Sleep (333);
+
+  //
+  // Spawn Process Monitor Thread
+  //
+  if (process_stats.hThread == 0) {
+    dxgi_log.LogEx (true, L" [WMI] Spawning Process Monitor...  ");
+    process_stats.hThread = CreateThread (NULL, 0, BMF_MonitorProcess, NULL, 0, NULL);
+    if (process_stats.hThread != 0)
+      dxgi_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (process_stats.hThread));
+    else
+      dxgi_log.LogEx (false, L"Failed!\n");
   }
 
   dxgi_log.LogEx (false, L"\n");
@@ -856,6 +873,7 @@ extern "C++" {
   }
 }
 
+#ifdef _WIN64
 #define DXGI_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type) { \
   void** vftable = *(void***)*_Base;                                          \
                                                                               \
@@ -882,6 +900,34 @@ extern "C++" {
                   BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
 }
+#else
+#define DXGI_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type) { \
+  void** vftable = *(void***)*_Base;                                          \
+                                                                              \
+  if (vftable [_Index] != _Override) {                                        \
+    DWORD dwProtect;                                                          \
+                                                                              \
+    VirtualProtect (&vftable [_Index], 4, PAGE_EXECUTE_READWRITE, &dwProtect);\
+                                                                              \
+  dxgi_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",\
+             L##_Name, vftable [_Index],                                      \
+             BMF_DescribeVirtualProtectFlags (dwProtect));                    \
+                                                                              \
+    if (_Original == NULL)                                                    \
+      _Original = (##_Type)vftable [_Index];                                  \
+                                                                              \
+    dxgi_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                  \
+                                                                              \
+    vftable [_Index] = _Override;                                             \
+                                                                              \
+    VirtualProtect (&vftable [_Index], 4, dwProtect, &dwProtect);             \
+                                                                              \
+    dxgi_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n", \
+                  L##_Name, vftable [_Index],                                 \
+                  BMF_DescribeVirtualProtectFlags (dwProtect));               \
+  }                                                                           \
+}
+#endif
 
 #define min_max(ref,min,max) if ((ref) > (max)) (max) = (ref); \
                              if ((ref) < (min)) (min) = (ref);
@@ -891,18 +937,27 @@ __cdecl PresentCallback (IDXGISwapChain *This,
                          UINT            SyncInterval,
                          UINT            Flags)
 {
-  // Load user-defined DLLs (Lazy)
+  // Load user-defined DLLs (Late)
 #ifdef _WIN64
-  BMF_LoadLazyImports64 ();
+  BMF_LoadLateImports64 ();
 #else
-  BMF_LoadLazyImports32 ();
+  BMF_LoadLateImports32 ();
 #endif
 
-  BOOL    osd = BMF_DrawOSD      ();
+  BOOL osd = false;
+
   HRESULT hr  = Present_Original (This, SyncInterval, Flags);
+
+  // Draw after present, this may make stuff 1 frame late, but... it
+  //   helps with VSYNC performance.
+  if (This != nullptr)
+    osd = BMF_DrawOSD ();
 
   // Early-out if the OSD is not functional
   if (! osd)
+    return hr;
+
+  if (FAILED (hr))
     return hr;
 
   static ULONGLONG last_osd_scale { 0ULL };
@@ -1071,7 +1126,7 @@ __cdecl PresentCallback (IDXGISwapChain *This,
   {
     // Get SLI status for the frame we just displayed... this will show up
     //   one frame late, but this is the safest approach.
-    if (This != NULL && nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
+    if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
       IUnknown* pDev = nullptr;
 
       if (SUCCEEDED (This->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
@@ -1187,12 +1242,12 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
       case D3D_FEATURE_LEVEL_11_1:
         dxgi_log.LogEx (false, L" 11_1");
         break;
-      case D3D_FEATURE_LEVEL_12_0:
-        dxgi_log.LogEx (false, L" 12_0");
-        break;
-      case D3D_FEATURE_LEVEL_12_1:
-        dxgi_log.LogEx (false, L" 12_1");
-        break;
+      //case D3D_FEATURE_LEVEL_12_0:
+        //dxgi_log.LogEx (false, L" 12_0");
+        //break;
+      //case D3D_FEATURE_LEVEL_12_1:
+        //dxgi_log.LogEx (false, L" 12_1");
+        //break;
     }
   }
 
@@ -2042,6 +2097,23 @@ WINAPI BudgetThread (LPVOID user_data)
       last_budget = mem_info [buffer].local [0].Budget;
     }
 
+    //
+    // NV's drivers appear to be doing this in reverse order...
+    //
+    mem_info_t mi;
+    for (int i = 0; i < nodes; i++)
+    {
+      mi.local    [nodes - i - 1].CurrentUsage = mem_info [buffer].local    [i].CurrentUsage;
+      mi.nonlocal [nodes - i - 1].CurrentUsage = mem_info [buffer].nonlocal [i].CurrentUsage;
+    }
+
+    // Now, since we reversed the memory numbers, let's update them
+    for (int i = 0; i < nodes; i++)
+    {
+      mem_info [buffer].local    [i].CurrentUsage = mi.local    [i].CurrentUsage;
+      mem_info [buffer].nonlocal [i].CurrentUsage = mi.nonlocal [i].CurrentUsage;
+    }
+
     if (nodes > 0) {
       int i = 0;
 
@@ -2144,6 +2216,11 @@ WINAPI BudgetThread (LPVOID user_data)
   if (g_pDXGIDev != nullptr) {
     // Releasing this actually causes driver crashes, so ...
     //   let it leak, what do we care?
+    //ULONG refs = g_pDXGIDev->AddRef ();
+    //if (refs > 2)
+      //g_pDXGIDev->Release ();
+    //g_pDXGIDev->Release   ();
+
 #ifdef ALLOW_DEVICE_TRANSITION
     g_pDXGIDev->Release ();
 #endif
@@ -2166,11 +2243,11 @@ WaitForInit (void)
  if (hInitThread)
     WaitForSingleObject (hInitThread, INFINITE);
 
- // Load user-defined DLLs (Late)
+ // Load user-defined DLLs (Lazy)
 #ifdef _WIN64
- BMF_LoadLateImports64 ();
+ BMF_LoadLazyImports64 ();
 #else
- BMF_LoadLateImports32 ();
+ BMF_LoadLazyImports32 ();
 #endif
 }
 }
@@ -2291,13 +2368,36 @@ APIENTRY DllMain ( HMODULE hModule,
           }
         }
 
-        //budget_thread->pAdapter->UnregisterVideoMemoryBudgetChangeNotification
-          //(budget_thread->cookie);
+        //ULONG refs = 0;
+        //if (budget_thread->pAdapter != nullptr) {
+          //refs = budget_thread->pAdapter->AddRef ();
+          //budget_log.LogEx (true, L" >> Budget Adapter has %u refs. left...\n",
+           //refs - 1);
 
-        //budget_thread->pAdapter->Release ();
+          //budget_thread->pAdapter->
+            //UnregisterVideoMemoryBudgetChangeNotification
+              //(budget_thread->cookie);
+
+          //if (refs > 2)
+            //budget_thread->pAdapter->Release ();
+          //budget_thread->pAdapter->Release   ();
+        //}
 
         HeapFree (dll_heap, NULL, budget_thread);
         budget_thread = nullptr;
+      }
+
+      if (process_stats.hThread != 0) {
+        dxgi_log.LogEx (true,L"[WMI] Shutting down Process Monitor... ");
+        // Signal the thread to shutdown
+        process_stats.lID = 0;
+        WaitForSingleObject
+            (process_stats.hThread, 1000UL); // Give 1 second, and
+                                             // then we're killing
+                                             // the thing!
+        TerminateThread (process_stats.hThread, 0);
+        process_stats.hThread  = 0;
+        dxgi_log.LogEx (false, L"done!\n");
       }
 
       if (cpu_stats.hThread != 0) {

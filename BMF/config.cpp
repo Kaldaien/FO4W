@@ -21,7 +21,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring BMF_VER_STR = L"0.12";
+std::wstring BMF_VER_STR = L"0.13";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -94,6 +94,7 @@ bmf::ParameterFloat*     mem_reserve;
 bmf::ParameterInt*       init_delay;
 bmf::ParameterBool*      silent;
 bmf::ParameterStringW*   version;
+bmf::ParameterBool*      prefer_fahrenheit;
 
 
 bool
@@ -265,6 +266,16 @@ BMF_LoadConfig (void) {
     dll_ini,
       L"DXGI.System",
         L"Silent" );
+
+  prefer_fahrenheit =
+    static_cast <bmf::ParameterBool *>
+    (g_ParameterFactory.create_parameter <bool> (
+      L"Prefer Fahrenheit Units")
+      );
+  prefer_fahrenheit->register_to_ini (
+    dll_ini,
+      L"DXGI.System",
+        L"PreferFahrenheit" );
 
   version =
     static_cast <bmf::ParameterStringW *>
@@ -491,6 +502,8 @@ BMF_LoadConfig (void) {
     config.system.init_delay = init_delay->get_value ();
   if (silent->load ())
     config.system.silent = silent->get_value ();
+  if (prefer_fahrenheit->load ())
+    config.system.prefer_fahrenheit = prefer_fahrenheit->get_value ();
   if (version->load ())
     config.system.version = version->get_value ();
 
@@ -537,6 +550,7 @@ BMF_SaveConfig (bool close_config) {
 
   init_delay->set_value                    (config.system.init_delay);
   silent->set_value                        (config.system.silent);
+  prefer_fahrenheit->set_value             (config.system.prefer_fahrenheit);
 
   monitoring.memory.show->store        ();
   mem_reserve->store                   ();
@@ -573,6 +587,7 @@ BMF_SaveConfig (bool close_config) {
 
   init_delay->store                   ();
   silent->store                       ();
+  prefer_fahrenheit->store            ();
 
   version->set_value                  (BMF_VER_STR);
   version->store                      ();

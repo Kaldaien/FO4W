@@ -30,6 +30,21 @@ struct DXGI_ADAPTER_DESC;
 extern "C" {
 #endif
 
+typedef struct _NVPCIEINFO {
+  NvU32                   version;                            //!< Structure version
+
+  struct {
+    NvU32                   pciLinkTransferRate;
+    NVVIOPCILINKRATE        pciLinkVersion;                   //!< specifies the the negotiated PCIE link rate.
+    NVVIOPCILINKWIDTH       pciLinkWidth;                     //!< specifies the the negotiated PCIE link width.
+    NVVIOPCILINKRATE        pciLinkRate;                      //!< specifies the the negotiated PCIE link rate.
+  } pstates [20];
+} NVPCIEINFO_V1;
+
+typedef NVPCIEINFO_V1 NVPCIEINFO;
+
+typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetPCIEInfo_t)
+    (NvPhysicalGpuHandle handle, NVPCIEINFO* info);
 typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetRamType_t)
     (NvPhysicalGpuHandle handle, NvU32* memtype);
 typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetFBWidthAndLocation_t)
@@ -37,6 +52,7 @@ typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetFBWidthAndLocation_t)
 
 extern NvAPI_GPU_GetRamType_t            NvAPI_GPU_GetRamType;
 extern NvAPI_GPU_GetFBWidthAndLocation_t NvAPI_GPU_GetFBWidthAndLocation;
+extern NvAPI_GPU_GetPCIEInfo_t           NvAPI_GPU_GetPCIEInfo;
 
 #ifdef __cplusplus
 }

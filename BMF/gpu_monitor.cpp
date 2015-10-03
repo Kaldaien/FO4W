@@ -1,3 +1,20 @@
+/**
+* This file is part of Batman "Fix".
+*
+* Batman "Fix" is free software : you can redistribute it and / or modify
+* it under the terms of the GNU General Public License as published by
+* The Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* Batman "Fix" is distributed in the hope that it will be useful,
+* But WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
+**/
+
 #include "gpu_monitor.h"
 #include "config.h"
 
@@ -164,7 +181,6 @@ BMF_PollGPU (void)
 
       gpu_stats.gpus [i].nv_perf_state = perf_decrease_info;
 
-
       NV_GPU_PERF_PSTATES20_INFO ps20info;
       ps20info.version = NV_GPU_PERF_PSTATES20_INFO_VER;
 
@@ -176,6 +192,17 @@ BMF_PollGPU (void)
 
         if (NVAPI_OK == NvAPI_GPU_GetCurrentPstate (gpu, &current_pstate))
         {
+          NVPCIEINFO pcieinfo;
+          pcieinfo.version = (2 << 16);
+          NvAPI_GPU_GetPCIEInfo (gpu, &pcieinfo);
+
+          gpu_stats.gpus [i].hwinfo.pcie_gen   =
+            pcieinfo.pstates [current_pstate - 1].pciLinkVersion;
+          gpu_stats.gpus [i].hwinfo.pcie_lanes =
+            pcieinfo.pstates [current_pstate - 1].pciLinkWidth;
+          gpu_stats.gpus [i].hwinfo.pcie_transfer_rate =
+            pcieinfo.pstates [current_pstate - 1].pciLinkTransferRate;
+
           for (NvU32 pstate = 0; pstate < ps20info.numPstates; pstate++) {
             if (ps20info.pstates [pstate].pstateId == current_pstate) {
 #if 1

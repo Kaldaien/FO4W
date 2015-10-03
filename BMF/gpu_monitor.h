@@ -80,7 +80,20 @@ struct gpu_sensors_t {
     struct {
       uint32_t mem_type; // 8 == GDDR5
       uint32_t mem_bus_width;
+
       uint32_t pcie_lanes;
+      uint32_t pcie_gen;
+      uint32_t pcie_transfer_rate;
+
+      double pcie_bandwidth_mb (void) {
+        if (pcie_gen == 2 || pcie_gen == 1 || pcie_gen == 0) {
+          return (pcie_transfer_rate / 8.0) * (0.8) * pcie_lanes;
+        }
+
+        else if (pcie_gen == 3 || pcie_gen == 4) {
+          return (pcie_transfer_rate / 8.0) * (0.9846) * pcie_lanes;
+        }
+      }
     } hwinfo;
 
     uint32_t nv_perf_state;

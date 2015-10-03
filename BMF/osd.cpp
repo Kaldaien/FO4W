@@ -27,6 +27,7 @@
 #include "config.h"
 #include "io_monitor.h"
 #include "gpu_monitor.h"
+#include "memory_monitor.h"
 
 #define OSD_PRINTF   if (config.osd.show)     { pszOSD += sprintf (pszOSD,
 #define OSD_M_PRINTF if (config.osd.show &&\
@@ -181,6 +182,102 @@ BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
   return L"UNKNOWN";
 }
 
+enum BMF_UNITS {
+  Celsius    = 0,
+  Fahrenheit = 1,
+  B          = 2,
+  KiB        = 3,
+  MiB        = 4,
+  GiB        = 5,
+  Auto       = 32
+};
+
+std::wstring
+BMF_SizeToString (uint64_t size, BMF_UNITS unit = Auto)
+{
+  wchar_t str [64];
+
+  if (unit == Auto) {
+    if      (size > (1ULL << 32ULL)) unit = GiB;
+    else if (size > (1ULL << 22ULL)) unit = MiB;
+    else if (size > (1ULL << 12ULL)) unit = KiB;
+    else                             unit = B;
+  }
+
+  switch (unit)
+  {
+    case GiB:
+      swprintf (str, L"%#5llu GiB", size >> 30);
+      break;
+    case MiB:
+      swprintf (str, L"%#5llu MiB", size >> 20);
+      break;
+    case KiB:
+      swprintf (str, L"%#5llu KiB", size >> 10);
+      break;
+    case B:
+    default:
+      swprintf (str, L"%#3llu Bytes", size);
+      break;
+  }
+
+  return str;
+}
+
+std::wstring
+BMF_SizeToStringF (uint64_t size, int width, int precision, BMF_UNITS unit = Auto)
+{
+  wchar_t str [64];
+
+  if (unit == Auto) {
+    if      (size > (1ULL << 32ULL)) unit = GiB;
+    else if (size > (1ULL << 22ULL)) unit = MiB;
+    else if (size > (1ULL << 12ULL)) unit = KiB;
+    else                             unit = B;
+  }
+
+  switch (unit)
+  {
+  case GiB:
+    swprintf (str, L"%#*.*f GiB", width, precision,
+             (float)size / (1024.0f * 1024.0f * 1024.0f));
+    break;
+  case MiB:
+    swprintf (str, L"%#*.*f MiB", width, precision,
+             (float)size / (1024.0f * 1024.0f));
+    break;
+  case KiB:
+    swprintf (str, L"%#*.*f KiB", width, precision, (float)size / 1024.0f);
+    break;
+  case B:
+  default:
+    swprintf (str, L"%#*llu Bytes", width-1-precision, size);
+    break;
+  }
+
+  return str;
+}
+
+std::wstring
+BMF_FormatTemperature (int32_t in_temp, BMF_UNITS in_unit, BMF_UNITS out_unit)
+{
+  int32_t converted;
+  wchar_t wszOut [8];
+
+  if (in_unit == Celsius && out_unit == Fahrenheit) {
+    //converted = in_temp * 2 + 30;
+    converted = (int32_t)((float)(in_temp) * 9.0f/5.0f + 32.0f);
+    swprintf (wszOut, L"%#3lu°F", converted);
+  } else if (in_unit == Fahrenheit && out_unit == Celsius) {
+    converted = (int32_t)(((float)in_temp - 32.0f) * (5.0f/9.0f));
+    swprintf (wszOut, L"%#2lu°C", converted);
+  } else {
+    swprintf (wszOut, L"%#2lu°C", in_temp);
+  }
+
+  return wszOut;
+}
+
 BOOL
 BMF_DrawOSD (void)
 {
@@ -229,7 +326,7 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Batman \"Fix\" v %ws   %ws\n\n\n",
+    OSD_PRINTF "Batman \"Fix\" v %ws   %ws\n\n",
       BMF_VER_STR.c_str (), time
     OSD_END
   }
@@ -280,11 +377,11 @@ BMF_DrawOSD (void)
     OSD_END
 
     if (gpu_stats.gpus [i].loads_percent.vid > 0) {
-      OSD_G_PRINTF ",  VID%u %#3lu%% ,",
+      OSD_G_PRINTF ",  VID%u %#3lu%%  ,",
         i, gpu_stats.gpus [i].loads_percent.vid
       OSD_END
     } else {
-      OSD_G_PRINTF ",             " OSD_END
+      OSD_G_PRINTF ",              " OSD_END
     }
 
     OSD_G_PRINTF " %#4lu MHz",
@@ -294,7 +391,7 @@ BMF_DrawOSD (void)
     if (gpu_stats.gpus [i].volts_mV.supported)
     {
       // Over (or under) voltage limit!
-      if (gpu_stats.gpus [i].volts_mV.over)
+      if (false)//gpu_stats.gpus [i].volts_mV.over)
       {
         OSD_G_PRINTF ", %#6.1fmV (%+#6.1fmV)",
           gpu_stats.gpus [i].volts_mV.core, gpu_stats.gpus [i].volts_mV.ov
@@ -313,8 +410,13 @@ BMF_DrawOSD (void)
       OSD_END
     }
 
-    OSD_G_PRINTF ", (%#2lu°C)",
-      gpu_stats.gpus [i].temps_c.gpu
+
+    OSD_G_PRINTF ", (%ws)",
+      BMF_FormatTemperature (
+        gpu_stats.gpus [i].temps_c.gpu,
+          Celsius,
+            config.system.prefer_fahrenheit ? Fahrenheit :
+                                              Celsius ).c_str ()
     OSD_END
 
     if (config.gpu.print_slowdown &&
@@ -345,7 +447,7 @@ BMF_DrawOSD (void)
     //     on that in the future.
     for (int i = 0; i < nodes; i++) {
 #if 1
-      OSD_G_PRINTF "  VRAM%u  : %#5llu MiB (%#3lu%%: %#5.01lf GiBs)",
+      OSD_G_PRINTF "  VRAM%u  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
         i,
         mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
                     gpu_stats.gpus [i].loads_percent.fb,
@@ -369,7 +471,7 @@ BMF_DrawOSD (void)
 
       OSD_G_PRINTF "\n" OSD_END
 #else
-      OSD_G_PRINTF "  MEM%u %#5.01lf GiBs",
+      OSD_G_PRINTF "  MEM%u %#5.01lf GiB/s",
         i,
         (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
           (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
@@ -396,12 +498,15 @@ BMF_DrawOSD (void)
     }
 
     for (int i = 0; i < nodes; i++) {
-      OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiBs)\n",
+      OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0@x%lu\n",
         i,
          mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
-              (double)(gpu_stats.gpus [i].hwinfo.pcie_lanes) * 0.5 *
-              ((double)gpu_stats.gpus [i].loads_percent.bus / 100.0)
+                       gpu_stats.gpus [i].hwinfo.pcie_bandwidth_mb () / 1024.0 *
+              ((double)gpu_stats.gpus [i].loads_percent.bus / 100.0),
+                       gpu_stats.gpus [i].hwinfo.pcie_gen >= 1 ?
+                       gpu_stats.gpus [i].hwinfo.pcie_gen : 1,
+                       gpu_stats.gpus [i].hwinfo.pcie_lanes
       OSD_END
     }
   }
@@ -433,7 +538,7 @@ BMF_DrawOSD (void)
     }
   }
 
-  OSD_G_PRINTF "\n" OSD_END
+  //OSD_G_PRINTF "\n" OSD_END
 
   if (nodes > 0) {
     int i = 0;
@@ -443,9 +548,8 @@ BMF_DrawOSD (void)
         afr_next = sli_state.nextFrameAFRIndex;
 
     OSD_M_PRINTF "\n"
-                   "----- (DXGI 1.4): Local Memory -----------"
-                   "------------------------------------------"
-                   "-\n"
+                   "----- (DXGI 1.4): Local Memory -------"
+                   "--------------------------------------\n"
     OSD_END
 
     while (i < nodes) {
@@ -478,28 +582,28 @@ BMF_DrawOSD (void)
 
     i = 0;
 
-    OSD_M_PRINTF "----- (DXGI 1.4): Non-Local Memory -------"
-                 "------------------------------------------"
-                 "-\n"
+    OSD_M_PRINTF "----- (DXGI 1.4): Non-Local Memory ---"
+                 "--------------------------------------\n"
     OSD_END
 
     while (i < nodes) {
-      OSD_M_PRINTF "  %8s %u  (Reserve:  %#5llu / %#5llu MiB  -  "
-                   "Budget:  %#5llu / %#5llu MiB)\n",
-                       nodes > 1 ? "SLI Node" : "GPU",
-                       i,
-              mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
-              mem_info [buffer].nonlocal [i].AvailableForReservation >> 20ULL,
-              mem_info [buffer].nonlocal [i].CurrentUsage            >> 20ULL,
-              mem_info [buffer].nonlocal [i].Budget                  >> 20ULL
-      OSD_END
+      if ((mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL) > 0) {
+        OSD_M_PRINTF "  %8s %u  (Reserve:  %#5llu / %#5llu MiB  -  "
+                     "Budget:  %#5llu / %#5llu MiB)\n",
+                         nodes > 1 ? "SLI Node" : "GPU",
+                         i,
+                mem_info [buffer].nonlocal [i].CurrentReservation      >> 20ULL,
+                mem_info [buffer].nonlocal [i].AvailableForReservation >> 20ULL,
+                mem_info [buffer].nonlocal [i].CurrentUsage            >> 20ULL,
+                mem_info [buffer].nonlocal [i].Budget                  >> 20ULL
+        OSD_END
+      }
 
       i++;
     }
 
-    OSD_M_PRINTF "----- (DXGI 1.4): Miscellaneous ----------"
-                 "------------------------------------------"
-                 "-\n"
+    OSD_M_PRINTF "----- (DXGI 1.4): Miscellaneous ------"
+                 "--------------------------------------\n"
     OSD_END
 
     int64_t headroom = mem_info [buffer].local [0].Budget -
@@ -515,7 +619,20 @@ BMF_DrawOSD (void)
                                     headroom / 1024 / 1024
     OSD_END
   }
-  
+
+  OSD_M_PRINTF "\n" OSD_END
+
+  OSD_M_PRINTF "  Working Set: %ws,  Committed: %ws,  Address Space: %ws\n",
+    BMF_SizeToString (process_stats.memory.working_set,   MiB).c_str (),
+    BMF_SizeToString (process_stats.memory.private_bytes, MiB).c_str (),
+    BMF_SizeToString (process_stats.memory.virtual_bytes, MiB).c_str ()
+  OSD_END
+  OSD_M_PRINTF "        *Peak: %ws,      *Peak: %ws,          *Peak: %ws\n",
+    BMF_SizeToString (process_stats.memory.working_set_peak,     MiB).c_str (),
+    BMF_SizeToString (process_stats.memory.page_file_bytes_peak, MiB).c_str (),
+    BMF_SizeToString (process_stats.memory.virtual_bytes_peak,   MiB).c_str ()
+  OSD_END
+
   extern int gpu_prio;
 
   OSD_B_PRINTF "\n  GPU Priority: %+1i\n",
@@ -526,9 +643,9 @@ BMF_DrawOSD (void)
   if (config.io.show)
     BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
 
-  OSD_I_PRINTF "\n  Read..: %#6.02f MiBs - (%#6.01f IOPs)"
-               "\n  Write.: %#6.02f MiBs - (%#6.01f IOPs)"
-               "\n  Other.: %#6.02f MiBs - (%#6.01f IOPs)\n",
+  OSD_I_PRINTF "\n  Read   :%#6.02f MiB/s - (%#6.01f IOP/s)"
+               "\n  Write  :%#6.02f MiB/s - (%#6.01f IOP/s)"
+               "\n  Other  :%#6.02f MiB/s - (%#6.01f IOP/s)\n",
                io_counter.read_mb_sec,  io_counter.read_iop_sec,
                io_counter.write_mb_sec, io_counter.write_iop_sec,
                io_counter.other_mb_sec, io_counter.other_iop_sec
@@ -541,18 +658,32 @@ BMF_DrawOSD (void)
   if (use_mib_sec) {
 #endif
     for (DWORD i = 0; i < disk_stats.num_disks; i++) {
-      OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read %#3llu%%: %#5.01f MiBs, "
-                                               "Write %#3llu%%: %#5.01f MiBs)",
-        disk_stats.disks [i].name,
-          disk_stats.disks [i].percent_load,
-            disk_stats.disks [i].percent_read,
-              (float)disk_stats.disks [i].read_bytes_sec / (1024.0f * 1024.0f),
-                disk_stats.disks [i].percent_write,
-                (float)disk_stats.disks [i].write_bytes_sec / (1024.0f * 1024.0f)
-      OSD_END
-
-      if (i == 0)
-        OSD_D_PRINTF "\n" OSD_END
+      if (i == 0) {
+        OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read %#3llu%%: %ws/s, "
+                                                 "Write %#3llu%%: %ws/s)\n",
+          disk_stats.disks [i].name,
+            disk_stats.disks [i].percent_load,
+              disk_stats.disks [i].percent_read,
+                BMF_SizeToStringF (
+                  disk_stats.disks [i].read_bytes_sec, 6, 1).c_str (),
+                    disk_stats.disks [i].percent_write,
+                      BMF_SizeToStringF (
+                        disk_stats.disks [i].write_bytes_sec, 6, 1).c_str ()
+        OSD_END
+      }
+      else {
+        OSD_D_PRINTF "  Disk %-16s %#3llu%%  -  (Read %#3llu%%: %ws/s, "
+                                                "Write %#3llu%%: %ws/s)\n",
+          disk_stats.disks [i].name,
+            disk_stats.disks [i].percent_load,
+              disk_stats.disks [i].percent_read,
+                BMF_SizeToStringF (
+                  disk_stats.disks [i].read_bytes_sec, 6, 1).c_str (),
+                    disk_stats.disks [i].percent_write,
+                      BMF_SizeToStringF (
+                        disk_stats.disks [i].write_bytes_sec, 6, 1).c_str ()
+        OSD_END
+      }
     }
 #if 0
   }
@@ -575,8 +706,6 @@ BMF_DrawOSD (void)
   }
 #endif
 
-  OSD_D_PRINTF "\n" OSD_END
-
   OSD_C_PRINTF "\n  Total %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
                  "Interrupt: %#3llu%%)\n",
         cpu_stats.cpus [0].percent_load, 
@@ -586,8 +715,8 @@ BMF_DrawOSD (void)
   OSD_END
 
   for (DWORD i = 1; i < cpu_stats.num_cpus; i++) {
-    OSD_C_PRINTF "\n  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
-                 "Interrupt: %#3llu%%)",
+    OSD_C_PRINTF "  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
+                 "Interrupt: %#3llu%%)\n",
       i-1,
         cpu_stats.cpus [i].percent_load, 
           cpu_stats.cpus [i].percent_kernel, 
@@ -596,18 +725,15 @@ BMF_DrawOSD (void)
     OSD_END
   }
 
-  OSD_C_PRINTF "\n" OSD_END
-
   for (DWORD i = 0; i < pagefile_stats.num_pagefiles; i++) {
-    OSD_P_PRINTF "\n  Pagefile %16s %05.02f KiB / %05.02f KiB  (Peak: %05.02f KiB)",
-      pagefile_stats.pagefiles [i].name,
-        (float)pagefile_stats.pagefiles [i].usage / 1024.0f,
-          (float)pagefile_stats.pagefiles [i].size / 1024.0f,
-            (float)pagefile_stats.pagefiles [i].usage_peak / 1024.0f
-    OSD_END
-
-    if (i == 0)
-      OSD_P_PRINTF "\n" OSD_END
+      OSD_P_PRINTF "\n  Pagefile %20s  %ws / %ws  (Peak: %ws)",
+        pagefile_stats.pagefiles [i].name,
+          BMF_SizeToStringF (pagefile_stats.pagefiles [i].usage, 5,2).c_str (),
+            BMF_SizeToStringF (
+              pagefile_stats.pagefiles [i].size, 5,2).c_str (),
+                BMF_SizeToStringF (
+                  pagefile_stats.pagefiles [i].usage_peak, 5,2).c_str ()
+      OSD_END
   }
 
   OSD_P_PRINTF "\n" OSD_END

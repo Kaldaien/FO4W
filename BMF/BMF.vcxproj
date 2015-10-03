@@ -151,8 +151,8 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <ExceptionHandling>false</ExceptionHandling>
       <AdditionalOptions>/EHsc %(AdditionalOptions)</AdditionalOptions>
+      <Optimization>Full</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -177,11 +177,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.h" />
+    <ClInclude Include="dxgi_interfaces.h" />
     <ClInclude Include="gpu_monitor.h" />
     <ClInclude Include="import.h" />
     <ClInclude Include="ini.h" />
     <ClInclude Include="io_monitor.h" />
     <ClInclude Include="log.h" />
+    <ClInclude Include="memory_monitor.h" />
     <ClInclude Include="nvapi.h" />
     <ClInclude Include="osd.h" />
     <ClInclude Include="parameter.h" />
@@ -198,6 +200,7 @@
     <ClCompile Include="ini.cpp" />
     <ClCompile Include="io_monitor.cpp" />
     <ClCompile Include="log.cpp" />
+    <ClCompile Include="memory_monitor.cpp" />
     <ClCompile Include="nvapi.cpp" />
     <ClCompile Include="osd.cpp" />
     <ClCompile Include="parameter.cpp" />
