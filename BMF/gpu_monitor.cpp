@@ -23,6 +23,9 @@ gpu_sensors_t gpu_stats;
 #include "nvapi.h"
 extern BOOL nvapi_init;
 
+#include "adl.h"
+extern BOOL ADL_init;
+
 #define NVAPI_GPU_UTILIZATION_DOMAIN_GPU 0
 #define NVAPI_GPU_UTILIZATION_DOMAIN_FB  1
 #define NVAPI_GPU_UTILIZATION_DOMAIN_VID 2
@@ -31,10 +34,11 @@ extern BOOL nvapi_init;
 void
 BMF_PollGPU (void)
 {
-  // Only support GPU stats on NVIDIA hardware for now
   if (! nvapi_init) {
-    gpu_stats.num_gpus = 0;
-    return;
+    if (! BMF_InitADL ()) {
+      gpu_stats.num_gpus = 0;
+      return;
+    }
   }
 
   SYSTEMTIME     update_time;
@@ -52,6 +56,8 @@ BMF_PollGPU (void)
   if (dt > config.gpu.interval) {
     gpu_stats.last_update.QuadPart = update_ul.QuadPart;
 
+if (nvapi_init)
+{
     NvPhysicalGpuHandle gpus [NVAPI_MAX_PHYSICAL_GPUS];
     NvU32               gpu_count;
 
@@ -64,7 +70,15 @@ BMF_PollGPU (void)
     gpu_stats.num_gpus = gpu_count;
 
     for (int i = 0; i < gpu_stats.num_gpus; i++) {
-      NvPhysicalGpuHandle gpu    = gpus [i];
+      NvPhysicalGpuHandle gpu;
+
+      // In order for DXGI Adapter info to match up... don't just assign
+      //   these GPUs willy-nilly, use the high 24-bits of the GPUID as
+      //     a bitmask.
+      NvAPI_GetPhysicalGPUFromGPUID (1 << (i + 8), &gpu);
+
+      gpu_stats.gpus [i].nv_gpuid = (1 << (i + 8));
+
       NvAPI_Status        status =
         NvAPI_GPU_GetDynamicPstatesInfoEx (gpu, &psinfoex);
 
@@ -107,12 +121,12 @@ BMF_PollGPU (void)
           if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_GPU)
             gpu_stats.gpus [i].temps_c.gpu = thermal.sensor [j].currentTemp;
 #endif
-          if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_MEMORY)
-            gpu_stats.gpus [i].temps_c.ram = thermal.sensor [j].currentTemp;
-          if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_POWER_SUPPLY)
-            gpu_stats.gpus [i].temps_c.psu = thermal.sensor [j].currentTemp;
-          if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_BOARD)
-            gpu_stats.gpus [i].temps_c.pcb = thermal.sensor [j].currentTemp;
+          //if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_MEMORY)
+            //gpu_stats.gpus [i].temps_c.ram = thermal.sensor [j].currentTemp;
+          //if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_POWER_SUPPLY)
+            //gpu_stats.gpus [i].temps_c.psu = thermal.sensor [j].currentTemp;
+          //if (thermal.sensor [j].target == NVAPI_THERMAL_TARGET_BOARD)
+            //gpu_stats.gpus [i].temps_c.pcb = thermal.sensor [j].currentTemp;
         }
       }
 
@@ -163,8 +177,8 @@ BMF_PollGPU (void)
           freq.domain [NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency;
         gpu_stats.gpus [i].clocks_kHz.ram    =
           freq.domain [NVAPI_GPU_PUBLIC_CLOCK_MEMORY].frequency;
-        gpu_stats.gpus [i].clocks_kHz.shader =
-          freq.domain [NVAPI_GPU_PUBLIC_CLOCK_PROCESSOR].frequency;
+        ////gpu_stats.gpus [i].clocks_kHz.shader =
+          ////freq.domain [NVAPI_GPU_PUBLIC_CLOCK_PROCESSOR].frequency;
       }
 
       NvU32 tach;
@@ -192,19 +206,19 @@ BMF_PollGPU (void)
 
         if (NVAPI_OK == NvAPI_GPU_GetCurrentPstate (gpu, &current_pstate))
         {
-          NVPCIEINFO pcieinfo;
-          pcieinfo.version = (2 << 16);
-          NvAPI_GPU_GetPCIEInfo (gpu, &pcieinfo);
+          NV_GPU_PCIE_INFO pcieinfo;
+          pcieinfo.version = NV_GPU_PCIE_INFO_VER;
 
-          gpu_stats.gpus [i].hwinfo.pcie_gen   =
-            pcieinfo.pstates [current_pstate - 1].pciLinkVersion;
-          gpu_stats.gpus [i].hwinfo.pcie_lanes =
-            pcieinfo.pstates [current_pstate - 1].pciLinkWidth;
-          gpu_stats.gpus [i].hwinfo.pcie_transfer_rate =
-            pcieinfo.pstates [current_pstate - 1].pciLinkTransferRate;
+          NvAPI_GPU_GetPCIEInfo (gpu, &pcieinfo);
 
           for (NvU32 pstate = 0; pstate < ps20info.numPstates; pstate++) {
             if (ps20info.pstates [pstate].pstateId == current_pstate) {
+              gpu_stats.gpus [i].hwinfo.pcie_gen   =
+                pcieinfo.pstates [pstate].pciLinkRate;
+              gpu_stats.gpus [i].hwinfo.pcie_lanes =
+                pcieinfo.pstates [pstate].pciLinkWidth;
+              gpu_stats.gpus [i].hwinfo.pcie_transfer_rate =
+                pcieinfo.pstates [pstate].pciLinkTransferRate;
 #if 1
               // First, check for over-voltage...
               if (gpu_stats.gpus [i].volts_mV.supported == false)
@@ -280,5 +294,44 @@ BMF_PollGPU (void)
         }
       }
     }
+  }
+  else if (ADL_init == ADL_TRUE)
+  {
+    ADL_Adapter_NumberOfAdapters_Get (&gpu_stats.num_gpus);
+
+    for (int i = 0; i < gpu_stats.num_gpus; i++) {
+      ADLPMActivity activity;
+      activity.iSize = sizeof (ADLPMActivity);
+
+      ADL_Overdrive5_CurrentActivity_Get (i, &activity);
+
+      gpu_stats.gpus [i].loads_percent.gpu = activity.iActivityPercent;
+      gpu_stats.gpus [i].hwinfo.pcie_gen   = activity.iCurrentBusSpeed;
+      gpu_stats.gpus [i].hwinfo.pcie_lanes = activity.iCurrentBusLanes;
+
+      gpu_stats.gpus [i].clocks_kHz.gpu    = activity.iEngineClock / 1000;
+      gpu_stats.gpus [i].clocks_kHz.ram    = activity.iMemoryClock / 1000;
+
+      gpu_stats.gpus [i].volts_mV.supported = true;
+      gpu_stats.gpus [i].volts_mV.over      = false;
+      gpu_stats.gpus [i].volts_mV.core      = activity.iVddc;
+
+      ADLTemperature temp;
+      temp.iSize = sizeof (ADLTemperature);
+
+      ADL_Overdrive5_Temperature_Get (i, 0, &temp);
+
+      gpu_stats.gpus [i].temps_c.gpu = temp.iTemperature;
+
+      ADLFanSpeedValue fanspeed;
+      fanspeed.iSize      = sizeof (ADLFanSpeedValue);
+      fanspeed.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_RPM;
+
+      ADL_Overdrive5_FanSpeed_Get (i, 0, &fanspeed);
+
+      gpu_stats.gpus [i].fans_rpm.gpu       = fanspeed.iFanSpeed;
+      gpu_stats.gpus [i].fans_rpm.supported = true;
+    }
+  }
   }
 }

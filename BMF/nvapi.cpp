@@ -36,6 +36,8 @@
 NvAPI_GPU_GetRamType_t            NvAPI_GPU_GetRamType;
 NvAPI_GPU_GetFBWidthAndLocation_t NvAPI_GPU_GetFBWidthAndLocation;
 NvAPI_GPU_GetPCIEInfo_t           NvAPI_GPU_GetPCIEInfo;
+NvAPI_GetPhysicalGPUFromGPUID_t   NvAPI_GetPhysicalGPUFromGPUID;
+NvAPI_GetGPUIDFromPhysicalGPU_t   NvAPI_GetGPUIDFromPhysicalGPU;
 
 #pragma comment (lib, "nvapi/amd64/nvapi64.lib")
 
@@ -315,18 +317,18 @@ NVAPI::FindGPUByDXGIName (const wchar_t* wszName)
 }
 
 std::wstring
-NVAPI::GetDriverVersion(NvU32* pVer)
+NVAPI::GetDriverVersion (NvU32* pVer)
 {
   NvU32             ver;
   NvAPI_ShortString ver_str;       // ANSI
-  wchar_t           ver_wstr[64]; // Unicode
+  wchar_t           ver_wstr [64]; // Unicode
 
-  NvAPI_SYS_GetDriverAndBranchVersion(&ver, ver_str);
+  NvAPI_SYS_GetDriverAndBranchVersion (&ver, ver_str);
 
   // The driver-branch string's not particularly user frieldy,
   //   let's do this the right way and report a number the end-user
   //     is actually going to recognize...
-  swprintf(ver_wstr, 64, L"%u.%u", ver / 100, ver % 100);
+  swprintf (ver_wstr, 64, L"%u.%u", ver / 100, ver % 100);
 
   if (pVer != NULL)
     *pVer = ver;
@@ -339,20 +341,20 @@ BOOL bLibShutdown = FALSE;
 BOOL bLibInit = FALSE;
 
 BOOL
-NVAPI::UnloadLibrary(void)
+NVAPI::UnloadLibrary (void)
 {
   if (bLibInit == TRUE && bLibShutdown == FALSE) {
     // Whine very loudly if this fails, because that's not
     //   supposed to happen!
-    NVAPI_VERBOSE()
+    NVAPI_VERBOSE ()
 
       NvAPI_Status ret;
 
-    NVAPI_CALL2(Unload(), ret);
+    NVAPI_CALL2 (Unload (), ret);
 
     if (ret == NVAPI_OK) {
       bLibShutdown = TRUE;
-      bLibInit = FALSE;
+      bLibInit     = FALSE;
     }
   }
 
@@ -362,7 +364,7 @@ NVAPI::UnloadLibrary(void)
 #include "log.h"
 
 BOOL
-NVAPI::InitializeLibrary(void)
+NVAPI::InitializeLibrary (void)
 {
   // It's silly to call this more than once, but not necessarily
   //  an error... just ignore repeated calls.
@@ -378,15 +380,15 @@ NVAPI::InitializeLibrary(void)
   NvAPI_Status ret;
 
   // We want this error to be silent, because this tool works on AMD GPUs too!
-  NVAPI_SILENT()
+  NVAPI_SILENT ()
   {
-    NVAPI_CALL2(Initialize(), ret);
+    NVAPI_CALL2 (Initialize (), ret);
   }
-  NVAPI_VERBOSE()
+  NVAPI_VERBOSE ()
 
     if (ret != NVAPI_OK) {
       nv_hardware = false;
-      bLibInit = TRUE + 1; // Clearly this isn't a boolean, it just looks like one
+      bLibInit    = TRUE + 1; // Clearly this isn't a boolean; just for looks
       return FALSE;
     }
     else {
@@ -394,34 +396,38 @@ NVAPI::InitializeLibrary(void)
       // Time to initialize a few undocumented (if you do not sign an NDA)
       //   parts of NvAPI, hurray!
       //
-      static HMODULE hLib = LoadLibrary(L"nvapi64.dll");
+      static HMODULE hLib = LoadLibrary (L"nvapi64.dll");
 
-      typedef void* (*NvAPI_QueryInterface_t)(unsigned int offset);
+      typedef void* (*NvAPI_QueryInterface_t)(unsigned int ordinal);
 
       static NvAPI_QueryInterface_t NvAPI_QueryInterface =
-        (NvAPI_QueryInterface_t)GetProcAddress(hLib, "nvapi_QueryInterface");
+        (NvAPI_QueryInterface_t)GetProcAddress (hLib, "nvapi_QueryInterface");
 
       NvAPI_GPU_GetRamType =
-        (NvAPI_GPU_GetRamType_t)NvAPI_QueryInterface(0x57F7CAAC);
+        (NvAPI_GPU_GetRamType_t)NvAPI_QueryInterface (0x57F7CAAC);
       NvAPI_GPU_GetFBWidthAndLocation =
-        (NvAPI_GPU_GetFBWidthAndLocation_t)NvAPI_QueryInterface(0x11104158);
+        (NvAPI_GPU_GetFBWidthAndLocation_t)NvAPI_QueryInterface (0x11104158);
       NvAPI_GPU_GetPCIEInfo =
-        (NvAPI_GPU_GetPCIEInfo_t)NvAPI_QueryInterface(0xE3795199);
+        (NvAPI_GPU_GetPCIEInfo_t)NvAPI_QueryInterface (0xE3795199);
+      NvAPI_GetPhysicalGPUFromGPUID =
+        (NvAPI_GetPhysicalGPUFromGPUID_t)NvAPI_QueryInterface (0x5380AD1A);
+      NvAPI_GetGPUIDFromPhysicalGPU =
+        (NvAPI_GetGPUIDFromPhysicalGPU_t)NvAPI_QueryInterface (0x6533EA3E);
 
 #if 0
       NvPhysicalGpuHandle gpus[64];
-      NvU32 cnt = 1;
+      NvU32 cnt = 4;
       NvAPI_EnumPhysicalGPUs (gpus, &cnt);
 
-      NVPCIEINFO pcieinfo;
-      memset (&pcieinfo, 0, sizeof (NVPCIEINFO));
+      NV_GPU_PCIE_INFO pcieinfo;
+      memset (&pcieinfo, 0, sizeof (NV_GPU_PCIE_INFO));
 
       NV_GPU_PERF_PSTATE_ID current_pstate;
 
-      NvAPI_GPU_GetCurrentPstate (gpus[0], &current_pstate);
+      NvAPI_GPU_GetCurrentPstate (gpus[2], &current_pstate);
 
-      pcieinfo.version = (2 << 16) | sizeof (NVPCIEINFO);
-      if (NVAPI_OK == NvAPI_GPU_GetPCIEInfo(gpus[0], &pcieinfo)) {
+      pcieinfo.version = NV_GPU_PCIE_INFO_VER;
+      if (NVAPI_OK == NvAPI_GPU_GetPCIEInfo(gpus[2], &pcieinfo)) {
         bmf_logger_t nvapi_log;
         nvapi_log.init ("nvapi.log", "w");
         //nvapi_log.Log (L" Size: %d Bytes\n", i);
@@ -429,7 +435,7 @@ NVAPI::InitializeLibrary(void)
         nvapi_log.Log (L" Current: %lu\n", current_pstate);
         for (int i = 0; i < 20; i++) {
           nvapi_log.Log (L" PSTATE %d\n", i);
-          nvapi_log.Log (L" Rate:     %d\n", pcieinfo.pstates [i].pciLinkGbitsec);
+          nvapi_log.Log (L" Rate:     %d\n", pcieinfo.pstates [i].pciLinkTransferRate);
           nvapi_log.Log (L" Version:  %d\n", pcieinfo.pstates [i].pciLinkVersion);
           nvapi_log.Log (L" Width:    %d\n", pcieinfo.pstates [i].pciLinkWidth);
           nvapi_log.Log (L" Rate:     %d\n", pcieinfo.pstates [i].pciLinkRate);

@@ -32,15 +32,19 @@ struct gpu_sensors_t {
     //
     struct {
       uint32_t gpu; // GPU
-      uint32_t fb;  // Memory
-      uint32_t vid; // Video Encoder
-      uint32_t bus; // Bus
+
+      // NVIDIA ONLY
+      struct {
+        uint32_t fb  = 0; // Memory
+        uint32_t vid = 0; // Video Encoder
+        uint32_t bus = 0; // Bus
+      };
     } loads_percent;
 
     struct {
       uint32_t gpu    = 0;
       uint32_t ram    = 0;
-      uint32_t shader = 0;
+      //uint32_t shader = 0;
     } clocks_kHz;
 
     struct {
@@ -52,9 +56,9 @@ struct gpu_sensors_t {
 
     struct {
       int32_t gpu;
-      int32_t ram;
-      int32_t psu;
-      int32_t pcb;
+      //int32_t ram;
+      //int32_t psu;
+      //int32_t pcb;
     } temps_c;
 
     struct {
@@ -96,6 +100,7 @@ struct gpu_sensors_t {
       }
     } hwinfo;
 
+    uint32_t nv_gpuid;
     uint32_t nv_perf_state;
   } gpus [MAX_GPUS];
 

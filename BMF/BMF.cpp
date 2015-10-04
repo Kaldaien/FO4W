@@ -65,8 +65,8 @@ int                      gpu_prio;
 // Breaks Metal Gear Solid V
 //#define ALLOW_DEVICE_TRANSITION
 
-static ID3D11Device* g_pD3D11Dev;
-static IDXGIDevice*  g_pDXGIDev;
+//static ID3D11Device* g_pD3D11Dev;
+//static IDXGIDevice*  g_pDXGIDev;
 
 extern "C" {
   // We have some really sneaky overlays that manage to call some of our
@@ -1270,6 +1270,8 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
   if (res == S_OK && (ppDevice != NULL))
   {
     dxgi_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
+
+#if 0
     g_pD3D11Dev = (*ppDevice);
 
     if (g_pDXGIDev == nullptr && g_pD3D11Dev != nullptr)
@@ -1298,6 +1300,7 @@ _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
 #endif
       //}
     }
+#endif
   }
 
   return res;
@@ -2070,6 +2073,7 @@ WINAPI BudgetThread (LPVOID user_data)
     {
       INT prio = 0;
 
+#if 0
       if (g_pDXGIDev != nullptr &&
           SUCCEEDED (g_pDXGIDev->GetGPUThreadPriority (&prio)))
       {
@@ -2093,25 +2097,9 @@ WINAPI BudgetThread (LPVOID user_data)
           }
         }
       }
+#endif
 
       last_budget = mem_info [buffer].local [0].Budget;
-    }
-
-    //
-    // NV's drivers appear to be doing this in reverse order...
-    //
-    mem_info_t mi;
-    for (int i = 0; i < nodes; i++)
-    {
-      mi.local    [nodes - i - 1].CurrentUsage = mem_info [buffer].local    [i].CurrentUsage;
-      mi.nonlocal [nodes - i - 1].CurrentUsage = mem_info [buffer].nonlocal [i].CurrentUsage;
-    }
-
-    // Now, since we reversed the memory numbers, let's update them
-    for (int i = 0; i < nodes; i++)
-    {
-      mem_info [buffer].local    [i].CurrentUsage = mi.local    [i].CurrentUsage;
-      mem_info [buffer].nonlocal [i].CurrentUsage = mi.nonlocal [i].CurrentUsage;
     }
 
     if (nodes > 0) {
@@ -2189,6 +2177,7 @@ WINAPI BudgetThread (LPVOID user_data)
         i++;
       }
 
+#if 0
       if (g_pDXGIDev != nullptr)
       {
         if (config.load_balance.use)
@@ -2203,6 +2192,7 @@ WINAPI BudgetThread (LPVOID user_data)
           }
         }
       }
+#endif
 
       budget_log.LogEx (false, L"\n");
     }
@@ -2213,6 +2203,7 @@ WINAPI BudgetThread (LPVOID user_data)
     mem_info [0].buffer = buffer;
   }
 
+#if 0
   if (g_pDXGIDev != nullptr) {
     // Releasing this actually causes driver crashes, so ...
     //   let it leak, what do we care?
@@ -2226,6 +2217,7 @@ WINAPI BudgetThread (LPVOID user_data)
 #endif
     g_pDXGIDev = nullptr;
   }
+#endif
 
   if (hThreadHeap != 0)
     HeapDestroy (hThreadHeap);

@@ -30,29 +30,41 @@ struct DXGI_ADAPTER_DESC;
 extern "C" {
 #endif
 
-typedef struct _NVPCIEINFO {
+typedef struct
+{
   NvU32                   version;                            //!< Structure version
 
   struct {
     NvU32                   pciLinkTransferRate;
-    NVVIOPCILINKRATE        pciLinkVersion;                   //!< specifies the the negotiated PCIE link rate.
-    NVVIOPCILINKWIDTH       pciLinkWidth;                     //!< specifies the the negotiated PCIE link width.
     NVVIOPCILINKRATE        pciLinkRate;                      //!< specifies the the negotiated PCIE link rate.
-  } pstates [20];
-} NVPCIEINFO_V1;
+    NVVIOPCILINKWIDTH       pciLinkWidth;                     //!< specifies the the negotiated PCIE link width.
+    NVVIOPCILINKRATE        pciLinkVersion;                   //!< specifies the the negotiated PCIE link rate.
+  } pstates [NVAPI_MAX_GPU_PERF_PSTATES];
+} NV_GPU_PCIE_INFO_V2;
 
-typedef NVPCIEINFO_V1 NVPCIEINFO;
+typedef NV_GPU_PCIE_INFO_V2 NV_GPU_PCIE_INFO;
+
+#define NV_GPU_PCIE_INFO_VER_2  MAKE_NVAPI_VERSION(NV_GPU_PCIE_INFO_V2,2)
+#define NV_GPU_PCIE_INFO_VER    NV_GPU_PCIE_INFO_VER_2
 
 typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetPCIEInfo_t)
-    (NvPhysicalGpuHandle handle, NVPCIEINFO* info);
+    (NvPhysicalGpuHandle handle, NV_GPU_PCIE_INFO* info);
 typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetRamType_t)
     (NvPhysicalGpuHandle handle, NvU32* memtype);
 typedef NvAPI_Status (__cdecl *NvAPI_GPU_GetFBWidthAndLocation_t)
     (NvPhysicalGpuHandle handle, NvU32* width, NvU32* loc);
+typedef NvAPI_Status (__cdecl *NvAPI_GetPhysicalGPUFromGPUID_t)
+    (NvU32 gpuid, NvPhysicalGpuHandle* gpu);
+typedef NvAPI_Status (__cdecl *NvAPI_GetGPUIDFromPhysicalGPU_t)
+    (NvPhysicalGpuHandle gpu, NvU32* gpuid);
+
+
 
 extern NvAPI_GPU_GetRamType_t            NvAPI_GPU_GetRamType;
 extern NvAPI_GPU_GetFBWidthAndLocation_t NvAPI_GPU_GetFBWidthAndLocation;
 extern NvAPI_GPU_GetPCIEInfo_t           NvAPI_GPU_GetPCIEInfo;
+extern NvAPI_GetPhysicalGPUFromGPUID_t   NvAPI_GetPhysicalGPUFromGPUID;
+extern NvAPI_GetGPUIDFromPhysicalGPU_t   NvAPI_GetGPUIDFromPhysicalGPU;
 
 #ifdef __cplusplus
 }

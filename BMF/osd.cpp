@@ -376,7 +376,7 @@ BMF_DrawOSD (void)
       i, gpu_stats.gpus [i].loads_percent.gpu
     OSD_END
 
-    if (gpu_stats.gpus [i].loads_percent.vid > 0) {
+    if (nvapi_init && gpu_stats.gpus [i].loads_percent.vid > 0) {
       OSD_G_PRINTF ",  VID%u %#3lu%%  ,",
         i, gpu_stats.gpus [i].loads_percent.vid
       OSD_END
@@ -419,7 +419,8 @@ BMF_DrawOSD (void)
                                               Celsius ).c_str ()
     OSD_END
 
-    if (config.gpu.print_slowdown &&
+    if (nvapi_init &&
+        config.gpu.print_slowdown &&
         gpu_stats.gpus [i].nv_perf_state != NV_GPU_PERF_DECREASE_NONE) {
       OSD_G_PRINTF "   SLOWDOWN:" OSD_END
 
@@ -447,20 +448,27 @@ BMF_DrawOSD (void)
     //     on that in the future.
     for (int i = 0; i < nodes; i++) {
 #if 1
-      OSD_G_PRINTF "  VRAM%u  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
-        i,
-        mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
-                    gpu_stats.gpus [i].loads_percent.fb,
-        (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
-                 (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
-                   (1024.0 * 1024.0 * 1024.0) *
-                  ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
-      OSD_END
+      if (nvapi_init) {
+        OSD_G_PRINTF "  VRAM%u  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
+          i,
+          mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
+                      gpu_stats.gpus [i].loads_percent.fb,
+          (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
+                   (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
+                     (1024.0 * 1024.0 * 1024.0) *
+                    ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
+        OSD_END
+      } else {
+        OSD_G_PRINTF "  VRAM%u  : %#5llu MiB",
+          i, mem_info [buffer].local [i].CurrentUsage >> 20ULL
+        OSD_END
+      }
 
       OSD_G_PRINTF ", %#4lu MHz",
         gpu_stats.gpus [i].clocks_kHz.ram / 1000UL
       OSD_END
 
+#if 0
       // Add memory temperature if it exists
       if (i <= gpu_stats.num_gpus &&
           gpu_stats.gpus [i].temps_c.ram != 0) {
@@ -468,6 +476,7 @@ BMF_DrawOSD (void)
           gpu_stats.gpus [i].temps_c.ram
         OSD_END
       }
+#endif
 
       OSD_G_PRINTF "\n" OSD_END
 #else
@@ -498,16 +507,28 @@ BMF_DrawOSD (void)
     }
 
     for (int i = 0; i < nodes; i++) {
-      OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0@x%lu\n",
-        i,
-         mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
+      // Figure out the generation from the transfer rate...
+      int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
+
+      if (nvapi_init) {
+        OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0@x%lu\n",
+          i,
+           mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
                        gpu_stats.gpus [i].hwinfo.pcie_bandwidth_mb () / 1024.0 *
               ((double)gpu_stats.gpus [i].loads_percent.bus / 100.0),
-                       gpu_stats.gpus [i].hwinfo.pcie_gen >= 1 ?
-                       gpu_stats.gpus [i].hwinfo.pcie_gen : 1,
+                       pcie_gen,
                        gpu_stats.gpus [i].hwinfo.pcie_lanes
-      OSD_END
+                       //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
+        OSD_END
+      } else {
+        OSD_G_PRINTF "  SHARE%u : %#5llu MiB, PCIe %lu.0@x%lu\n",
+          i,
+          mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
+          pcie_gen,
+          gpu_stats.gpus [i].hwinfo.pcie_lanes
+        OSD_END
+      }
     }
   }
 
@@ -527,12 +548,14 @@ BMF_DrawOSD (void)
         i, gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL
       OSD_END
 
+#if 0
       // Add memory temperature if it exists
       if (gpu_stats.gpus [i].temps_c.ram != 0) {
         OSD_G_PRINTF " (%#3luC)",
           gpu_stats.gpus [i].temps_c.ram
         OSD_END
       }
+#endif
 
       OSD_G_PRINTF "\n" OSD_END
     }

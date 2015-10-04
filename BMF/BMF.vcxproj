@@ -176,6 +176,7 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="adl.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="dxgi_interfaces.h" />
     <ClInclude Include="gpu_monitor.h" />
@@ -193,6 +194,7 @@
     <ClInclude Include="utility.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="adl.cpp" />
     <ClCompile Include="BMF.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="gpu_monitor.cpp" />
