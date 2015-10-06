@@ -15,19 +15,22 @@
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
+#ifndef __BMF__IMPORT_H__
+#define __BMF__IMPORT_H__
+
 #include "parameter.h"
 
 #define BMF_MAX_IMPORTS 4
 
-const std::wstring BMF_IMPORT_EARLY = L"Early";
-const std::wstring BMF_IMPORT_LATE  = L"Late";
-const std::wstring BMF_IMPORT_LAZY  = L"Lazy";
+extern const std::wstring BMF_IMPORT_EARLY;
+extern const std::wstring BMF_IMPORT_LATE;
+extern const std::wstring BMF_IMPORT_LAZY;
 
-const std::wstring BMF_IMPORT_ROLE_DXGI  = L"dxgi";
-const std::wstring BMF_IMPORT_ROLE_D3D11 = L"d3d11";
+extern const std::wstring BMF_IMPORT_ROLE_DXGI;
+extern const std::wstring BMF_IMPORT_ROLE_D3D11;
 
-const std::wstring BMF_IMPORT_ARCH_X64   = L"x64";
-const std::wstring BMF_IMPORT_ARCH_WIN32 = L"Win32";
+extern const std::wstring BMF_IMPORT_ARCH_X64;
+extern const std::wstring BMF_IMPORT_ARCH_WIN32;
 
 struct import_t {
   HMODULE                hLibrary     = 0;
@@ -43,3 +46,9 @@ extern import_t imports [BMF_MAX_IMPORTS];
 void BMF_LoadEarlyImports64 (void);
 void BMF_LoadLateImports64  (void);
 void BMF_LoadLazyImports64  (void);
+
+void BMF_LoadEarlyImports32 (void);
+void BMF_LoadLateImports32  (void);
+void BMF_LoadLazyImports32  (void);
+
+#endif /* __BMF__IMPORT_H__ */

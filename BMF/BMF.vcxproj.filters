@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Header Files\Backends">
+      <UniqueIdentifier>{0e02a0c0-6c2f-4c78-a9fc-5fb182057e3c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Backends">
+      <UniqueIdentifier>{c3aa99c1-1a7a-44b3-a85e-71e8399357a9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
@@ -66,6 +72,15 @@
     <ClInclude Include="adl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="d3d9_backend.h">
+      <Filter>Header Files\Backends</Filter>
+    </ClInclude>
+    <ClInclude Include="dxgi_backend.h">
+      <Filter>Header Files\Backends</Filter>
+    </ClInclude>
+    <ClInclude Include="opengl_backend.h">
+      <Filter>Header Files\Backends</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -79,9 +94,6 @@
     </ClCompile>
     <ClCompile Include="ini.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="utility.cpp">
-      <Filter>Header Files</Filter>
     </ClCompile>
     <ClCompile Include="config.cpp">
       <Filter>Source Files</Filter>
@@ -109,6 +121,18 @@
     </ClCompile>
     <ClCompile Include="adl.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utility.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9.cpp">
+      <Filter>Source Files\Backends</Filter>
+    </ClCompile>
+    <ClCompile Include="dxgi.cpp">
+      <Filter>Source Files\Backends</Filter>
+    </ClCompile>
+    <ClCompile Include="opengl.cpp">
+      <Filter>Source Files\Backends</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

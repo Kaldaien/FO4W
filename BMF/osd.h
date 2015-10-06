@@ -59,7 +59,7 @@ struct mem_info_t {
   DXGI_QUERY_VIDEO_MEMORY_INFO nonlocal [MAX_GPU_NODES];
   SYSTEMTIME                   time;
   buffer_t                     buffer = Front;
-  int                          nodes  = MAX_GPU_NODES;
+  int                          nodes  = 0;//MAX_GPU_NODES;
 };
 
 extern mem_info_t mem_info [NumBuffers];

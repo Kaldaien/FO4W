@@ -21,7 +21,7 @@
 #include "ini.h"
 #include "log.h"
 
-std::wstring BMF_VER_STR = L"0.13";
+std::wstring BMF_VER_STR = L"0.14";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -98,9 +98,9 @@ bmf::ParameterBool*      prefer_fahrenheit;
 
 
 bool
-BMF_LoadConfig (void) {
+BMF_LoadConfig (std::wstring name) {
   // Load INI File
-  dll_ini = new bmf::INI::File (L"dxgi.ini");
+  dll_ini = new bmf::INI::File ((wchar_t *)name.c_str ());
 
   bool empty = dll_ini->get_sections ().empty ();
 
@@ -514,7 +514,7 @@ BMF_LoadConfig (void) {
 }
 
 void
-BMF_SaveConfig (bool close_config) {
+BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.memory.show->set_value        (config.mem.show);
   mem_reserve->set_value                   (config.mem.reserve);
 
@@ -592,7 +592,7 @@ BMF_SaveConfig (bool close_config) {
   version->set_value                  (BMF_VER_STR);
   version->store                      ();
 
-  dll_ini->write (L"dxgi.ini");
+  dll_ini->write (name.c_str ());
 
   if (close_config) {
     if (dll_ini != nullptr) {

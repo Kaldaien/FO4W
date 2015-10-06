@@ -39,7 +39,11 @@ NvAPI_GPU_GetPCIEInfo_t           NvAPI_GPU_GetPCIEInfo;
 NvAPI_GetPhysicalGPUFromGPUID_t   NvAPI_GetPhysicalGPUFromGPUID;
 NvAPI_GetGPUIDFromPhysicalGPU_t   NvAPI_GetGPUIDFromPhysicalGPU;
 
+#ifdef _WIN64
 #pragma comment (lib, "nvapi/amd64/nvapi64.lib")
+#else
+#pragma comment (lib, "nvapi/x86/nvapi.lib")
+#endif
 
 using namespace bmf;
 using namespace bmf::NVAPI;
@@ -396,7 +400,11 @@ NVAPI::InitializeLibrary (void)
       // Time to initialize a few undocumented (if you do not sign an NDA)
       //   parts of NvAPI, hurray!
       //
+#ifdef _WIN64
       static HMODULE hLib = LoadLibrary (L"nvapi64.dll");
+#else
+      static HMODULE hLib = LoadLibrary (L"nvapi.dll");
+#endif
 
       typedef void* (*NvAPI_QueryInterface_t)(unsigned int ordinal);
 

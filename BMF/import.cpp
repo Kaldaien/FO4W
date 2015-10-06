@@ -18,6 +18,16 @@
 #include "import.h"
 #include "log.h"
 
+const std::wstring BMF_IMPORT_EARLY = L"Early";
+const std::wstring BMF_IMPORT_LATE  = L"Late";
+const std::wstring BMF_IMPORT_LAZY  = L"Lazy";
+
+const std::wstring BMF_IMPORT_ROLE_DXGI  = L"dxgi";
+const std::wstring BMF_IMPORT_ROLE_D3D11 = L"d3d11";
+
+const std::wstring BMF_IMPORT_ARCH_X64   = L"x64";
+const std::wstring BMF_IMPORT_ARCH_WIN32 = L"Win32";
+
 import_t imports [BMF_MAX_IMPORTS];
 
 void
@@ -117,6 +127,129 @@ BMF_LoadLazyImports64 (void)
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_X64 &&
+              imports [i].when->get_value         () == BMF_IMPORT_LAZY) {
+
+            dxgi_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
+                imports [i].filename->get_value_str ().c_str ());
+
+            imports [i].hLibrary = LoadLibrary (
+              imports [i].filename->get_value_str ().c_str ()
+              );
+
+            if (imports [i].hLibrary != NULL) {
+              dxgi_log.LogEx (false, L"success!\n");
+              ++success;
+            } else  {
+              imports [i].hLibrary = (HMODULE)-3;
+              dxgi_log.LogEx (false, L"failure!\n");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (success > 0)
+    dxgi_log.LogEx (false, L"\n");
+}
+
+void
+BMF_LoadEarlyImports32 (void)
+{
+  int success = 0;
+
+  for (int i = 0; i < BMF_MAX_IMPORTS; i++) {
+
+    // Skip libraries that are already loaded
+    if (imports [i].hLibrary != NULL)
+      continue;
+
+    if (imports [i].filename != nullptr) {
+      if (imports [i].when != nullptr) {
+        if (imports [i].architecture != nullptr) {
+          if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_WIN32 &&
+              imports [i].when->get_value         () == BMF_IMPORT_EARLY) {
+
+            dxgi_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
+              imports [i].filename->get_value_str ().c_str ());
+
+            imports [i].hLibrary = LoadLibrary (
+                imports [i].filename->get_value_str ().c_str ()
+            );
+
+            if (imports [i].hLibrary != NULL) {
+              dxgi_log.LogEx (false, L"success!\n");
+              ++success;
+            } else  {
+              imports [i].hLibrary = (HMODULE)-2;
+              dxgi_log.LogEx (false, L"failure!\n");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (success > 0)
+    dxgi_log.LogEx (false, L"\n");
+}
+
+void
+BMF_LoadLateImports32 (void)
+{
+  int success = 0;
+
+  for (int i = 0; i < BMF_MAX_IMPORTS; i++) {
+
+    // Skip libraries that are already loaded
+    if (imports [i].hLibrary != NULL)
+      continue;
+
+    if (imports [i].filename != nullptr) {
+      if (imports [i].when != nullptr) {
+        if (imports [i].architecture != nullptr) {
+          if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_WIN32 &&
+              imports [i].when->get_value         () == BMF_IMPORT_LATE) {
+
+            dxgi_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
+              imports [i].filename->get_value_str ().c_str ());
+
+            imports [i].hLibrary = LoadLibrary (
+              imports [i].filename->get_value_str ().c_str ()
+              );
+
+            if (imports [i].hLibrary != NULL) {
+              dxgi_log.LogEx (false, L"success!\n");
+              ++success;
+            } else  {
+              imports [i].hLibrary = (HMODULE)-2;
+              dxgi_log.LogEx (false, L"failure!\n");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (success > 0)
+    dxgi_log.LogEx (false, L"\n");
+}
+
+void
+BMF_LoadLazyImports32 (void)
+{
+  int success = 0;
+
+  for (int i = 0; i < BMF_MAX_IMPORTS; i++) {
+
+    // Skip libraries that are already loaded
+    if (imports [i].hLibrary != NULL)
+      continue;
+
+    if (imports [i].filename != nullptr) {
+      if (imports [i].when != nullptr) {
+        if (imports [i].architecture != nullptr) {
+          if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_WIN32 &&
               imports [i].when->get_value         () == BMF_IMPORT_LAZY) {
 
             dxgi_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
