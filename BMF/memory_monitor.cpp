@@ -28,16 +28,20 @@ extern IWbemServices *pNameSpace;
 extern bool BMF_InitCOM     (void);
 extern void BMF_ShutdownCOM (void);
 
+extern CRITICAL_SECTION com_cs;
+
 process_stats_t process_stats;
 
 DWORD
 WINAPI
 BMF_MonitorProcess (LPVOID user)
 {
+  BMF_InitCOM ();
+
+  EnterCriticalSection (&com_cs);
+
   process_stats_t& proc   = process_stats;
   const double     update = config.mem.interval;
-
-  BMF_InitCOM ();
 
   HRESULT hr;
 
@@ -48,6 +52,8 @@ BMF_MonitorProcess (LPVOID user)
     IID_IWbemRefresher, 
     (void**) &proc.pRefresher)))
   {
+    dll_log.Log(L" [WMI]: Failed to create Refresher Instance (%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     goto PROC_CLEANUP;
   }
 
@@ -55,11 +61,12 @@ BMF_MonitorProcess (LPVOID user)
     IID_IWbemConfigureRefresher,
     (void **)&proc.pConfig)))
   {
+    dll_log.Log(L" [WMI]: Failed to Query Refresher Interface (%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     goto PROC_CLEANUP;
   }
 
   IWbemClassObject *pClassObj = nullptr;
-
 
   HANDLE hProc = GetCurrentProcess ();
 
@@ -68,39 +75,28 @@ BMF_MonitorProcess (LPVOID user)
 
   QueryFullProcessImageName (hProc, 0, wszProcessName, &dwProcessSize);
 
-  wchar_t* pwszShortName = wszProcessName + lstrlenW (wszProcessName);
+  wchar_t* pwszShortName = wcsrchr (wszProcessName, L'\\') + 1;
+  wchar_t* pwszTruncName = wcsrchr (pwszShortName, L'.');
 
-  while (  pwszShortName      >  wszProcessName &&
-    *(pwszShortName - 1) != L'\\')
-    --pwszShortName;
-
-  ////dxgi_log.LogEx (L" >> %s\n", pwszShortName);
-
-  wchar_t* pwszTruncName = pwszShortName + lstrlenW (pwszShortName);
-
-  while (  pwszTruncName      >  wszProcessName &&
-         *(pwszTruncName - 1) != L'.')
-    (*pwszTruncName--) =  L'\0';
-
-  *--pwszTruncName = L'\0';
-
-  ////dxgi_log.LogEx (L" >> %s\n", pwszShortName);
+  if (pwszTruncName != nullptr)
+    *pwszTruncName = L'\0';
 
   wchar_t wszInstance [512];
   wsprintf ( wszInstance,
-               L"Win32_PerfFormattedData_PerfProc_Process.Name='%s'",
+               L"Win32_PerfFormattedData_PerfProc_Process.Name='%ws'",
                  pwszShortName );
-
-  ////dxgi_log.LogEx (L" >> %s\n", wszInstance);
-
 
   if (FAILED (hr = proc.pConfig->AddObjectByPath (pNameSpace, wszInstance, 0, 0, &pClassObj, 0)))
   {
+    dll_log.Log(L" [WMI]: Failed to AddObjectByPath (%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     goto PROC_CLEANUP;
   }
 
   if (FAILED (hr = pClassObj->QueryInterface (IID_IWbemObjectAccess, (void **)(&proc.pAccess))))
   {
+    dll_log.Log(L" [WMI]: Failed to Query WbemObjectAccess Interface (%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     pClassObj->Release ();
     pClassObj = nullptr;
 
@@ -151,6 +147,8 @@ BMF_MonitorProcess (LPVOID user)
 
   proc.lID = 1;
 
+  LeaveCriticalSection (&com_cs);
+
   while (proc.lID != 0)
   {
     // Sleep until ready
@@ -159,6 +157,8 @@ BMF_MonitorProcess (LPVOID user)
     // Only poll WMI while the data view is visible
     if (! config.mem.show)
       continue;
+
+    EnterCriticalSection (&com_cs);
 
     if (FAILED (hr = proc.pRefresher->Refresh (0L)))
     {
@@ -187,9 +187,13 @@ BMF_MonitorProcess (LPVOID user)
                                 &proc.memory.page_file_bytes_peak );
 
     ++iter;
+
+    LeaveCriticalSection (&com_cs);
   }
 
 PROC_CLEANUP:
+  dll_log.Log (L" >> PROC_CLEANUP");
+
   if (proc.pAccess != nullptr)
   {
     proc.pAccess->Release ();
@@ -208,7 +212,7 @@ PROC_CLEANUP:
     proc.pRefresher = nullptr;
   }
 
-  BMF_ShutdownCOM ();
+  LeaveCriticalSection (&com_cs);
 
   return 0;
 }

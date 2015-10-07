@@ -141,4 +141,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="d3d9.def">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>

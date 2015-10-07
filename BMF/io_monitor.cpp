@@ -18,6 +18,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "io_monitor.h"
+#include "log.h"
 
 void
 BMF_CountIO (io_perf_t& ioc, const double update)
@@ -110,20 +111,29 @@ BMF_CountIO (io_perf_t& ioc, const double update)
 bool           com_init   = false;
 IWbemServices* pNameSpace = nullptr;
 
+CRITICAL_SECTION com_cs;
+
 bool
 BMF_InitCOM (void)
 {
-  if (com_init)
-    return true;
-
-  IWbemLocator*  pWbemLocator  = nullptr;
-  BSTR           bstrNameSpace = nullptr;
-
+  // Every thread that uses COM has to do this, but the other stuff ...
+  //   that only needs to be done once.
   HRESULT hr;
   if (FAILED (hr = CoInitializeEx (NULL, COINIT_MULTITHREADED)))
   {
+    dll_log.Log (L"[COM] Failure to initialize COM for the calling thread "
+                 L"(%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     goto COM_CLEANUP;
   }
+
+  if (com_init)
+    return true;
+
+  InitializeCriticalSectionAndSpinCount (&com_cs, 5000);
+
+  IWbemLocator*  pWbemLocator  = nullptr;
+  BSTR           bstrNameSpace = nullptr;
 
   if (FAILED (hr = CoInitializeSecurity(
               NULL,
@@ -134,7 +144,14 @@ BMF_InitCOM (void)
               RPC_C_IMP_LEVEL_IMPERSONATE,
               NULL, EOAC_NONE, 0)))
   {
-    goto COM_CLEANUP;
+    // It's possible that the application already did this, in which case
+    //   it is immutable and we should try to deal with whatever the app
+    //     initialized it to.
+    if (hr != RPC_E_TOO_LATE) {
+      dll_log.Log (L"[COM] Failure to initialize COM Security (%s:%d) -- 0x%X",
+        __FILEW__, __LINE__, hr);
+      goto COM_CLEANUP;
+    }
   }
 
   if (FAILED (hr = CoCreateInstance(
@@ -144,6 +161,8 @@ BMF_InitCOM (void)
     IID_IWbemLocator,
     (void**) &pWbemLocator)))
   {
+    dll_log.Log (L"[COM] Failed to create Wbem Locator (%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     goto COM_CLEANUP;
   }
 
@@ -151,6 +170,8 @@ BMF_InitCOM (void)
   bstrNameSpace = SysAllocString (L"\\\\.\\Root\\CIMv2");
   if (bstrNameSpace == nullptr)
   {
+    dll_log.Log (L"[COM] Out of Memory (%s:%d)",
+      __FILEW__, __LINE__);
     hr = E_OUTOFMEMORY;
     goto COM_CLEANUP;
   }
@@ -165,6 +186,8 @@ BMF_InitCOM (void)
       NULL, // Wbem context
       &pNameSpace)))
   {
+    dll_log.Log (L"[COM] Failure to Connect to Wbem Server (%s:%d) -- 0x%X",
+      __FILEW__, __LINE__, hr);
     goto COM_CLEANUP;
   }
 
@@ -232,10 +255,12 @@ DWORD
 WINAPI
 BMF_MonitorCPU (LPVOID user_param)
 {
-  cpu_perf_t&  cpu    = cpu_stats;
-  const double update = config.cpu.interval;
+  EnterCriticalSection (&com_cs);
 
   BMF_InitCOM ();
+
+  cpu_perf_t&  cpu    = cpu_stats;
+  const double update = config.cpu.interval;
 
   HRESULT hr;
 
@@ -246,6 +271,8 @@ BMF_MonitorCPU (LPVOID user_param)
       IID_IWbemRefresher, 
       (void**) &cpu.pRefresher)))
   {
+    dll_log.Log (L" [WMI]: Failed to create Refresher Instance (%s:%d)",
+      __FILEW__, __LINE__);
     goto CPU_CLEANUP;
   }
 
@@ -253,6 +280,8 @@ BMF_MonitorCPU (LPVOID user_param)
                         IID_IWbemConfigureRefresher,
                         (void **)&cpu.pConfig)))
   {
+    dll_log.Log (L" [WMI]: Failed to Query Refresher Interface (%s:%d)",
+      __FILEW__, __LINE__);
     goto CPU_CLEANUP;
   }
 
@@ -265,6 +294,8 @@ BMF_MonitorCPU (LPVOID user_param)
       &cpu.pEnum,
       &cpu.lID)))
   {
+    dll_log.Log (L" [WMI]: Failed to Add Enumerator (%s:%d) - %04X",
+      __FILEW__, __LINE__, hr);
     goto CPU_CLEANUP;
   }
 
@@ -275,6 +306,8 @@ BMF_MonitorCPU (LPVOID user_param)
 
   cpu.dwNumReturned = 0;
   cpu.dwNumObjects  = 0;
+
+  LeaveCriticalSection (&com_cs);
 
   while (cpu_stats.lID != 0)
   {
@@ -287,8 +320,12 @@ BMF_MonitorCPU (LPVOID user_param)
 
     cpu.dwNumReturned = 0;
 
+    EnterCriticalSection (&com_cs);
+
     if (FAILED (hr = cpu.pRefresher->Refresh (0L)))
     {
+      dll_log.Log (L" [WMI]: Failed to Refresh CPU (%s:%d)",
+        __FILEW__, __LINE__);
       goto CPU_CLEANUP;
     }
 
@@ -305,6 +342,8 @@ BMF_MonitorCPU (LPVOID user_param)
       cpu.apEnumAccess = new IWbemObjectAccess* [cpu.dwNumReturned];
       if (cpu.apEnumAccess == nullptr)
       {
+        dll_log.Log (L" [WMI]: Out of Memory (%s:%d)",
+          __FILEW__, __LINE__);
         hr = E_OUTOFMEMORY;
         goto CPU_CLEANUP;
       }
@@ -319,6 +358,9 @@ BMF_MonitorCPU (LPVOID user_param)
                                               cpu.apEnumAccess, 
                                               &cpu.dwNumReturned)))
       {
+        dll_log.Log (L" [WMI]: Failed to get CPU Objects (%s:%d)",
+          __FILEW__, __LINE__);
+
         goto CPU_CLEANUP;
       }
     }
@@ -326,6 +368,8 @@ BMF_MonitorCPU (LPVOID user_param)
     {
       if (hr != WBEM_S_NO_ERROR)
       {
+        dll_log.Log (L" [WMI]: UNKNOWN ERROR (%s:%d)",
+          __FILEW__, __LINE__);
         hr = WBEM_E_NOT_FOUND;
         goto CPU_CLEANUP;
       }
@@ -345,6 +389,8 @@ BMF_MonitorCPU (LPVOID user_param)
                             &PercentInterruptTimeType,
                             &cpu.lPercentInterruptTimeHandle)))
       {
+        dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -353,6 +399,8 @@ BMF_MonitorCPU (LPVOID user_param)
                             &PercentPrivilegedTimeType,
                             &cpu.lPercentPrivilegedTimeHandle)))
       {
+        dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -361,6 +409,8 @@ BMF_MonitorCPU (LPVOID user_param)
                             &PercentUserTimeType,
                             &cpu.lPercentUserTimeHandle)))
       {
+        dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -369,6 +419,8 @@ BMF_MonitorCPU (LPVOID user_param)
                             &PercentProcessorTimeType,
                             &cpu.lPercentProcessorTimeHandle)))
       {
+        dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -377,6 +429,8 @@ BMF_MonitorCPU (LPVOID user_param)
                             &PercentIdleTimeType,
                             &cpu.lPercentIdleTimeHandle)))
       {
+        dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
     }
@@ -393,6 +447,8 @@ BMF_MonitorCPU (LPVOID user_param)
                              cpu.lPercentInterruptTimeHandle,
                             &interrupt)))
       {
+        dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -400,6 +456,8 @@ BMF_MonitorCPU (LPVOID user_param)
                              cpu.lPercentPrivilegedTimeHandle,
                             &kernel)))
       {
+        dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -407,6 +465,8 @@ BMF_MonitorCPU (LPVOID user_param)
                              cpu.lPercentUserTimeHandle,
                             &user)))
       {
+        dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -414,6 +474,8 @@ BMF_MonitorCPU (LPVOID user_param)
                              cpu.lPercentProcessorTimeHandle,
                             &load)))
       {
+        dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -421,6 +483,8 @@ BMF_MonitorCPU (LPVOID user_param)
                              cpu.lPercentIdleTimeHandle,
                             &idle)))
       {
+        dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
+          __FILEW__, __LINE__);
         goto CPU_CLEANUP;
       }
 
@@ -440,9 +504,13 @@ BMF_MonitorCPU (LPVOID user_param)
     cpu.num_cpus = cpu.dwNumReturned;
 
     ++iter;
+
+    LeaveCriticalSection (&com_cs);
   }
 
 CPU_CLEANUP:
+  dll_log.Log (L" >> CPU_CLEANUP");
+
   if (cpu.apEnumAccess != nullptr)
   {
     for (unsigned int i = 0; i < cpu.dwNumReturned; i++)
@@ -474,7 +542,7 @@ CPU_CLEANUP:
     cpu.pRefresher = nullptr;
   }
 
-  BMF_ShutdownCOM ();
+  LeaveCriticalSection (&com_cs);
 
   return 0;
 }
@@ -485,12 +553,14 @@ DWORD
 WINAPI
 BMF_MonitorDisk (LPVOID user)
 {
+  EnterCriticalSection (&com_cs);
+
+  BMF_InitCOM ();
+
   //Win32_PerfFormattedData_PerfDisk_LogicalDisk
 
   disk_perf_t&  disk  = disk_stats;
   const double update = config.disk.interval;
-
-  BMF_InitCOM ();
 
   HRESULT hr;
 
@@ -533,6 +603,8 @@ BMF_MonitorDisk (LPVOID user)
   disk.dwNumReturned = 0;
   disk.dwNumObjects  = 0;
 
+  LeaveCriticalSection (&com_cs);
+
   while (disk_stats.lID != 0)
   {
     // Sleep for 500 ms.
@@ -543,6 +615,8 @@ BMF_MonitorDisk (LPVOID user)
       continue;
 
     disk.dwNumReturned = 0;
+
+    EnterCriticalSection (&com_cs);
 
     if (FAILED (hr = disk.pRefresher->Refresh (0L)))
     {
@@ -764,9 +838,13 @@ BMF_MonitorDisk (LPVOID user)
     disk.num_disks = disk.dwNumReturned;
 
     ++iter;
+
+    LeaveCriticalSection (&com_cs);
   }
 
 DISK_CLEANUP:
+  dll_log.Log (L" >> DISK_CLEANUP");
+
   if (disk.apEnumAccess != nullptr)
   {
     for (unsigned int i = 0; i < disk.dwNumReturned; i++)
@@ -798,7 +876,7 @@ DISK_CLEANUP:
     disk.pRefresher = nullptr;
   }
 
-  BMF_ShutdownCOM ();
+  LeaveCriticalSection (&com_cs);
 
   return 0;
 }
@@ -809,10 +887,12 @@ DWORD
 WINAPI
 BMF_MonitorPagefile (LPVOID user)
 {
-  pagefile_perf_t&  pagefile = pagefile_stats;
-  const double update = config.pagefile.interval;
+  EnterCriticalSection (&com_cs);
 
   BMF_InitCOM ();
+
+  pagefile_perf_t&  pagefile = pagefile_stats;
+  const double update = config.pagefile.interval;
 
   HRESULT hr;
 
@@ -854,6 +934,8 @@ BMF_MonitorPagefile (LPVOID user)
   pagefile.dwNumReturned = 0;
   pagefile.dwNumObjects  = 0;
 
+  LeaveCriticalSection (&com_cs);
+
   while (pagefile.lID != 0)
   {
     // Sleep for 500 ms.
@@ -865,12 +947,14 @@ BMF_MonitorPagefile (LPVOID user)
 
     pagefile.dwNumReturned = 0;
 
+    EnterCriticalSection (&com_cs);
+
     if (FAILED (hr = pagefile.pRefresher->Refresh (0L)))
     {
       goto PAGEFILE_CLEANUP;
     }
 
-    hr = pagefile.pEnum->GetObjects (0L, 
+    hr = pagefile.pEnum->GetObjects (0L,
                                      pagefile.dwNumObjects,
                                      pagefile.apEnumAccess,
                                      &pagefile.dwNumReturned);
@@ -933,7 +1017,7 @@ BMF_MonitorPagefile (LPVOID user)
       {
         goto PAGEFILE_CLEANUP;
       }
-      
+
       if (FAILED (hr = pagefile.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentUsagePeak",
                             &PercentUsagePeakType,
@@ -983,7 +1067,7 @@ BMF_MonitorPagefile (LPVOID user)
 
       if (FAILED (hr = pagefile.apEnumAccess [i]->ReadPropertyValue (
                              pagefile.lNameHandle,
-                             sizeof (wchar_t) * 256,
+                             sizeof (wchar_t) * 255,
                              &bytes,
                              (LPBYTE)name)))
       {
@@ -1012,10 +1096,14 @@ BMF_MonitorPagefile (LPVOID user)
 
     pagefile.num_pagefiles = pagefile.dwNumReturned;
 
+    LeaveCriticalSection (&com_cs);
+
     ++iter;
   }
 
 PAGEFILE_CLEANUP:
+  dll_log.Log (L" >> PAGEFILE_CLEANUP");
+
   if (pagefile.apEnumAccess != nullptr)
   {
     for (unsigned int i = 0; i < pagefile.dwNumReturned; i++)
@@ -1047,7 +1135,7 @@ PAGEFILE_CLEANUP:
     pagefile.pRefresher = nullptr;
   }
 
-  BMF_ShutdownCOM ();
+  LeaveCriticalSection (&com_cs);
 
   return 0;
 }

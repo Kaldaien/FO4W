@@ -116,7 +116,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='D3D9|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>d3d9</TargetName>
-    <OutDir>C:\Program Files (x86)\Steam\SteamApps\common\Grim Dawn\</OutDir>
+    <OutDir>C:\Program Files (x86)\Steam\SteamApps\common\Driftmoon\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -141,6 +141,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ModuleDefinitionFile>d3d9.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -161,6 +162,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>C:\Program Files (x86)\Steam\SteamApps\common\Submerged\Submerged\Binaries\Win64\$(TargetName)$(TargetExt)</OutputFile>
+      <ModuleDefinitionFile>d3d9.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -178,6 +180,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <ModuleDefinitionFile>d3d9.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='D3D9|Win32'">
@@ -190,10 +193,9 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;BMF_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <CallingConvention>Cdecl</CallingConvention>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <OmitFramePointers>true</OmitFramePointers>
+      <OmitFramePointers>false</OmitFramePointers>
       <RemoveUnreferencedCodeData>false</RemoveUnreferencedCodeData>
     </ClCompile>
     <Link>
@@ -201,7 +203,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <OutputFile>C:\Program Files (x86)\Steam\SteamApps\common\Grim Dawn\d3d9.dll</OutputFile>
+      <OutputFile>C:\Program Files (x86)\Steam\SteamApps\common\Driftmoon\d3d9.dll</OutputFile>
+      <ModuleDefinitionFile>d3d9.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -231,6 +234,7 @@
       <DataExecutionPrevention>false</DataExecutionPrevention>
       <SupportUnloadOfDelayLoadedDLL>true</SupportUnloadOfDelayLoadedDLL>
       <SupportNobindOfDelayLoadedDLL>true</SupportNobindOfDelayLoadedDLL>
+      <ModuleDefinitionFile>d3d9.def</ModuleDefinitionFile>
     </Link>
     <ProjectReference>
       <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
@@ -263,6 +267,7 @@
       <DataExecutionPrevention>false</DataExecutionPrevention>
       <SupportUnloadOfDelayLoadedDLL>true</SupportUnloadOfDelayLoadedDLL>
       <SupportNobindOfDelayLoadedDLL>true</SupportNobindOfDelayLoadedDLL>
+      <ModuleDefinitionFile>d3d9.def</ModuleDefinitionFile>
     </Link>
     <ProjectReference>
       <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
@@ -312,6 +317,9 @@
     <ClCompile Include="parameter.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="utility.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="d3d9.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

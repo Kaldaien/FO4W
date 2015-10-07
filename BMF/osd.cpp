@@ -33,44 +33,26 @@
 
 #include "log.h"
 
-int osd_printf (                   char*       szOut, 
-_In_z_ _Printf_format_string_ char const* const _Format, ...)
-{
-  va_list _ArgList;
-
-  int size = 0;
-
-  va_start (_ArgList, _Format);
-  {
-    size += max (vsprintf (szOut, _Format, _ArgList), 0);
-  }
-  va_end   (_ArgList);
-
-  //dll_log.Log (szOut);
-
-  return size > 0 ? size : 0;
-}
-
-#define OSD_PRINTF   if (config.osd.show)     { pszOSD += osd_printf (pszOSD,
+#define OSD_PRINTF   if (config.osd.show)     { pszOSD += sprintf (pszOSD,
 #define OSD_M_PRINTF if (config.osd.show &&\
-                         config.mem.show)     { pszOSD += osd_printf (pszOSD,
+                         config.mem.show)     { pszOSD += sprintf (pszOSD,
 #define OSD_B_PRINTF if (config.osd.show &&\
                          config.load_balance\
-                         .use)                { pszOSD += osd_printf (pszOSD,
+                         .use)                { pszOSD += sprintf (pszOSD,
 #define OSD_S_PRINTF if (config.osd.show &&\
                          config.mem.show &&\
-                         config.sli.show)     { pszOSD += osd_printf (pszOSD,
+                         config.sli.show)     { pszOSD += sprintf (pszOSD,
 #define OSD_C_PRINTF if (config.osd.show &&\
-                         config.cpu.show)     { pszOSD += osd_printf (pszOSD,
+                         config.cpu.show)     { pszOSD += sprintf (pszOSD,
 #define OSD_G_PRINTF if (config.osd.show &&\
-                         config.gpu.show)     { pszOSD += osd_printf (pszOSD,
+                         config.gpu.show)     { pszOSD += sprintf (pszOSD,
 #define OSD_D_PRINTF if (config.osd.show &&\
-                         config.disk.show)    { pszOSD += osd_printf (pszOSD,
+                         config.disk.show)    { pszOSD += sprintf (pszOSD,
 #define OSD_P_PRINTF if (config.osd.show &&\
                          config.pagefile.show)\
-                                              { pszOSD += osd_printf (pszOSD,
+                                              { pszOSD += sprintf (pszOSD,
 #define OSD_I_PRINTF if (config.osd.show &&\
-                         config.io.show)      { pszOSD += osd_printf (pszOSD,
+                         config.io.show)      { pszOSD += sprintf (pszOSD,
 #define OSD_END    ); }
 
 extern char* szOSD;
@@ -375,8 +357,9 @@ BMF_DrawOSD (void)
           //
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
+            std::wstring api_name = BMF_GetAPINameFromOSDFlags (pApp->dwFlags);
             OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms\n",
-              BMF_GetAPINameFromOSDFlags (pApp->dwFlags).c_str (),
+              api_name.c_str (),
                 // Cast to FP to avoid integer division by zero.
                 1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
                   pApp->dwFrameTime / 1000.0f
@@ -589,9 +572,9 @@ BMF_DrawOSD (void)
   if (nodes > 0) {
     int i = 0;
 
-    //int afr_idx  = sli_state.currentAFRIndex,
-        //afr_last = sli_state.previousFrameAFRIndex,
-        //afr_next = sli_state.nextFrameAFRIndex;
+    int afr_idx  = sli_state.currentAFRIndex,
+        afr_last = sli_state.previousFrameAFRIndex,
+        afr_next = sli_state.nextFrameAFRIndex;
 
     OSD_M_PRINTF "\n"
                    "----- (DXGI 1.4): Local Memory -------"
@@ -609,7 +592,6 @@ BMF_DrawOSD (void)
                   mem_info [buffer].local [i].Budget                  >> 20ULL
       OSD_END
 
-#if 0
       //
       // SLI Status Indicator
       //
@@ -621,7 +603,6 @@ BMF_DrawOSD (void)
 
       if (afr_next == i)
         OSD_S_PRINTF "#" OSD_END
-#endif
 
       OSD_M_PRINTF "\n" OSD_END
 
@@ -670,7 +651,6 @@ BMF_DrawOSD (void)
 
   OSD_M_PRINTF "\n" OSD_END
 
-#if 1
   std::wstring working_set =
     BMF_SizeToString (process_stats.memory.working_set,   MiB);
   std::wstring commit =
@@ -696,7 +676,6 @@ BMF_DrawOSD (void)
     commit_peak.c_str      (),
     virtual_peak.c_str     ()
   OSD_END
-#endif
 
   extern int gpu_prio;
 

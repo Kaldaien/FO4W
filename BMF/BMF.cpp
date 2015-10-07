@@ -123,6 +123,9 @@ APIENTRY DllMain ( HMODULE hModule,
     case DLL_PROCESS_DETACH:
     {
       BMF_Detach (dll_role);
+
+      extern void BMF_ShutdownCOM (void);
+      BMF_ShutdownCOM ();
     } break;
   }
 

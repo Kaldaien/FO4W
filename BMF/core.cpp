@@ -696,6 +696,9 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     L"------------------------------------------------------------------------"
     L"-----------\n");
 
+  extern bool BMF_InitCOM (void);
+  BMF_InitCOM ();
+
   DWORD   dwProcessSize = MAX_PATH;
   wchar_t wszProcessName [MAX_PATH];
 
@@ -845,7 +848,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     dll_log.LogEx (false, L"\n");
   }
 
-  typedef void (*callback_t)(void);
+  typedef void (WINAPI *callback_t)(void);
   callback_t callback_fn = (callback_t)callback;
   callback_fn ();
 
@@ -870,7 +873,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"Failed!\n");
   }
 
-  Sleep (333);
+  Sleep (33);
 
   if (disk_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
@@ -882,7 +885,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (333);
+  Sleep (33);
 
   if (pagefile_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
@@ -895,8 +898,9 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (333);
+  Sleep (33);
 
+#if 1
   //
   // Spawn Process Monitor Thread
   //
@@ -908,6 +912,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     else
       dll_log.LogEx (false, L"Failed!\n");
   }
+#endif
 
   dll_log.LogEx (false, L"\n");
 
@@ -966,6 +971,9 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
 {
   dll_heap = HeapCreate (0, 0, 0);
 
+  if (! dll_heap)
+    return false;
+
 #ifdef HOOK_D3D11_DEVICE_CREATION
   MH_Initialize ();
 #endif
@@ -980,6 +988,9 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
     (init_params_t *)HeapAlloc ( dll_heap,
                                    HEAP_ZERO_MEMORY,
                                      sizeof (init_params_t) );
+
+  if (! init)
+    return false;
 
   init->backend  = backend;
   init->callback = callback;

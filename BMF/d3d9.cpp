@@ -28,10 +28,198 @@
 
 #include "log.h"
 
-#undef STDMETHODCALLTYPE
-#define STDMETHODCALLTYPE __cdecl
+//#undef STDMETHODCALLTYPE
+//#define STDMETHODCALLTYPE __stdcall
 
-#include <d3d9types.h>
+typedef DWORD D3DCOLOR;
+
+/* Direct3D9 Device types */
+typedef enum _D3DDEVTYPE
+{
+  D3DDEVTYPE_HAL         = 1,
+  D3DDEVTYPE_REF         = 2,
+  D3DDEVTYPE_SW          = 3,
+
+  D3DDEVTYPE_NULLREF     = 4,
+
+  D3DDEVTYPE_FORCE_DWORD  = 0x7fffffff
+} D3DDEVTYPE;
+
+/* Multi-Sample buffer types */
+typedef enum _D3DMULTISAMPLE_TYPE
+{
+  D3DMULTISAMPLE_NONE            =  0,
+  D3DMULTISAMPLE_NONMASKABLE     =  1,
+  D3DMULTISAMPLE_2_SAMPLES       =  2,
+  D3DMULTISAMPLE_3_SAMPLES       =  3,
+  D3DMULTISAMPLE_4_SAMPLES       =  4,
+  D3DMULTISAMPLE_5_SAMPLES       =  5,
+  D3DMULTISAMPLE_6_SAMPLES       =  6,
+  D3DMULTISAMPLE_7_SAMPLES       =  7,
+  D3DMULTISAMPLE_8_SAMPLES       =  8,
+  D3DMULTISAMPLE_9_SAMPLES       =  9,
+  D3DMULTISAMPLE_10_SAMPLES      = 10,
+  D3DMULTISAMPLE_11_SAMPLES      = 11,
+  D3DMULTISAMPLE_12_SAMPLES      = 12,
+  D3DMULTISAMPLE_13_SAMPLES      = 13,
+  D3DMULTISAMPLE_14_SAMPLES      = 14,
+  D3DMULTISAMPLE_15_SAMPLES      = 15,
+  D3DMULTISAMPLE_16_SAMPLES      = 16,
+
+  D3DMULTISAMPLE_FORCE_DWORD     = 0x7fffffff
+} D3DMULTISAMPLE_TYPE;
+
+typedef enum _D3DFORMAT
+{
+  D3DFMT_UNKNOWN              =  0,
+
+  D3DFMT_R8G8B8               = 20,
+  D3DFMT_A8R8G8B8             = 21,
+  D3DFMT_X8R8G8B8             = 22,
+  D3DFMT_R5G6B5               = 23,
+  D3DFMT_X1R5G5B5             = 24,
+  D3DFMT_A1R5G5B5             = 25,
+  D3DFMT_A4R4G4B4             = 26,
+  D3DFMT_R3G3B2               = 27,
+  D3DFMT_A8                   = 28,
+  D3DFMT_A8R3G3B2             = 29,
+  D3DFMT_X4R4G4B4             = 30,
+  D3DFMT_A2B10G10R10          = 31,
+  D3DFMT_A8B8G8R8             = 32,
+  D3DFMT_X8B8G8R8             = 33,
+  D3DFMT_G16R16               = 34,
+  D3DFMT_A2R10G10B10          = 35,
+  D3DFMT_A16B16G16R16         = 36,
+
+  D3DFMT_A8P8                 = 40,
+  D3DFMT_P8                   = 41,
+
+  D3DFMT_L8                   = 50,
+  D3DFMT_A8L8                 = 51,
+  D3DFMT_A4L4                 = 52,
+
+  D3DFMT_V8U8                 = 60,
+  D3DFMT_L6V5U5               = 61,
+  D3DFMT_X8L8V8U8             = 62,
+  D3DFMT_Q8W8V8U8             = 63,
+  D3DFMT_V16U16               = 64,
+  D3DFMT_A2W10V10U10          = 67,
+
+  D3DFMT_UYVY                 = MAKEFOURCC('U', 'Y', 'V', 'Y'),
+  D3DFMT_R8G8_B8G8            = MAKEFOURCC('R', 'G', 'B', 'G'),
+  D3DFMT_YUY2                 = MAKEFOURCC('Y', 'U', 'Y', '2'),
+  D3DFMT_G8R8_G8B8            = MAKEFOURCC('G', 'R', 'G', 'B'),
+  D3DFMT_DXT1                 = MAKEFOURCC('D', 'X', 'T', '1'),
+  D3DFMT_DXT2                 = MAKEFOURCC('D', 'X', 'T', '2'),
+  D3DFMT_DXT3                 = MAKEFOURCC('D', 'X', 'T', '3'),
+  D3DFMT_DXT4                 = MAKEFOURCC('D', 'X', 'T', '4'),
+  D3DFMT_DXT5                 = MAKEFOURCC('D', 'X', 'T', '5'),
+
+  D3DFMT_D16_LOCKABLE         = 70,
+  D3DFMT_D32                  = 71,
+  D3DFMT_D15S1                = 73,
+  D3DFMT_D24S8                = 75,
+  D3DFMT_D24X8                = 77,
+  D3DFMT_D24X4S4              = 79,
+  D3DFMT_D16                  = 80,
+
+  D3DFMT_D32F_LOCKABLE        = 82,
+  D3DFMT_D24FS8               = 83,
+
+  /* D3D9Ex only -- */
+#if !defined(D3D_DISABLE_9EX)
+
+  /* Z-Stencil formats valid for CPU access */
+  D3DFMT_D32_LOCKABLE         = 84,
+  D3DFMT_S8_LOCKABLE          = 85,
+
+#endif // !D3D_DISABLE_9EX
+  /* -- D3D9Ex only */
+
+
+  D3DFMT_L16                  = 81,
+
+  D3DFMT_VERTEXDATA           =100,
+  D3DFMT_INDEX16              =101,
+  D3DFMT_INDEX32              =102,
+
+  D3DFMT_Q16W16V16U16         =110,
+
+  D3DFMT_MULTI2_ARGB8         = MAKEFOURCC('M','E','T','1'),
+
+  // Floating point surface formats
+
+  // s10e5 formats (16-bits per channel)
+  D3DFMT_R16F                 = 111,
+  D3DFMT_G16R16F              = 112,
+  D3DFMT_A16B16G16R16F        = 113,
+
+  // IEEE s23e8 formats (32-bits per channel)
+  D3DFMT_R32F                 = 114,
+  D3DFMT_G32R32F              = 115,
+  D3DFMT_A32B32G32R32F        = 116,
+
+  D3DFMT_CxV8U8               = 117,
+
+  /* D3D9Ex only -- */
+#if !defined(D3D_DISABLE_9EX)
+
+  // Monochrome 1 bit per pixel format
+  D3DFMT_A1                   = 118,
+
+  // 2.8 biased fixed point
+  D3DFMT_A2B10G10R10_XR_BIAS  = 119,
+
+
+  // Binary format indicating that the data has no inherent type
+  D3DFMT_BINARYBUFFER         = 199,
+
+#endif // !D3D_DISABLE_9EX
+  /* -- D3D9Ex only */
+
+
+  D3DFMT_FORCE_DWORD          =0x7fffffff
+} D3DFORMAT;
+
+/* SwapEffects */
+typedef enum _D3DSWAPEFFECT
+{
+  D3DSWAPEFFECT_DISCARD           = 1,
+  D3DSWAPEFFECT_FLIP              = 2,
+  D3DSWAPEFFECT_COPY              = 3,
+
+  /* D3D9Ex only -- */
+#if !defined(D3D_DISABLE_9EX)
+  D3DSWAPEFFECT_OVERLAY           = 4,
+  D3DSWAPEFFECT_FLIPEX            = 5,
+#endif // !D3D_DISABLE_9EX
+  /* -- D3D9Ex only */
+
+  D3DSWAPEFFECT_FORCE_DWORD       = 0x7fffffff
+} D3DSWAPEFFECT;
+
+/* Resize Optional Parameters */
+typedef struct _D3DPRESENT_PARAMETERS_
+{
+  UINT                BackBufferWidth;
+  UINT                BackBufferHeight;
+  D3DFORMAT           BackBufferFormat;
+  UINT                BackBufferCount;
+
+  D3DMULTISAMPLE_TYPE MultiSampleType;
+  DWORD               MultiSampleQuality;
+
+  D3DSWAPEFFECT       SwapEffect;
+  HWND                hDeviceWindow;
+  BOOL                Windowed;
+  BOOL                EnableAutoDepthStencil;
+  D3DFORMAT           AutoDepthStencilFormat;
+  DWORD               Flags;
+
+  /* FullScreen_RefreshRateInHz must be zero for Windowed mode */
+  UINT                FullScreen_RefreshRateInHz;
+  UINT                PresentationInterval;
+} D3DPRESENT_PARAMETERS;
 
 typedef interface IDirect3D9                     IDirect3D9;
 typedef interface IDirect3DDevice9               IDirect3DDevice9;
@@ -40,7 +228,6 @@ typedef interface IDirect3D9Ex                   IDirect3D9Ex;
 typedef interface IDirect3DDevice9Ex             IDirect3DDevice9Ex;
 typedef interface IDirect3DSwapChain9Ex          IDirect3DSwapChain9Ex;
 
-extern "C" {
 typedef IDirect3D9*
   (STDMETHODCALLTYPE *Direct3DCreate9PROC)(  UINT           SDKVersion);
 typedef HRESULT
@@ -48,12 +235,12 @@ typedef HRESULT
                                              IDirect3D9Ex** d3d9ex);
 
 typedef HRESULT (STDMETHODCALLTYPE *D3D9PresentSwapChain_t)(
-           IDirect3DSwapChain9 *This,
+           IDirect3DDevice9    *This,
 _In_ const RECT                *pSourceRect,
 _In_ const RECT                *pDestRect,
 _In_       HWND                 hDestWindowOverride,
-_In_ const RGNDATA             *pDirtyRegion,
-_In_       DWORD                dwFlags);
+_In_ const RGNDATA             *pDirtyRegion/*,
+_In_       DWORD                dwFlags*/);
 
 typedef HRESULT (STDMETHODCALLTYPE *D3D9CreateDevice_t)(
            IDirect3D9             *This,
@@ -82,7 +269,6 @@ void d3d9_init_callback (void)
     (Direct3DCreate9Ex_Import) =  \
       (Direct3DCreate9ExPROC)GetProcAddress (backend_dll, "Direct3DCreate9Ex"));
 }
-}
 
 bool
 BMF::D3D9::Startup (void)
@@ -96,29 +282,28 @@ BMF::D3D9::Shutdown (void)
   return BMF_ShutdownCore (L"d3d9");
 }
 
-extern "C" {
-  HRESULT
-  __cdecl D3D9PresentCallback (IDirect3DSwapChain9 *This,
-                    _In_ const RECT                *pSourceRect,
-                    _In_ const RECT                *pDestRect,
-                    _In_       HWND                 hDestWindowOverride,
-                    _In_ const RGNDATA             *pDirtyRegion,
-                    _In_       DWORD                dwFlags)
-  {
-    BMF_BeginBufferSwap ();
+__declspec (nothrow)
+HRESULT
+STDMETHODCALLTYPE D3D9PresentCallback (IDirect3DDevice9 *This,
+                            _In_ const RECT             *pSourceRect,
+                            _In_ const RECT             *pDestRect,
+                            _In_       HWND              hDestWindowOverride,
+                            _In_ const RGNDATA          *pDirtyRegion/*,
+                            _In_       DWORD             dwFlags*/)
+{
+  BMF_BeginBufferSwap ();
 
-    return BMF_EndBufferSwap (D3D9Present_Original (This,
-                                                    pSourceRect,
-                                                    pDestRect,
-                                                    hDestWindowOverride,
-                                                    pDirtyRegion,
-                                                    dwFlags));
-  }
+  return BMF_EndBufferSwap (D3D9Present_Original (This,
+                                                  pSourceRect,
+                                                  pDestRect,
+                                                  hDestWindowOverride,
+                                                  pDirtyRegion/*,
+                                                  dwFlags*/));
 }
 
 
 #define D3D9_STUB_HRESULT(_Return, _Name, _Proto, _Args)                  \
-  __declspec (dllexport) _Return STDMETHODCALLTYPE                        \
+  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -145,7 +330,7 @@ extern "C" {
 }
 
 #define D3D9_STUB_VOIDP(_Return, _Name, _Proto, _Args)                    \
-  __declspec (dllexport) _Return STDMETHODCALLTYPE                        \
+  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -172,7 +357,7 @@ extern "C" {
 }
 
 #define D3D9_STUB_VOID(_Return, _Name, _Proto, _Args)                     \
-  __declspec (dllexport) _Return STDMETHODCALLTYPE                        \
+  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -199,7 +384,7 @@ extern "C" {
 }
 
 #define D3D9_STUB_INT(_Return, _Name, _Proto, _Args)                      \
-  __declspec (dllexport) _Return STDMETHODCALLTYPE                        \
+  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -244,6 +429,7 @@ D3D9_STUB_VOID    (void,  D3DPERF_SetRegion, (D3DCOLOR color, LPCWSTR name),
 
 extern const wchar_t*
 BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
+}
 
 #ifdef _WIN64
 #define D3D9_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type) { \
@@ -254,20 +440,20 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
                                                                               \
     VirtualProtect (&vftable [_Index], 8, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",\
+  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)", \
              L##_Name, vftable [_Index],                                      \
              BMF_DescribeVirtualProtectFlags (dwProtect));                    \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                  \
+    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                   \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
     VirtualProtect (&vftable [_Index], 8, dwProtect, &dwProtect);             \
                                                                               \
-    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n", \
+    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
                   L##_Name, vftable [_Index],                                 \
                   BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
@@ -281,27 +467,25 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
                                                                               \
     VirtualProtect (&vftable [_Index], 4, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",\
+  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)", \
              L##_Name, vftable [_Index],                                      \
              BMF_DescribeVirtualProtectFlags (dwProtect));                    \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                  \
+    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                   \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
     VirtualProtect (&vftable [_Index], 4, dwProtect, &dwProtect);             \
                                                                               \
-    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n", \
+    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
                   L##_Name, vftable [_Index],                                 \
                   BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
 }
 #endif
-
-//#include <dxgi.h>
 
 #define D3D9_CALL(_Ret, _Call) {                                     \
   dll_log.LogEx (true, L"  Calling original function: ");            \
@@ -309,6 +493,7 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
   dll_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret));\
 }
 
+__declspec (nothrow)
 HRESULT
 STDMETHODCALLTYPE
 D3D9CreateDevice_Override (IDirect3D9             *This,
@@ -319,8 +504,6 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                            D3DPRESENT_PARAMETERS  *pPresentationParameters,
                            IDirect3DDevice9      **ppReturnedDeviceInterface)
 {
-  WaitForInit ();
-
   //std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
   //dll_log_CALL_I2 (iname.c_str (), L"GetDesc2", L"%08Xh, %08Xh", This, pDesc);
@@ -340,12 +523,11 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                                              BehaviorFlags,
                                              pPresentationParameters,
                                              ppReturnedDeviceInterface));
-
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
                          "IDirect3DDevice9::Present", D3D9PresentCallback,
                          D3D9Present_Original, D3D9PresentSwapChain_t);
 
-  typedef HRESULT (__cdecl *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
+  typedef HRESULT (WINAPI *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
   static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
   static CreateDXGIFactory_t CreateDXGIFactory = (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
   IDXGIFactory* factory;
@@ -357,9 +539,10 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
 
   return ret;
 }
-}
 
-extern "C" __declspec(dllexport) IDirect3D9* __cdecl Direct3DCreate9(UINT SDKVersion)
+IDirect3D9*
+STDMETHODCALLTYPE
+Direct3DCreate9 (UINT SDKVersion)
 {
   WaitForInit ();
 
@@ -367,21 +550,22 @@ extern "C" __declspec(dllexport) IDirect3D9* __cdecl Direct3DCreate9(UINT SDKVer
                 L"[Calling Thread: 0x%04x]",
                 L"Direct3DCreate9", SDKVersion, GetCurrentThreadId ());
 
-  IDirect3D9* dev = nullptr;
+  IDirect3D9* d3d9 = nullptr;
 
   if (Direct3DCreate9_Import)
-    dev = Direct3DCreate9_Import (SDKVersion);
+    d3d9 = Direct3DCreate9_Import (SDKVersion);
 
-  if (dev != nullptr)
-    D3D9_VIRTUAL_OVERRIDE (&dev, 16, "pDev->CreateDevice",
+  if (d3d9 != nullptr)
+    D3D9_VIRTUAL_OVERRIDE (&d3d9, 16, "d3d9->CreateDevice",
                            D3D9CreateDevice_Override, D3D9CreateDevice_Original,
                            D3D9CreateDevice_t);
 
-  return dev;
+  return d3d9;
 }
 
-//__declspec (dllexport)
-extern "C" __declspec(dllexport) HRESULT __cdecl Direct3DCreate9Ex(__in   UINT SDKVersion, __out  IDirect3D9Ex **ppD3D)
+HRESULT
+STDMETHODCALLTYPE
+Direct3DCreate9Ex (__in UINT SDKVersion, __out IDirect3D9Ex **ppD3D)
 {
   WaitForInit ();
 
@@ -389,7 +573,7 @@ extern "C" __declspec(dllexport) HRESULT __cdecl Direct3DCreate9Ex(__in   UINT S
     L"[Calling Thread: 0x%04x]",
     L"Direct3DCreate9Ex", SDKVersion, ppD3D, GetCurrentThreadId ());
 
-  HRESULT hr;
+  HRESULT hr = -1;
 
   if (Direct3DCreate9Ex_Import)
     hr = Direct3DCreate9Ex_Import (SDKVersion, ppD3D);
