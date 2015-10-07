@@ -111,11 +111,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>nvapi</TargetName>
+    <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='D3D9|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>d3d9</TargetName>
-    <OutDir>C:\Program Files (x86)\Steam\SteamApps\common\South Park - The Stick of Truth\</OutDir>
+    <OutDir>C:\Program Files (x86)\Steam\SteamApps\common\Grim Dawn\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -184,19 +185,23 @@
       <WarningLevel>Level3</WarningLevel>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <Optimization>MaxSpeed</Optimization>
+      <Optimization>Full</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;BMF_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <CallingConvention>Cdecl</CallingConvention>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <RemoveUnreferencedCodeData>false</RemoveUnreferencedCodeData>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <OutputFile>C:\Program Files (x86)\Steam\SteamApps\common\South Park - The Stick of Truth\d3d9.dll</OutputFile>
+      <OutputFile>C:\Program Files (x86)\Steam\SteamApps\common\Grim Dawn\d3d9.dll</OutputFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -269,6 +274,7 @@
   <ItemGroup>
     <ClInclude Include="adl.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="core.h" />
     <ClInclude Include="d3d9_backend.h" />
     <ClInclude Include="dxgi_backend.h" />
     <ClInclude Include="dxgi_interfaces.h" />
@@ -291,6 +297,7 @@
     <ClCompile Include="adl.cpp" />
     <ClCompile Include="BMF.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="core.cpp" />
     <ClCompile Include="d3d9.cpp" />
     <ClCompile Include="dxgi.cpp" />
     <ClCompile Include="gpu_monitor.cpp" />

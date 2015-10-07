@@ -190,7 +190,7 @@ if (nvapi_init)
         gpu_stats.gpus [i].fans_rpm.supported = true;
       }
 
-      NvU32 perf_decrease_info;
+      NvU32 perf_decrease_info = 0;
       NvAPI_GPU_GetPerfDecreaseInfo (gpu, &perf_decrease_info);
 
       gpu_stats.gpus [i].nv_perf_state = perf_decrease_info;
@@ -314,7 +314,7 @@ if (nvapi_init)
 
       gpu_stats.gpus [i].volts_mV.supported = true;
       gpu_stats.gpus [i].volts_mV.over      = false;
-      gpu_stats.gpus [i].volts_mV.core      = activity.iVddc;
+      gpu_stats.gpus [i].volts_mV.core      = (float)activity.iVddc; // mV?
 
       ADLTemperature temp;
       temp.iSize = sizeof (ADLTemperature);

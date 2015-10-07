@@ -156,8 +156,8 @@ struct bmf_config_t
 
 extern bmf_config_t config;
 
-bool BMF_LoadConfig (std::wstring name         = L"dxgi.ini");
-void BMF_SaveConfig (std::wstring name         = L"dxgi.ini",
+bool BMF_LoadConfig (std::wstring name         = L"dxgi");
+void BMF_SaveConfig (std::wstring name         = L"dxgi",
                      bool         close_config = false);
 
 #endif __BMF__CONFIG_H__

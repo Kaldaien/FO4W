@@ -45,6 +45,9 @@ struct bmf_logger_t {
   void Log   (_In_z_ _Printf_format_string_
     wchar_t const* const _Format, ...);
 
+  void Log   (_In_z_ _Printf_format_string_
+    char const* const _Format, ...);
+
   FILE*            fLog        = NULL;
   bool             silent      = false;
   bool             initialized = false;
@@ -54,7 +57,7 @@ struct bmf_logger_t {
 //
 // TODO, we may want to wrap some synchronization construct around these
 //
-extern bmf_logger_t dxgi_log;
+extern bmf_logger_t dll_log;
 extern bmf_logger_t budget_log;
 
 #endif /* __BMF__LOG_H__ */

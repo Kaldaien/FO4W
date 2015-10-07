@@ -23,6 +23,8 @@
 #undef COM_NO_WINDOWS_H
 #include <Windows.h>
 
+#include "core.h"
+
 // TODO: reference additional headers your program requires here
 
 /* verify that the <rpcndr.h> version is high enough to compile this file*/
@@ -670,21 +672,6 @@ typedef struct DXGI_ADAPTER_DESC2
             _Out_  DXGI_ADAPTER_DESC2 *pDesc) = 0;
 
     };
-
-    typedef 
-enum DXGI_MEMORY_SEGMENT_GROUP
-    {
-        DXGI_MEMORY_SEGMENT_GROUP_LOCAL	= 0,
-        DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL	= 1
-    } 	DXGI_MEMORY_SEGMENT_GROUP;
-
-typedef struct DXGI_QUERY_VIDEO_MEMORY_INFO
-    {
-    UINT64 Budget;
-    UINT64 CurrentUsage;
-    UINT64 AvailableForReservation;
-    UINT64 CurrentReservation;
-    } 	DXGI_QUERY_VIDEO_MEMORY_INFO;
 
   EXTERN_C const IID IID_IDXGIAdapter3;
     

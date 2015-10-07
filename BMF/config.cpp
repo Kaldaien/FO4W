@@ -100,7 +100,8 @@ bmf::ParameterBool*      prefer_fahrenheit;
 bool
 BMF_LoadConfig (std::wstring name) {
   // Load INI File
-  dll_ini = new bmf::INI::File ((wchar_t *)name.c_str ());
+  std::wstring full_name = name + L".ini";
+  dll_ini = new bmf::INI::File ((wchar_t *)full_name.c_str ());
 
   bool empty = dll_ini->get_sections ().empty ();
 
@@ -592,7 +593,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   version->set_value                  (BMF_VER_STR);
   version->store                      ();
 
-  dll_ini->write (name.c_str ());
+  dll_ini->write (name + L".ini");
 
   if (close_config) {
     if (dll_ini != nullptr) {

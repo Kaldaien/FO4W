@@ -230,7 +230,7 @@ cpu_perf_t cpu_stats;
 
 DWORD
 WINAPI
-BMF_MonitorCPU (LPVOID user)
+BMF_MonitorCPU (LPVOID user_param)
 {
   cpu_perf_t&  cpu    = cpu_stats;
   const double update = config.cpu.interval;

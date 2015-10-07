@@ -19,6 +19,7 @@
 #define __BMF__MEMORY_MONITOR_H__
 
 #include <Windows.h>
+#include <stdint.h>
 
 #define _WIN32_DCOM
 #include <Wbemidl.h>

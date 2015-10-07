@@ -62,7 +62,7 @@ struct gpu_sensors_t {
     } temps_c;
 
     struct {
-      int32_t gpu       = 0;
+      uint32_t gpu      = 0;
       bool    supported = false;
     } fans_rpm;
 
@@ -97,6 +97,9 @@ struct gpu_sensors_t {
         else if (pcie_gen == 3 || pcie_gen == 4) {
           return (pcie_transfer_rate / 8.0) * (0.9846) * pcie_lanes;
         }
+
+        // Something's rotten in GPU land.
+        return 0.0;
       }
     } hwinfo;
 

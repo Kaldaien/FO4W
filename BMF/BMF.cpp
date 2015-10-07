@@ -49,6 +49,8 @@ BMF_EstablishDllRole (HMODULE hModule)
 
   else if (! _wcsicmp (wszDllName, L"OpenGL32.dll"))
     dll_role = DLL_ROLE::OpenGL;
+
+  return true;
 }
 
 
@@ -109,12 +111,12 @@ APIENTRY DllMain ( HMODULE hModule,
     } break;
 
     case DLL_THREAD_ATTACH:
-      //dxgi_log.Log (L"Custom dxgi.dll Attached (tid=%x)",
+      //dll_log.Log (L"Custom dxgi.dll Attached (tid=%x)",
       //                GetCurrentThreadId ());
       break;
 
     case DLL_THREAD_DETACH:
-      //dxgi_log.Log (L"Custom dxgi.dll Detached (tid=%x)",
+      //dll_log.Log (L"Custom dxgi.dll Detached (tid=%x)",
       //                GetCurrentThreadId ());
       break;
 

@@ -47,7 +47,7 @@ BMF_LoadEarlyImports64 (void)
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_X64 &&
               imports [i].when->get_value         () == BMF_IMPORT_EARLY) {
 
-            dxgi_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
+            dll_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
             imports [i].hLibrary = LoadLibrary (
@@ -55,11 +55,11 @@ BMF_LoadEarlyImports64 (void)
             );
 
             if (imports [i].hLibrary != NULL) {
-              dxgi_log.LogEx (false, L"success!\n");
+              dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-2;
-              dxgi_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failure!\n");
             }
           }
         }
@@ -68,7 +68,7 @@ BMF_LoadEarlyImports64 (void)
   }
 
   if (success > 0)
-    dxgi_log.LogEx (false, L"\n");
+    dll_log.LogEx (false, L"\n");
 }
 
 void
@@ -88,7 +88,7 @@ BMF_LoadLateImports64 (void)
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_X64 &&
               imports [i].when->get_value         () == BMF_IMPORT_LATE) {
 
-            dxgi_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
+            dll_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
             imports [i].hLibrary = LoadLibrary (
@@ -96,11 +96,11 @@ BMF_LoadLateImports64 (void)
               );
 
             if (imports [i].hLibrary != NULL) {
-              dxgi_log.LogEx (false, L"success!\n");
+              dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-2;
-              dxgi_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failure!\n");
             }
           }
         }
@@ -109,7 +109,7 @@ BMF_LoadLateImports64 (void)
   }
 
   if (success > 0)
-    dxgi_log.LogEx (false, L"\n");
+    dll_log.LogEx (false, L"\n");
 }
 
 void
@@ -129,7 +129,7 @@ BMF_LoadLazyImports64 (void)
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_X64 &&
               imports [i].when->get_value         () == BMF_IMPORT_LAZY) {
 
-            dxgi_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
+            dll_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
                 imports [i].filename->get_value_str ().c_str ());
 
             imports [i].hLibrary = LoadLibrary (
@@ -137,11 +137,11 @@ BMF_LoadLazyImports64 (void)
               );
 
             if (imports [i].hLibrary != NULL) {
-              dxgi_log.LogEx (false, L"success!\n");
+              dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-3;
-              dxgi_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failure!\n");
             }
           }
         }
@@ -150,7 +150,7 @@ BMF_LoadLazyImports64 (void)
   }
 
   if (success > 0)
-    dxgi_log.LogEx (false, L"\n");
+    dll_log.LogEx (false, L"\n");
 }
 
 void
@@ -170,7 +170,7 @@ BMF_LoadEarlyImports32 (void)
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_WIN32 &&
               imports [i].when->get_value         () == BMF_IMPORT_EARLY) {
 
-            dxgi_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
+            dll_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
             imports [i].hLibrary = LoadLibrary (
@@ -178,11 +178,11 @@ BMF_LoadEarlyImports32 (void)
             );
 
             if (imports [i].hLibrary != NULL) {
-              dxgi_log.LogEx (false, L"success!\n");
+              dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-2;
-              dxgi_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failure!\n");
             }
           }
         }
@@ -191,7 +191,7 @@ BMF_LoadEarlyImports32 (void)
   }
 
   if (success > 0)
-    dxgi_log.LogEx (false, L"\n");
+    dll_log.LogEx (false, L"\n");
 }
 
 void
@@ -211,7 +211,7 @@ BMF_LoadLateImports32 (void)
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_WIN32 &&
               imports [i].when->get_value         () == BMF_IMPORT_LATE) {
 
-            dxgi_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
+            dll_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
             imports [i].hLibrary = LoadLibrary (
@@ -219,11 +219,11 @@ BMF_LoadLateImports32 (void)
               );
 
             if (imports [i].hLibrary != NULL) {
-              dxgi_log.LogEx (false, L"success!\n");
+              dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-2;
-              dxgi_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failure!\n");
             }
           }
         }
@@ -232,7 +232,7 @@ BMF_LoadLateImports32 (void)
   }
 
   if (success > 0)
-    dxgi_log.LogEx (false, L"\n");
+    dll_log.LogEx (false, L"\n");
 }
 
 void
@@ -252,7 +252,7 @@ BMF_LoadLazyImports32 (void)
           if (imports [i].architecture->get_value () == BMF_IMPORT_ARCH_WIN32 &&
               imports [i].when->get_value         () == BMF_IMPORT_LAZY) {
 
-            dxgi_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
+            dll_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
                 imports [i].filename->get_value_str ().c_str ());
 
             imports [i].hLibrary = LoadLibrary (
@@ -260,11 +260,11 @@ BMF_LoadLazyImports32 (void)
               );
 
             if (imports [i].hLibrary != NULL) {
-              dxgi_log.LogEx (false, L"success!\n");
+              dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-3;
-              dxgi_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failure!\n");
             }
           }
         }
@@ -273,5 +273,5 @@ BMF_LoadLazyImports32 (void)
   }
 
   if (success > 0)
-    dxgi_log.LogEx (false, L"\n");
+    dll_log.LogEx (false, L"\n");
 }

@@ -15,6 +15,8 @@
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "log.h"
 
 WORD
@@ -39,7 +41,7 @@ BMF_Timestamp (wchar_t* const out)
   return stLogTime.wMilliseconds;
 }
 
-bmf_logger_t dxgi_log, budget_log;
+bmf_logger_t dll_log, budget_log;
 
 
 void
@@ -137,6 +139,40 @@ bmf_logger_t::Log   (_In_z_ _Printf_format_string_
   va_start (_ArgList, _Format);
   {
     vfwprintf (fLog, _Format, _ArgList);
+  }
+  va_end   (_ArgList);
+
+  fwprintf  (fLog, L"\n");
+  fflush    (fLog);
+
+  LeaveCriticalSection (&log_mutex);
+}
+
+void
+bmf_logger_t::Log   (_In_z_ _Printf_format_string_
+  char const* const _Format, ...)
+{
+  va_list _ArgList;
+
+  if (! initialized)
+    return;
+
+  EnterCriticalSection (&log_mutex);
+
+  if ((! fLog) || silent) {
+    LeaveCriticalSection (&log_mutex);
+    return;
+  }
+
+  wchar_t wszLogTime [128];
+
+  WORD ms = BMF_Timestamp (wszLogTime);
+
+  fwprintf (fLog, L"%s%03u: ", wszLogTime, ms);
+
+  va_start (_ArgList, _Format);
+  {
+    vfprintf (fLog, _Format, _ArgList);
   }
   va_end   (_ArgList);
 

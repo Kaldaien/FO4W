@@ -29,29 +29,51 @@
 #include "gpu_monitor.h"
 #include "memory_monitor.h"
 
-#define OSD_PRINTF   if (config.osd.show)     { pszOSD += sprintf (pszOSD,
+#include "core.h"
+
+#include "log.h"
+
+int osd_printf (                   char*       szOut, 
+_In_z_ _Printf_format_string_ char const* const _Format, ...)
+{
+  va_list _ArgList;
+
+  int size = 0;
+
+  va_start (_ArgList, _Format);
+  {
+    size += max (vsprintf (szOut, _Format, _ArgList), 0);
+  }
+  va_end   (_ArgList);
+
+  //dll_log.Log (szOut);
+
+  return size > 0 ? size : 0;
+}
+
+#define OSD_PRINTF   if (config.osd.show)     { pszOSD += osd_printf (pszOSD,
 #define OSD_M_PRINTF if (config.osd.show &&\
-                         config.mem.show)     { pszOSD += sprintf (pszOSD,
+                         config.mem.show)     { pszOSD += osd_printf (pszOSD,
 #define OSD_B_PRINTF if (config.osd.show &&\
                          config.load_balance\
-                         .use)                { pszOSD += sprintf (pszOSD,
+                         .use)                { pszOSD += osd_printf (pszOSD,
 #define OSD_S_PRINTF if (config.osd.show &&\
                          config.mem.show &&\
-                         config.sli.show)     { pszOSD += sprintf (pszOSD,
+                         config.sli.show)     { pszOSD += osd_printf (pszOSD,
 #define OSD_C_PRINTF if (config.osd.show &&\
-                         config.cpu.show)     { pszOSD += sprintf (pszOSD,
+                         config.cpu.show)     { pszOSD += osd_printf (pszOSD,
 #define OSD_G_PRINTF if (config.osd.show &&\
-                         config.gpu.show)     { pszOSD += sprintf (pszOSD,
+                         config.gpu.show)     { pszOSD += osd_printf (pszOSD,
 #define OSD_D_PRINTF if (config.osd.show &&\
-                         config.disk.show)    { pszOSD += sprintf (pszOSD,
+                         config.disk.show)    { pszOSD += osd_printf (pszOSD,
 #define OSD_P_PRINTF if (config.osd.show &&\
                          config.pagefile.show)\
-                                              { pszOSD += sprintf (pszOSD,
+                                              { pszOSD += osd_printf (pszOSD,
 #define OSD_I_PRINTF if (config.osd.show &&\
-                         config.io.show)      { pszOSD += sprintf (pszOSD,
+                         config.io.show)      { pszOSD += osd_printf (pszOSD,
 #define OSD_END    ); }
 
-static char szOSD [4096];
+extern char* szOSD;
 
 #include "nvapi.h"
 extern NV_GET_CURRENT_SLI_STATE sli_state;
@@ -59,10 +81,10 @@ extern BOOL nvapi_init;
 
 // Probably need to use a critical section to make this foolproof, we will
 //   cross that bridge later though. The OSD is performance critical
-static bool osd_shutting_down = false;
+bool osd_shutting_down = false;
 
 // Initialize some things (like color, position and scale) on first use
-static bool osd_init          = false;
+bool osd_init          = false;
 
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
@@ -168,11 +190,11 @@ BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
 #endif
 
   // Plan to expand this to D3D9 eventually
-#ifdef OLDER_D3D_SUPPORT
   if (dwFlags & APPFLAG_D3D9EX)
     return L"D3D9EX";
   if (dwFlags & APPFLAG_D3D9)
     return L"D3D9";
+#ifdef OLDER_D3D_SUPPORT
   if (dwFlags & APPFLAG_D3D8)
     return L"D3D8";
   if (dwFlags & APPFLAG_DD)
@@ -207,17 +229,17 @@ BMF_SizeToString (uint64_t size, BMF_UNITS unit = Auto)
   switch (unit)
   {
     case GiB:
-      swprintf (str, L"%#5llu GiB", size >> 30);
+      _swprintf (str, L"%#5llu GiB", size >> 30);
       break;
     case MiB:
-      swprintf (str, L"%#5llu MiB", size >> 20);
+      _swprintf (str, L"%#5llu MiB", size >> 20);
       break;
     case KiB:
-      swprintf (str, L"%#5llu KiB", size >> 10);
+      _swprintf (str, L"%#5llu KiB", size >> 10);
       break;
     case B:
     default:
-      swprintf (str, L"%#3llu Bytes", size);
+      _swprintf (str, L"%#3llu Bytes", size);
       break;
   }
 
@@ -239,19 +261,19 @@ BMF_SizeToStringF (uint64_t size, int width, int precision, BMF_UNITS unit = Aut
   switch (unit)
   {
   case GiB:
-    swprintf (str, L"%#*.*f GiB", width, precision,
-             (float)size / (1024.0f * 1024.0f * 1024.0f));
+    _swprintf (str, L"%#*.*f GiB", width, precision,
+              (float)size / (1024.0f * 1024.0f * 1024.0f));
     break;
   case MiB:
-    swprintf (str, L"%#*.*f MiB", width, precision,
-             (float)size / (1024.0f * 1024.0f));
+    _swprintf (str, L"%#*.*f MiB", width, precision,
+              (float)size / (1024.0f * 1024.0f));
     break;
   case KiB:
-    swprintf (str, L"%#*.*f KiB", width, precision, (float)size / 1024.0f);
+    _swprintf (str, L"%#*.*f KiB", width, precision, (float)size / 1024.0f);
     break;
   case B:
   default:
-    swprintf (str, L"%#*llu Bytes", width-1-precision, size);
+    _swprintf (str, L"%#*llu Bytes", width-1-precision, size);
     break;
   }
 
@@ -262,17 +284,17 @@ std::wstring
 BMF_FormatTemperature (int32_t in_temp, BMF_UNITS in_unit, BMF_UNITS out_unit)
 {
   int32_t converted;
-  wchar_t wszOut [8];
+  wchar_t wszOut [16];
 
   if (in_unit == Celsius && out_unit == Fahrenheit) {
     //converted = in_temp * 2 + 30;
     converted = (int32_t)((float)(in_temp) * 9.0f/5.0f + 32.0f);
-    swprintf (wszOut, L"%#3lu°F", converted);
+    _swprintf (wszOut, L"%#3li°F", converted);
   } else if (in_unit == Fahrenheit && out_unit == Celsius) {
     converted = (int32_t)(((float)in_temp - 32.0f) * (5.0f/9.0f));
-    swprintf (wszOut, L"%#2lu°C", converted);
+    _swprintf (wszOut, L"%#2li°C", converted);
   } else {
-    swprintf (wszOut, L"%#2lu°C", in_temp);
+    _swprintf (wszOut, L"%#2li°C", in_temp);
   }
 
   return wszOut;
@@ -281,7 +303,7 @@ BMF_FormatTemperature (int32_t in_temp, BMF_UNITS in_unit, BMF_UNITS out_unit)
 BOOL
 BMF_DrawOSD (void)
 {
-  static int connect_attempts = 1;
+  static unsigned int connect_attempts = 1;
 
   // Bail-out early when shutting down, or RTSS does not know about our process
   LPVOID pMemory = BMF_GetSharedMemory ();
@@ -294,12 +316,12 @@ BMF_DrawOSD (void)
   if (! osd_init) {
     osd_init = true;
 
-    extern bmf_logger_t dxgi_log;
+    extern bmf_logger_t dll_log;
 
-    dxgi_log.LogEx ( true,
+    dll_log.LogEx ( true,
       L" [RTSS] Opening Connection to RivaTuner Statistics Server... " );
 
-    dxgi_log.LogEx ( false,
+    dll_log.LogEx ( false,
       L"successful after %u attempt(s)!\n", connect_attempts );
 
     BMF_SetOSDScale (config.osd.scale);
@@ -372,12 +394,12 @@ BMF_DrawOSD (void)
   BMF_PollGPU ();
 
   for (int i = 0; i < gpu_stats.num_gpus; i++) {
-    OSD_G_PRINTF "  GPU%u   :            %#3lu%%",
+    OSD_G_PRINTF "  GPU%i   :            %#3lu%%",
       i, gpu_stats.gpus [i].loads_percent.gpu
     OSD_END
 
     if (nvapi_init && gpu_stats.gpus [i].loads_percent.vid > 0) {
-      OSD_G_PRINTF ",  VID%u %#3lu%%  ,",
+      OSD_G_PRINTF ",  VID%i %#3lu%%  ,",
         i, gpu_stats.gpus [i].loads_percent.vid
       OSD_END
     } else {
@@ -410,13 +432,14 @@ BMF_DrawOSD (void)
       OSD_END
     }
 
-
-    OSD_G_PRINTF ", (%ws)",
+    std::wstring temp = 
       BMF_FormatTemperature (
         gpu_stats.gpus [i].temps_c.gpu,
           Celsius,
             config.system.prefer_fahrenheit ? Fahrenheit :
-                                              Celsius ).c_str ()
+                                              Celsius );
+    OSD_G_PRINTF ", (%ws)",
+      temp.c_str ()
     OSD_END
 
     if (nvapi_init &&
@@ -449,7 +472,7 @@ BMF_DrawOSD (void)
     for (int i = 0; i < nodes; i++) {
 #if 1
       if (nvapi_init) {
-        OSD_G_PRINTF "  VRAM%u  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
+        OSD_G_PRINTF "  VRAM%i  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
           i,
           mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
                       gpu_stats.gpus [i].loads_percent.fb,
@@ -459,7 +482,7 @@ BMF_DrawOSD (void)
                     ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
         OSD_END
       } else {
-        OSD_G_PRINTF "  VRAM%u  : %#5llu MiB",
+        OSD_G_PRINTF "  VRAM%i  : %#5llu MiB",
           i, mem_info [buffer].local [i].CurrentUsage >> 20ULL
         OSD_END
       }
@@ -511,7 +534,7 @@ BMF_DrawOSD (void)
       int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
 
       if (nvapi_init) {
-        OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0@x%lu\n",
+        OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
           i,
            mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
@@ -522,7 +545,7 @@ BMF_DrawOSD (void)
                        //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
         OSD_END
       } else {
-        OSD_G_PRINTF "  SHARE%u : %#5llu MiB, PCIe %lu.0@x%lu\n",
+        OSD_G_PRINTF "  SHARE%u : %#5llu MiB, PCIe %lu.0x%lu\n",
           i,
           mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
           pcie_gen,
@@ -566,9 +589,9 @@ BMF_DrawOSD (void)
   if (nodes > 0) {
     int i = 0;
 
-    int afr_idx  = sli_state.currentAFRIndex,
-        afr_last = sli_state.previousFrameAFRIndex,
-        afr_next = sli_state.nextFrameAFRIndex;
+    //int afr_idx  = sli_state.currentAFRIndex,
+        //afr_last = sli_state.previousFrameAFRIndex,
+        //afr_next = sli_state.nextFrameAFRIndex;
 
     OSD_M_PRINTF "\n"
                    "----- (DXGI 1.4): Local Memory -------"
@@ -576,7 +599,7 @@ BMF_DrawOSD (void)
     OSD_END
 
     while (i < nodes) {
-      OSD_M_PRINTF "  %8s %u  (Reserve:  %#5llu / %#5llu MiB  - "
+      OSD_M_PRINTF "  %8s %i  (Reserve:  %#5llu / %#5llu MiB  - "
                    " Budget:  %#5llu / %#5llu MiB)",
                   nodes > 1 ? (nvapi_init ? "SLI Node" : "CFX Node") : "GPU",
                   i,
@@ -586,6 +609,7 @@ BMF_DrawOSD (void)
                   mem_info [buffer].local [i].Budget                  >> 20ULL
       OSD_END
 
+#if 0
       //
       // SLI Status Indicator
       //
@@ -597,6 +621,7 @@ BMF_DrawOSD (void)
 
       if (afr_next == i)
         OSD_S_PRINTF "#" OSD_END
+#endif
 
       OSD_M_PRINTF "\n" OSD_END
 
@@ -611,7 +636,7 @@ BMF_DrawOSD (void)
 
     while (i < nodes) {
       if ((mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL) > 0) {
-        OSD_M_PRINTF "  %8s %u  (Reserve:  %#5llu / %#5llu MiB  -  "
+        OSD_M_PRINTF "  %8s %i  (Reserve:  %#5llu / %#5llu MiB  -  "
                      "Budget:  %#5llu / %#5llu MiB)\n",
                          nodes > 1 ? "SLI Node" : "GPU",
                          i,
@@ -645,16 +670,33 @@ BMF_DrawOSD (void)
 
   OSD_M_PRINTF "\n" OSD_END
 
+#if 1
+  std::wstring working_set =
+    BMF_SizeToString (process_stats.memory.working_set,   MiB);
+  std::wstring commit =
+    BMF_SizeToString (process_stats.memory.private_bytes, MiB);
+  std::wstring virtual_size = 
+    BMF_SizeToString (process_stats.memory.virtual_bytes, MiB);
+
   OSD_M_PRINTF "  Working Set: %ws,  Committed: %ws,  Address Space: %ws\n",
-    BMF_SizeToString (process_stats.memory.working_set,   MiB).c_str (),
-    BMF_SizeToString (process_stats.memory.private_bytes, MiB).c_str (),
-    BMF_SizeToString (process_stats.memory.virtual_bytes, MiB).c_str ()
+    working_set.c_str  (),
+    commit.c_str       (),
+    virtual_size.c_str ()
   OSD_END
+
+  std::wstring working_set_peak =
+    BMF_SizeToString (process_stats.memory.working_set_peak,     MiB);
+  std::wstring commit_peak =
+    BMF_SizeToString (process_stats.memory.page_file_bytes_peak, MiB);
+  std::wstring virtual_peak = 
+    BMF_SizeToString (process_stats.memory.virtual_bytes_peak,   MiB);
+
   OSD_M_PRINTF "        *Peak: %ws,      *Peak: %ws,          *Peak: %ws\n",
-    BMF_SizeToString (process_stats.memory.working_set_peak,     MiB).c_str (),
-    BMF_SizeToString (process_stats.memory.page_file_bytes_peak, MiB).c_str (),
-    BMF_SizeToString (process_stats.memory.virtual_bytes_peak,   MiB).c_str ()
+    working_set_peak.c_str (),
+    commit_peak.c_str      (),
+    virtual_peak.c_str     ()
   OSD_END
+#endif
 
   extern int gpu_prio;
 
@@ -681,17 +723,21 @@ BMF_DrawOSD (void)
   if (use_mib_sec) {
 #endif
     for (DWORD i = 0; i < disk_stats.num_disks; i++) {
+      std::wstring read_bytes_sec =
+        BMF_SizeToStringF (disk_stats.disks [i].read_bytes_sec, 6, 1);
+
+      std::wstring write_bytes_sec =
+        BMF_SizeToStringF (disk_stats.disks [i].write_bytes_sec, 6, 1);
+
       if (i == 0) {
         OSD_D_PRINTF "\n  Disk %16s %#3llu%%  -  (Read %#3llu%%: %ws/s, "
                                                  "Write %#3llu%%: %ws/s)\n",
           disk_stats.disks [i].name,
             disk_stats.disks [i].percent_load,
               disk_stats.disks [i].percent_read,
-                BMF_SizeToStringF (
-                  disk_stats.disks [i].read_bytes_sec, 6, 1).c_str (),
-                    disk_stats.disks [i].percent_write,
-                      BMF_SizeToStringF (
-                        disk_stats.disks [i].write_bytes_sec, 6, 1).c_str ()
+                read_bytes_sec.c_str (),
+                  disk_stats.disks [i].percent_write,
+                    write_bytes_sec.c_str ()
         OSD_END
       }
       else {
@@ -700,11 +746,9 @@ BMF_DrawOSD (void)
           disk_stats.disks [i].name,
             disk_stats.disks [i].percent_load,
               disk_stats.disks [i].percent_read,
-                BMF_SizeToStringF (
-                  disk_stats.disks [i].read_bytes_sec, 6, 1).c_str (),
-                    disk_stats.disks [i].percent_write,
-                      BMF_SizeToStringF (
-                        disk_stats.disks [i].write_bytes_sec, 6, 1).c_str ()
+                read_bytes_sec.c_str (),
+                  disk_stats.disks [i].percent_write,
+                    write_bytes_sec.c_str ()
         OSD_END
       }
     }
@@ -738,7 +782,7 @@ BMF_DrawOSD (void)
   OSD_END
 
   for (DWORD i = 1; i < cpu_stats.num_cpus; i++) {
-    OSD_C_PRINTF "  CPU%d: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
+    OSD_C_PRINTF "  CPU%i: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
                  "Interrupt: %#3llu%%)\n",
       i-1,
         cpu_stats.cpus [i].percent_load, 
@@ -749,13 +793,18 @@ BMF_DrawOSD (void)
   }
 
   for (DWORD i = 0; i < pagefile_stats.num_pagefiles; i++) {
+      std::wstring usage =
+        BMF_SizeToStringF (pagefile_stats.pagefiles [i].usage, 5,2);
+      std::wstring size = 
+        BMF_SizeToStringF (pagefile_stats.pagefiles [i].size, 5,2);
+      std::wstring peak =
+        BMF_SizeToStringF (pagefile_stats.pagefiles [i].usage_peak, 5,2);
+
       OSD_P_PRINTF "\n  Pagefile %20s  %ws / %ws  (Peak: %ws)",
         pagefile_stats.pagefiles [i].name,
-          BMF_SizeToStringF (pagefile_stats.pagefiles [i].usage, 5,2).c_str (),
-            BMF_SizeToStringF (
-              pagefile_stats.pagefiles [i].size, 5,2).c_str (),
-                BMF_SizeToStringF (
-                  pagefile_stats.pagefiles [i].usage_peak, 5,2).c_str ()
+          usage.c_str    (),
+            size.c_str   (),
+              peak.c_str ()
       OSD_END
   }
 
