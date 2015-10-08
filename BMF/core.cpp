@@ -1026,10 +1026,18 @@ BMF_ShutdownCore (const wchar_t* backend)
 
     budget_thread->ready = false;
 
-    SignalObjectAndWait (budget_thread->event, budget_thread->handle,
-      INFINITE, TRUE);
+    DWORD dwWaitState =
+      SignalObjectAndWait (budget_thread->event, budget_thread->handle,
+                           1000UL, TRUE); // Give 1 second, and
+                                          // then we're killing
+                                          // the thing!
 
-    dll_log.LogEx (false, L"done!\n");
+    if (dwWaitState == WAIT_OBJECT_0)
+      dll_log.LogEx (false, L"done!\n");
+    else {
+      dll_log.LogEx (false, L"timed out (killing manually)!\n");
+      TerminateThread (budget_thread->handle, 0);
+    }
 
     // Record the final statistics always
     budget_log.silent = false;

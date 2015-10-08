@@ -116,6 +116,9 @@ CRITICAL_SECTION com_cs;
 bool
 BMF_InitCOM (void)
 {
+  IWbemLocator*  pWbemLocator  = nullptr;
+  BSTR           bstrNameSpace = nullptr;
+
   // Every thread that uses COM has to do this, but the other stuff ...
   //   that only needs to be done once.
   HRESULT hr;
@@ -131,9 +134,6 @@ BMF_InitCOM (void)
     return true;
 
   InitializeCriticalSectionAndSpinCount (&com_cs, 5000);
-
-  IWbemLocator*  pWbemLocator  = nullptr;
-  BSTR           bstrNameSpace = nullptr;
 
   if (FAILED (hr = CoInitializeSecurity(
               NULL,
@@ -508,8 +508,10 @@ BMF_MonitorCPU (LPVOID user_param)
     LeaveCriticalSection (&com_cs);
   }
 
+  EnterCriticalSection (&com_cs);
+
 CPU_CLEANUP:
-  dll_log.Log (L" >> CPU_CLEANUP");
+  //dll_log.Log (L" >> CPU_CLEANUP");
 
   if (cpu.apEnumAccess != nullptr)
   {
@@ -842,8 +844,10 @@ BMF_MonitorDisk (LPVOID user)
     LeaveCriticalSection (&com_cs);
   }
 
+  EnterCriticalSection (&com_cs);
+
 DISK_CLEANUP:
-  dll_log.Log (L" >> DISK_CLEANUP");
+  //dll_log.Log (L" >> DISK_CLEANUP");
 
   if (disk.apEnumAccess != nullptr)
   {
@@ -1101,8 +1105,10 @@ BMF_MonitorPagefile (LPVOID user)
     ++iter;
   }
 
+  EnterCriticalSection (&com_cs);
+
 PAGEFILE_CLEANUP:
-  dll_log.Log (L" >> PAGEFILE_CLEANUP");
+  //dll_log.Log (L" >> PAGEFILE_CLEANUP");
 
   if (pagefile.apEnumAccess != nullptr)
   {

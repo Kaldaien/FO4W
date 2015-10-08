@@ -10,3 +10,16 @@ EXPORTS
 	D3DPERF_SetRegion=D3DPERF_SetRegion @7
 	Direct3DCreate9=Direct3DCreate9 @8
 	Direct3DCreate9Ex=Direct3DCreate9Ex @9
+
+LIBRARY "dxgi"
+
+EXPORTS
+	CreateDXGIFactory=CreateDXGIFactory @10
+	CreateDXGIFactory1=CreateDXGIFactory1 @11
+	CreateDXGIFactory2=CreateDXGIFactory2 @12
+	DXGID3D10CreateDevice=DXGID3D10CreateDevice @13
+	DXGID3D10CreateLayeredDevice=DXGID3D10CreateLayeredDevice @14
+	DXGID3D10GetLayeredDeviceSize=DXGID3D10GetLayeredDeviceSize @15
+	DXGID3D10RegisterLayers=DXGID3D10RegisterLayers @16
+	DXGIDumpJournal=DXGIDumpJournal @17
+	DXGIReportAdapterConfiguration=DXGIReportAdapterConfiguration @18

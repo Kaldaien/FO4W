@@ -191,8 +191,10 @@ BMF_MonitorProcess (LPVOID user)
     LeaveCriticalSection (&com_cs);
   }
 
+  EnterCriticalSection (&com_cs);
+
 PROC_CLEANUP:
-  dll_log.Log (L" >> PROC_CLEANUP");
+  // dll_log.Log (L" >> PROC_CLEANUP");
 
   if (proc.pAccess != nullptr)
   {

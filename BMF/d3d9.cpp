@@ -252,6 +252,7 @@ typedef HRESULT (STDMETHODCALLTYPE *D3D9CreateDevice_t)(
            IDirect3DDevice9      **ppReturnedDeviceInterface);
 
 D3D9PresentSwapChain_t   D3D9Present_Original      = nullptr;
+D3D9PresentSwapChain_t   D3D9PresentSwap_Original  = nullptr;
 D3D9CreateDevice_t       D3D9CreateDevice_Original = nullptr;
 
 Direct3DCreate9PROC   Direct3DCreate9_Import   = nullptr;
@@ -282,28 +283,97 @@ BMF::D3D9::Shutdown (void)
   return BMF_ShutdownCore (L"d3d9");
 }
 
-__declspec (nothrow)
+#ifdef _WIN64
+# define D3D9_PROLOG
+#else
+# define D3D9_PROLOG  __asm PUSHAD;
+#endif
+
+#ifdef _WIN64
+# define D3D9_EPILOG
+#else
+# define D3D9_EPILOG __asm POPAD;
+#endif
+
+extern "C" {
+#ifndef _WIN64
+__declspec (naked)
+void
+#else
 HRESULT
-STDMETHODCALLTYPE D3D9PresentCallback (IDirect3DDevice9 *This,
+#endif
+__stdcall D3D9PresentCallback (IDirect3DDevice9 *This,
                             _In_ const RECT             *pSourceRect,
                             _In_ const RECT             *pDestRect,
                             _In_       HWND              hDestWindowOverride,
                             _In_ const RGNDATA          *pDirtyRegion/*,
                             _In_       DWORD             dwFlags*/)
 {
+  D3D9_PROLOG
+
   BMF_BeginBufferSwap ();
 
+  //dll_log.Log (L"Flip");
+
+#ifndef _WIN64
+  BMF_EndBufferSwap (S_OK);
+
+  D3D9_EPILOG
+
+  __asm {
+    jmp D3D9Present_Original;
+  };
+#else
   return BMF_EndBufferSwap (D3D9Present_Original (This,
                                                   pSourceRect,
                                                   pDestRect,
                                                   hDestWindowOverride,
-                                                  pDirtyRegion/*,
-                                                  dwFlags*/));
+                                                  pDirtyRegion));
+#endif
+}
+}
+
+extern "C" {
+#ifndef _WIN64
+  __declspec (naked)
+    void
+#else
+  HRESULT
+#endif
+    __stdcall D3D9PresentSwapCallback (IDirect3DDevice9 *This,
+      _In_ const RECT             *pSourceRect,
+      _In_ const RECT             *pDestRect,
+      _In_       HWND              hDestWindowOverride,
+      _In_ const RGNDATA          *pDirtyRegion/*,
+                                               _In_       DWORD             dwFlags*/)
+  {
+    D3D9_PROLOG
+
+      BMF_BeginBufferSwap ();
+
+    //dll_log.Log (L"Flip");
+
+#ifndef _WIN64
+    BMF_EndBufferSwap (S_OK);
+
+    D3D9_EPILOG
+
+      __asm {
+      jmp D3D9PresentSwap_Original;
+    };
+#else
+    return BMF_EndBufferSwap (D3D9Present_Original (This,
+      pSourceRect,
+      pDestRect,
+      hDestWindowOverride,
+      pDirtyRegion));
+#endif
+  }
 }
 
 
 #define D3D9_STUB_HRESULT(_Return, _Name, _Proto, _Args)                  \
-  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
+  __declspec (nothrow) _Return STDMETHODCALLTYPE                          \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -330,7 +400,7 @@ STDMETHODCALLTYPE D3D9PresentCallback (IDirect3DDevice9 *This,
 }
 
 #define D3D9_STUB_VOIDP(_Return, _Name, _Proto, _Args)                    \
-  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
+  __declspec (nothrow) _Return STDMETHODCALLTYPE                          \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -357,7 +427,7 @@ STDMETHODCALLTYPE D3D9PresentCallback (IDirect3DDevice9 *This,
 }
 
 #define D3D9_STUB_VOID(_Return, _Name, _Proto, _Args)                     \
-  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
+  __declspec (nothrow) _Return STDMETHODCALLTYPE                          \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -384,7 +454,7 @@ STDMETHODCALLTYPE D3D9PresentCallback (IDirect3DDevice9 *This,
 }
 
 #define D3D9_STUB_INT(_Return, _Name, _Proto, _Args)                      \
-  __declspec (dllexport,nothrow) _Return STDMETHODCALLTYPE                \
+  __declspec (nothrow) _Return STDMETHODCALLTYPE                          \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -493,6 +563,10 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
   dll_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret));\
 }
 
+typedef HRESULT (WINAPI *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
+typedef HRESULT (STDMETHODCALLTYPE *GetSwapChain_t)
+  (IDirect3DDevice9* This, UINT iSwapChain, IDirect3DSwapChain9** pSwapChain);
+
 __declspec (nothrow)
 HRESULT
 STDMETHODCALLTYPE
@@ -504,6 +578,8 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                            D3DPRESENT_PARAMETERS  *pPresentationParameters,
                            IDirect3DDevice9      **ppReturnedDeviceInterface)
 {
+  D3D9_PROLOG
+
   //std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
   //dll_log_CALL_I2 (iname.c_str (), L"GetDesc2", L"%08Xh, %08Xh", This, pDesc);
@@ -523,19 +599,40 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                                              BehaviorFlags,
                                              pPresentationParameters,
                                              ppReturnedDeviceInterface));
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
                          "IDirect3DDevice9::Present", D3D9PresentCallback,
                          D3D9Present_Original, D3D9PresentSwapChain_t);
 
-  typedef HRESULT (WINAPI *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
+
   static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
-  static CreateDXGIFactory_t CreateDXGIFactory = (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
+  static CreateDXGIFactory_t CreateDXGIFactory =
+    (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
+
   IDXGIFactory* factory;
+
   if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory), &factory))) {
     IDXGIAdapter* adapter;
     factory->EnumAdapters (0, &adapter);
+
     BMF_StartDXGI_1_4_BudgetThread (&adapter);
+
+    adapter->Release ();
   }
+
+  void** vftable                    = *(void***)*ppReturnedDeviceInterface;
+  GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftable [14];
+  IDirect3DSwapChain9* SwapChain    = nullptr;
+
+  if (SUCCEEDED (GetSwapChain (*ppReturnedDeviceInterface, 0, &SwapChain))) {
+    D3D9_VIRTUAL_OVERRIDE (&SwapChain, 3,
+                           "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
+                           D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
+
+    ((IUnknown *)SwapChain)->Release ();
+  }
+
+  D3D9_EPILOG
 
   return ret;
 }
@@ -544,6 +641,8 @@ IDirect3D9*
 STDMETHODCALLTYPE
 Direct3DCreate9 (UINT SDKVersion)
 {
+  D3D9_PROLOG
+
   WaitForInit ();
 
   dll_log.Log (L"[!] %s (%lu) - "
@@ -560,6 +659,8 @@ Direct3DCreate9 (UINT SDKVersion)
                            D3D9CreateDevice_Override, D3D9CreateDevice_Original,
                            D3D9CreateDevice_t);
 
+  D3D9_EPILOG
+
   return d3d9;
 }
 
@@ -567,21 +668,25 @@ HRESULT
 STDMETHODCALLTYPE
 Direct3DCreate9Ex (__in UINT SDKVersion, __out IDirect3D9Ex **ppD3D)
 {
+  D3D9_PROLOG
+
   WaitForInit ();
 
   dll_log.Log (L"[!] %s (%lu, %08Xh) - "
     L"[Calling Thread: 0x%04x]",
     L"Direct3DCreate9Ex", SDKVersion, ppD3D, GetCurrentThreadId ());
 
-  HRESULT hr = -1;
+  HRESULT hr = E_FAIL;
 
-  if (Direct3DCreate9Ex_Import)
-    hr = Direct3DCreate9Ex_Import (SDKVersion, ppD3D);
+  //if (Direct3DCreate9Ex_Import)
+    //hr = Direct3DCreate9Ex_Import (SDKVersion, ppD3D);
 
   if (SUCCEEDED (hr))
     D3D9_VIRTUAL_OVERRIDE (ppD3D, 15, "(*d3d9ex)->CreateDevice",
       D3D9CreateDevice_Override, D3D9CreateDevice_Original,
       D3D9CreateDevice_t);
+
+  D3D9_EPILOG
 
   return hr;
 }

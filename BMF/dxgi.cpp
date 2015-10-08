@@ -48,9 +48,6 @@ extern int                      gpu_prio;
 //static IDXGIDevice*  g_pDXGIDev;
 
 extern "C" {
-#undef STDMETHODCALLTYPE
-#define STDMETHODCALLTYPE __cdecl
-
   typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
     (UINT Flags, REFIID riid,  void** ppFactory);
   typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory1_t) \
@@ -222,8 +219,20 @@ extern "C" {
   dll_log_CALL_END                                            \
 }
 
+#ifdef _WIN64
+# define DXGI_PROLOG
+#else
+# define DXGI_PROLOG _asm PUSHAD;
+#endif
+
+#ifdef _WIN64
+# define DXGI_EPILOG
+#else
+# define DXGI_EPILOG _asm POPAD;
+#endif
+
 #define DXGI_STUB(_Return, _Name, _Proto, _Args)                          \
-  __declspec (dllexport) _Return STDMETHODCALLTYPE                        \
+  __declspec (nothrow) _Return STDMETHODCALLTYPE                          \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
@@ -986,11 +995,13 @@ extern "C" {
     return ret;
   }
 
-  __declspec (dllexport)
+  __declspec (nothrow)
     HRESULT
     STDMETHODCALLTYPE CreateDXGIFactory (REFIID   riid,
                                    _Out_ void   **ppFactory)
   {
+    DXGI_PROLOG
+
 #ifdef HOOK_D3D11_DEVICE_CREATION
     //BMF_InstallD3D11DeviceHooks ();
 #else
@@ -1014,23 +1025,25 @@ extern "C" {
                            CreateSwapChain_Override, CreateSwapChain_Original,
                            CreateSwapChain_t);
 
-#if 1
     // DXGI 1.1+
     if (iver > 0) {
       DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory::EnumAdapters1",
                              EnumAdapters1_Override, EnumAdapters1_Original,
                              EnumAdapters1_t);
     }
-#endif
+
+    DXGI_EPILOG
 
     return ret;
   }
 
-  __declspec (dllexport)
+  __declspec (nothrow)
     HRESULT
     STDMETHODCALLTYPE CreateDXGIFactory1 (REFIID   riid,
                                     _Out_ void   **ppFactory)
   {
+    DXGI_PROLOG
+
 #ifdef HOOK_D3D11_DEVICE_CREATION
     BMF_InstallD3D11DeviceHooks ();
 #else
@@ -1046,6 +1059,7 @@ extern "C" {
     // Windows Vista does not have this function -- wrap it with CreateDXGIFactory
     if (CreateDXGIFactory1_Import == nullptr) {
       dll_log.Log (L"  >> Falling back to CreateDXGIFactory on Vista...\n");
+      DXGI_EPILOG
       return CreateDXGIFactory (riid, ppFactory);
     }
 
@@ -1059,24 +1073,26 @@ extern "C" {
                            CreateSwapChain_Override, CreateSwapChain_Original,
                            CreateSwapChain_t);
 
-#if 1
     // DXGI 1.1+
     if (iver > 0) {
       DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory1::EnumAdapters1",
                              EnumAdapters1_Override, EnumAdapters1_Original,
                              EnumAdapters1_t);
     }
-#endif
+
+    DXGI_EPILOG
 
     return ret;
   }
 
-  __declspec (dllexport)
+  __declspec (nothrow)
     HRESULT
     STDMETHODCALLTYPE CreateDXGIFactory2 (UINT     Flags,
                                           REFIID   riid,
                                     _Out_ void   **ppFactory)
   {
+    DXGI_PROLOG
+
 #ifdef HOOK_D3D11_DEVICE_CREATION
     BMF_InstallD3D11DeviceHooks ();
 #else
@@ -1092,6 +1108,7 @@ extern "C" {
     // Windows 7 does not have this function -- wrap it with CreateDXGIFactory1
     if (CreateDXGIFactory2_Import == nullptr) {
       dll_log.Log (L"  >> Falling back to CreateDXGIFactory1 on Vista/7...\n");
+      DXGI_EPILOG
       return CreateDXGIFactory1 (riid, ppFactory);
     }
 
@@ -1105,14 +1122,14 @@ extern "C" {
                            CreateSwapChain_Override, CreateSwapChain_Original,
                            CreateSwapChain_t);
 
-#if 1
     // DXGI 1.1+
     if (iver > 0) {
       DXGI_VIRTUAL_OVERRIDE (ppFactory, 12, "IDXGIFactory2::EnumAdapters1",
                              EnumAdapters1_Override, EnumAdapters1_Original,
                              EnumAdapters1_t);
     }
-#endif
+
+    DXGI_EPILOG
 
     return ret;
   }
@@ -1138,7 +1155,6 @@ extern "C" {
     (const void *pLayers, UINT NumLayers),
     (pLayers, NumLayers))
 
-  __declspec (dllexport)
   HRESULT
   STDMETHODCALLTYPE DXGIDumpJournal (void)
   {
@@ -1147,7 +1163,6 @@ extern "C" {
     return E_NOTIMPL;
   }
 
-  __declspec (dllexport)
   HRESULT
   STDMETHODCALLTYPE DXGIReportAdapterConfiguration (void)
   {
