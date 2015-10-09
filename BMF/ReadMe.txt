@@ -21,6 +21,15 @@
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
+ Some portions Copyright 2008 - 2013 Advanced Micro Devices, Inc.
+ 
+//
+//  Copyright (c) 2008 - 2013 Advanced Micro Devices, Inc.
+
+//  THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND,
+//  EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED
+//  WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.
+
  Some portions Copyright 2005-2010 NVIDIA Corporation.
 
   /***************************************************************************\
