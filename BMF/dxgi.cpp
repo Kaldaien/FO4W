@@ -162,61 +162,61 @@ extern "C" {
   }
 
 #define DXGI_CALL(_Ret, _Call) {                                      \
-  dll_log.LogEx (true, L"  Calling original function: ");            \
+  dll_log.LogEx (true, L"  Calling original function: ");             \
   (_Ret) = (_Call);                                                   \
-  dll_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret));\
+  dll_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret)); \
 }
 
   // Interface-based DXGI call
-#define dll_log_CALL_I(_Interface,_Name,_Format)                            \
+#define DXGI_LOG_CALL_I(_Interface,_Name,_Format)                           \
   dll_log.LogEx (true, L"[!] %s::%s (", _Interface, _Name);                 \
   dll_log.LogEx (false, _Format
   // Global DXGI call
-#define dll_log_CALL(_Name,_Format)                                         \
+#define DXGI_LOG_CALL(_Name,_Format)                                        \
   dll_log.LogEx (true, L"[!] %s (", _Name);                                 \
   dll_log.LogEx (false, _Format
-#define dll_log_CALL_END                                                    \
+#define DXGI_LOG_CALL_END                                                   \
   dll_log.LogEx (false, L") -- [Calling Thread: 0x%04x]\n",                 \
     GetCurrentThreadId ());
 
-#define dll_log_CALL_I0(_Interface,_Name) {                                 \
-  dll_log_CALL_I   (_Interface,_Name, L"void"));                            \
-  dll_log_CALL_END                                                          \
+#define DXGI_LOG_CALL_I0(_Interface,_Name) {                                 \
+  DXGI_LOG_CALL_I   (_Interface,_Name, L"void"));                            \
+  DXGI_LOG_CALL_END                                                          \
 }
 
-#define dll_log_CALL_I1(_Interface,_Name,_Format,_Args) {                   \
-  dll_log_CALL_I   (_Interface,_Name, _Format), _Args);                     \
-  dll_log_CALL_END                                                          \
+#define DXGI_LOG_CALL_I1(_Interface,_Name,_Format,_Args) {                   \
+  DXGI_LOG_CALL_I   (_Interface,_Name, _Format), _Args);                     \
+  DXGI_LOG_CALL_END                                                          \
 }
 
-#define dll_log_CALL_I2(_Interface,_Name,_Format,_Args0,_Args1) {           \
-  dll_log_CALL_I   (_Interface,_Name, _Format), _Args0, _Args1);            \
-  dll_log_CALL_END                                                          \
+#define DXGI_LOG_CALL_I2(_Interface,_Name,_Format,_Args0,_Args1) {           \
+  DXGI_LOG_CALL_I   (_Interface,_Name, _Format), _Args0, _Args1);            \
+  DXGI_LOG_CALL_END                                                          \
 }
 
-#define dll_log_CALL_I3(_Interface,_Name,_Format,_Args0,_Args1,_Args2) {    \
-  dll_log_CALL_I   (_Interface,_Name, _Format), _Args0, _Args1, _Args2);    \
-  dll_log_CALL_END                                                          \
+#define DXGI_LOG_CALL_I3(_Interface,_Name,_Format,_Args0,_Args1,_Args2) {    \
+  DXGI_LOG_CALL_I   (_Interface,_Name, _Format), _Args0, _Args1, _Args2);    \
+  DXGI_LOG_CALL_END                                                          \
 }
 
-#define dll_log_CALL_0(_Name) {                               \
-  dll_log_CALL   (_Name, L"void"));                           \
-  dll_log_CALL_END                                            \
+#define DXGI_LOG_CALL_0(_Name) {                               \
+  DXGI_LOG_CALL   (_Name, L"void"));                           \
+  DXGI_LOG_CALL_END                                            \
 }
 
-#define dll_log_CALL_1(_Name,_Format,_Args0) {                \
-  dll_log_CALL   (_Name, _Format), _Args0);                   \
-  dll_log_CALL_END                                            \
+#define DXGI_LOG_CALL_1(_Name,_Format,_Args0) {                \
+  DXGI_LOG_CALL   (_Name, _Format), _Args0);                   \
+  DXGI_LOG_CALL_END                                            \
 }
 
-#define dll_log_CALL_2(_Name,_Format,_Args0,_Args1) {         \
-  dll_log_CALL     (_Name, _Format), _Args0, _Args1);         \
-  dll_log_CALL_END                                            \
+#define DXGI_LOG_CALL_2(_Name,_Format,_Args0,_Args1) {         \
+  DXGI_LOG_CALL     (_Name, _Format), _Args0, _Args1);         \
+  DXGI_LOG_CALL_END                                            \
 }
 
-#define dll_log_CALL_3(_Name,_Format,_Args0,_Args1,_Args2) {  \
-  dll_log_CALL     (_Name, _Format), _Args0, _Args1, _Args2); \
-  dll_log_CALL_END                                            \
+#define DXGI_LOG_CALL_3(_Name,_Format,_Args0,_Args1,_Args2) {  \
+  DXGI_LOG_CALL     (_Name, _Format), _Args0, _Args1, _Args2); \
+  DXGI_LOG_CALL_END                                            \
 }
 
 #ifdef _WIN64
@@ -480,20 +480,20 @@ extern "C" {
                                                                               \
     VirtualProtect (&vftable [_Index], 8, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",\
-             L##_Name, vftable [_Index],                                      \
-             BMF_DescribeVirtualProtectFlags (dwProtect));                    \
+    dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",    \
+                 L##_Name, vftable [_Index],                                  \
+                 BMF_DescribeVirtualProtectFlags (dwProtect));                \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                  \
+    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
     VirtualProtect (&vftable [_Index], 8, dwProtect, &dwProtect);             \
                                                                               \
-    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n", \
+    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
                   L##_Name, vftable [_Index],                                 \
                   BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
@@ -507,20 +507,20 @@ extern "C" {
                                                                               \
     VirtualProtect (&vftable [_Index], 4, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)",\
-             L##_Name, vftable [_Index],                                      \
-             BMF_DescribeVirtualProtectFlags (dwProtect));                    \
+     dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",   \
+                  L##_Name, vftable [_Index],                                 \
+                  BMF_DescribeVirtualProtectFlags (dwProtect));               \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                  \
+    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
     VirtualProtect (&vftable [_Index], 4, dwProtect, &dwProtect);             \
                                                                               \
-    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n", \
+    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
                   L##_Name, vftable [_Index],                                 \
                   BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
@@ -528,13 +528,21 @@ extern "C" {
 #endif
 
   HRESULT
-  __cdecl PresentCallback (IDXGISwapChain *This,
-                           UINT            SyncInterval,
-                           UINT            Flags)
+    STDMETHODCALLTYPE PresentCallback (IDXGISwapChain *This,
+                                       UINT            SyncInterval,
+                                       UINT            Flags)
   {
     BMF_BeginBufferSwap ();
 
-    return BMF_EndBufferSwap (Present_Original (This, SyncInterval, Flags));
+    HRESULT hr = E_FAIL;
+
+    if (This != NULL) {
+     hr =
+      ((HRESULT (*)(IDXGISwapChain *, UINT, UINT))Present_Original)
+                   (This, SyncInterval, Flags);
+    }
+
+    return BMF_EndBufferSwap (hr);
   }
 
   HRESULT
@@ -545,14 +553,16 @@ extern "C" {
   {
     std::wstring iname = BMF_GetDXGIFactoryInterface (This);
 
-    dll_log_CALL_I3 (iname.c_str (), L"CreateSwapChain", L"%08Xh, %08Xh, %08Xh",
+    DXGI_LOG_CALL_I3 (iname.c_str (), L"CreateSwapChain", L"%08Xh, %08Xh, %08Xh",
                       pDevice, pDesc, ppSwapChain);
 
     HRESULT ret;
     DXGI_CALL(ret, CreateSwapChain_Original (This, pDevice, pDesc, ppSwapChain));
 
-    if (ppSwapChain != NULL && (*ppSwapChain) != NULL &&
-      Present_Original == nullptr)
+    if ( SUCCEEDED (ret)      &&
+         ppSwapChain  != NULL &&
+       (*ppSwapChain) != NULL &&
+         Present_Original == nullptr )
     {
       ID3D11Device *pDev;
 
@@ -584,6 +594,8 @@ extern "C" {
                                PresentCallback, Present_Original,
                                PresentSwapChain_t);
 
+        //SetHook ((*(void***)*ppSwapChain) [8], PresentCallback, pContext);
+
         budget_log.LogEx (false, L"Done\n");
 #endif
 
@@ -611,7 +623,7 @@ extern "C" {
    _Out_opt_                            D3D_FEATURE_LEVEL     *pFeatureLevel,
    _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
   {
-    dll_log_CALL_0 (L"D3D11CreateDeviceAndSwapChain");
+    DXGI_LOG_CALL_0 (L"D3D11CreateDeviceAndSwapChain");
 
     dll_log.LogEx (true, L" Preferred Feature Level(s): <%u> - ", FeatureLevels);
 
@@ -709,7 +721,7 @@ extern "C" {
   {
     std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
-    dll_log_CALL_I2 (iname.c_str (), L"GetDesc2", L"%08Xh, %08Xh", This, pDesc);
+    DXGI_LOG_CALL_I2 (iname.c_str (), L"GetDesc2", L"%08Xh, %08Xh", This, pDesc);
 
     HRESULT ret;
     DXGI_CALL (ret, GetDesc2_Original (This, pDesc));
@@ -742,7 +754,7 @@ extern "C" {
   {
     std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
-    dll_log_CALL_I2 (iname.c_str (), L"GetDesc1", L"%08Xh, %08Xh", This, pDesc);
+    DXGI_LOG_CALL_I2 (iname.c_str (), L"GetDesc1", L"%08Xh, %08Xh", This, pDesc);
 
     HRESULT ret;
     DXGI_CALL (ret, GetDesc1_Original (This, pDesc));
@@ -775,7 +787,7 @@ extern "C" {
   {
     std::wstring iname = BMF_GetDXGIAdapterInterface (This);
 
-    dll_log_CALL_I2 (iname.c_str (), L"GetDesc",L"%08Xh, %08Xh", This, pDesc);
+    DXGI_LOG_CALL_I2 (iname.c_str (), L"GetDesc",L"%08Xh, %08Xh", This, pDesc);
 
     HRESULT ret;
     DXGI_CALL (ret, GetDesc_Original (This, pDesc));
@@ -875,51 +887,123 @@ extern "C" {
   HRESULT
   STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
                                          UINT                Adapter,
-                                  _Out_  IDXGIAdapter      **ppAdapter,
-                                         DXGI_ADAPTER_DESC  *pDesc,
+                                _Inout_  IDXGIAdapter      **ppAdapter,
                                          EnumAdapters_t      pFunc)
   {
+    DXGI_ADAPTER_DESC desc;
+
+    bool silent = dll_log.silent;
+    dll_log.silent = true;
+    {
+      // Don't log this call
+      (*ppAdapter)->GetDesc (&desc);
+    }
+    dll_log.silent = false;
+
+    int iver = BMF_GetDXGIAdapterInterfaceVer (*ppAdapter);
+
+    // Only do this for NVIDIA SLI GPUs on Windows 10 (DXGI 1.4)
+    if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0 && iver >= 3) {
+      if (! GetDesc_Original) {
+        DXGI_VIRTUAL_OVERRIDE (ppAdapter, 8, "(*ppAdapter)->GetDesc",
+          GetDesc_Override, GetDesc_Original, GetDesc_t);
+      }
+
+      if (! GetDesc1_Original) {
+        IDXGIAdapter1* pAdapter1;
+        (*ppAdapter)->QueryInterface (__uuidof (IDXGIAdapter1), (void **)&pAdapter1);
+
+        DXGI_VIRTUAL_OVERRIDE (&pAdapter1, 10, "(pAdapter1)->GetDesc1",
+          GetDesc1_Override, GetDesc1_Original, GetDesc1_t);
+
+        (pAdapter1)->Release ();
+      }
+
+      if (! GetDesc2_Original) {
+        IDXGIAdapter2* pAdapter2;
+        (*ppAdapter)->QueryInterface (__uuidof (IDXGIAdapter2), (void **)&pAdapter2);
+
+        DXGI_VIRTUAL_OVERRIDE (ppAdapter, 11, "(*pAdapter2)->GetDesc2",
+          GetDesc2_Override, GetDesc2_Original, GetDesc2_t);
+
+        (pAdapter2)->Release ();
+      }
+    }
+
     // Logic to skip Intel and Microsoft adapters and return only AMD / NV
     //if (lstrlenW (pDesc->Description)) {
     if (true) {
-      if (! lstrlenW (pDesc->Description))
+      if (! lstrlenW (desc.Description))
         dll_log.LogEx (false, L" >> Assertion filed: Zero-length adapter name!\n");
 
-      if (pDesc->VendorId == Microsoft || pDesc->VendorId == Intel) {
+      if ((desc.VendorId == Microsoft || desc.VendorId == Intel) && Adapter == 0) {
         // We need to release the reference we were just handed before
         //   skipping it.
         (*ppAdapter)->Release ();
 
         dll_log.LogEx (false,
-          L" >> (Host Application Tried To Enum Intel or Microsoft Adapter)"
-          L" -- Skipping Adapter %lu <<\n\n", Adapter);
+          L" >> (Host Application Tried To Enum Intel or Microsoft Adapter "
+          L"as Adapter 0) -- Skipping Adapter '%s' <<\n\n", desc.Description);
 
         return (pFunc (This, Adapter + 1, ppAdapter));
       }
       else {
-        if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
+        // Only do this for NVIDIA SLI GPUs on Windows 10 (DXGI 1.4)
+        if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0 && iver >= 3) {
           DXGI_ADAPTER_DESC* match =
-            bmf::NVAPI::FindGPUByDXGIName (pDesc->Description);
+            bmf::NVAPI::FindGPUByDXGIName (desc.Description);
 
           if (match != NULL &&
-            pDesc->DedicatedVideoMemory > match->DedicatedVideoMemory) {
+            desc.DedicatedVideoMemory > match->DedicatedVideoMemory) {
 // This creates problems in 32-bit environments...
-#ifndef _WIN32
+#ifdef _WIN64
             dll_log.Log (
               L"   # SLI Detected (Corrected Memory Total: %llu MiB -- "
               L"Original: %llu MiB)",
               match->DedicatedVideoMemory >> 20ULL,
-              pDesc->DedicatedVideoMemory >> 20ULL);
+              desc.DedicatedVideoMemory   >> 20ULL);
 #endif
           }
         }
 
-        BMF_StartDXGI_1_4_BudgetThread (ppAdapter);
+        // IDXGIAdapter3 = DXGI 1.4 (Windows 10+)
+        if (iver >= 3)
+          BMF_StartDXGI_1_4_BudgetThread (ppAdapter);
 
         dll_log.LogEx (false, L"\n");
       }
 
-      dll_log.Log(L"   @ Returning Adapter w/ Name: %s\n",pDesc->Description);
+      dll_log.LogEx(true,L"   @ Returning Adapter %lu: '%s' (LUID: %08X:%08X)",
+        Adapter,
+          desc.Description,
+            desc.AdapterLuid.HighPart,
+              desc.AdapterLuid.LowPart );
+
+      //
+      // Windows 8 has a software implementation, which we can detect.
+      //
+      IDXGIAdapter1* pAdapter1;
+      HRESULT hr =
+        (*ppAdapter)->QueryInterface (
+          __uuidof (IDXGIAdapter1), (void **)&pAdapter1
+        );
+
+      if (SUCCEEDED (hr)) {
+        DXGI_ADAPTER_DESC1 desc1;
+        if (SUCCEEDED (pAdapter1->GetDesc1 (&desc1))) {
+#define DXGI_ADAPTER_FLAG_REMOTE   0x1
+#define DXGI_ADAPTER_FLAG_SOFTWARE 0x2
+          if (desc1.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+            dll_log.LogEx (false, L" <Software>");
+          else
+            dll_log.LogEx (false, L" <Hardware>");
+          if (desc1.Flags & DXGI_ADAPTER_FLAG_REMOTE)
+            dll_log.LogEx (false, L" [Remote]");
+        }
+        pAdapter1->Release ();
+      }
+
+      dll_log.LogEx (false, L"\n\n");
     }
 
     return S_OK;
@@ -930,30 +1014,16 @@ extern "C" {
                                             UINT            Adapter,
                                      _Out_  IDXGIAdapter1 **ppAdapter)
   {
-    std::wstring iname = BMF_GetDXGIFactoryInterface (This);
+    std::wstring iname = BMF_GetDXGIFactoryInterface    (This);
 
-    dll_log_CALL_I3 (iname.c_str (), L"EnumAdapters1", L"%08Xh, %u, %08Xh",
+    DXGI_LOG_CALL_I3 (iname.c_str (), L"EnumAdapters1", L"%08Xh, %u, %08Xh",
       This, Adapter, ppAdapter);
 
     HRESULT ret;
     DXGI_CALL (ret, EnumAdapters1_Original (This,Adapter,ppAdapter));
 
-    if (SUCCEEDED (ret)) {
-      if (! GetDesc1_Original) {
-        // Only do this for NVIDIA GPUs
-        if (nvapi_init) {
-          DXGI_VIRTUAL_OVERRIDE (ppAdapter, 10, "(*ppAdapter)->GetDesc1",
-                                 GetDesc1_Override, GetDesc1_Original, GetDesc1_t);
-        } else {
-          GetDesc1_Original = (GetDesc1_t)(*(void ***)*ppAdapter) [10];
-        }
-      }
-
-      DXGI_ADAPTER_DESC1 desc;
-      GetDesc1_Original ((*ppAdapter), &desc);
-
+    if (SUCCEEDED (ret) && ppAdapter != nullptr && (*ppAdapter) != nullptr) {
       return EnumAdapters_Common (This, Adapter, (IDXGIAdapter **)ppAdapter,
-                                  (DXGI_ADAPTER_DESC *)&desc,
                                   (EnumAdapters_t)EnumAdapters1_Override);
     }
 
@@ -965,30 +1035,16 @@ extern "C" {
                                            UINT           Adapter,
                                     _Out_  IDXGIAdapter **ppAdapter)
   {
-    std::wstring iname = BMF_GetDXGIFactoryInterface (This);
+    std::wstring iname = BMF_GetDXGIFactoryInterface    (This);
 
-    dll_log_CALL_I3 (iname.c_str (), L"EnumAdapters", L"%08Xh, %u, %08Xh",
+    DXGI_LOG_CALL_I3 (iname.c_str (), L"EnumAdapters", L"%08Xh, %u, %08Xh",
       This, Adapter, ppAdapter);
 
     HRESULT ret;
     DXGI_CALL (ret, EnumAdapters_Original (This, Adapter, ppAdapter));
 
-    if (SUCCEEDED (ret)) {
-      if (! GetDesc_Original) {
-        // Only do this for NVIDIA GPUs
-        if (nvapi_init) {
-          DXGI_VIRTUAL_OVERRIDE (ppAdapter, 8, "(*ppAdapter)->GetDesc",
-                                 GetDesc_Override, GetDesc_Original, GetDesc_t);
-        } else {
-          GetDesc_Original = (GetDesc_t)(*(void ***)*ppAdapter) [8];
-        }
-      }
-
-      DXGI_ADAPTER_DESC desc;
-      GetDesc_Original ((*ppAdapter), &desc);
-
+    if (SUCCEEDED (ret) && ppAdapter != nullptr && (*ppAdapter) != nullptr) {
       return EnumAdapters_Common (This, Adapter, ppAdapter,
-                                  &desc,
                                   (EnumAdapters_t)EnumAdapters_Override);
     }
 
@@ -1011,7 +1067,7 @@ extern "C" {
     std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
     int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
 
-    dll_log_CALL_2 (L"CreateDXGIFactory", L"%s, %08Xh",
+    DXGI_LOG_CALL_2 (L"CreateDXGIFactory", L"%s, %08Xh",
       iname.c_str (), ppFactory);
 
     HRESULT ret;
@@ -1053,7 +1109,7 @@ extern "C" {
     std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
     int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
 
-    dll_log_CALL_2 (L"CreateDXGIFactory1", L"%s, %08Xh",
+    DXGI_LOG_CALL_2 (L"CreateDXGIFactory1", L"%s, %08Xh",
       iname.c_str (), ppFactory);
 
     // Windows Vista does not have this function -- wrap it with CreateDXGIFactory
@@ -1102,7 +1158,7 @@ extern "C" {
     std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
     int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
 
-    dll_log_CALL_3 (L"CreateDXGIFactory2", L"0x%04X, %s, %08Xh",
+    DXGI_LOG_CALL_3 (L"CreateDXGIFactory2", L"0x%04X, %s, %08Xh",
       Flags, iname.c_str (), ppFactory);
 
     // Windows 7 does not have this function -- wrap it with CreateDXGIFactory1
@@ -1158,7 +1214,7 @@ extern "C" {
   HRESULT
   STDMETHODCALLTYPE DXGIDumpJournal (void)
   {
-    dll_log_CALL_0 (L"DXGIDumpJournal");
+    DXGI_LOG_CALL_0 (L"DXGIDumpJournal");
 
     return E_NOTIMPL;
   }
@@ -1166,7 +1222,7 @@ extern "C" {
   HRESULT
   STDMETHODCALLTYPE DXGIReportAdapterConfiguration (void)
   {
-    dll_log_CALL_0 (L"DXGIReportAdapterConfiguration");
+    DXGI_LOG_CALL_0 (L"DXGIReportAdapterConfiguration");
 
     return E_NOTIMPL;
   }

@@ -288,7 +288,14 @@ BMF_StartDXGI_1_4_BudgetThread (IDXGIAdapter** ppAdapter)
       L" Pre-Emptive");
 
     DXGI_ADAPTER_DESC2 desc2;
-    pAdapter3->GetDesc2 (&desc2);
+
+    bool silent    = dll_log.silent;
+    dll_log.silent = true;
+    {
+      // Don't log this call, because that would be silly...
+      pAdapter3->GetDesc2 (&desc2);
+    }
+    dll_log.silent = silent;
 
     switch (desc2.GraphicsPreemptionGranularity)
     {
@@ -1213,189 +1220,191 @@ BMF_EndBufferSwap (HRESULT hr, IDXGISwapChain* swapchain)
   // Draw after present, this may make stuff 1 frame late, but... it
   //   helps with VSYNC performance.
 
+  // Treat resize and obscured statuses as failures; DXGI does not, but
+  //  we should not draw the OSD when these events happen.
+  if (/*FAILED (hr)*/ hr != S_OK)
+    return hr;
+
   // Early-out if the OSD is not functional
   if (! BMF_DrawOSD ())
     return hr;
 
-  if (FAILED (hr))
-    return hr;
+  static ULONGLONG last_osd_scale { 0ULL };
 
-    static ULONGLONG last_osd_scale { 0ULL };
+  SYSTEMTIME    stNow;
+  FILETIME      ftNow;
+  LARGE_INTEGER ullNow;
 
-    SYSTEMTIME    stNow;
-    FILETIME      ftNow;
-    LARGE_INTEGER ullNow;
+  GetSystemTime        (&stNow);
+  SystemTimeToFileTime (&stNow, &ftNow);
 
-    GetSystemTime        (&stNow);
-    SystemTimeToFileTime (&stNow, &ftNow);
+  ullNow.HighPart = ftNow.dwHighDateTime;
+  ullNow.LowPart  = ftNow.dwLowDateTime;
 
-    ullNow.HighPart = ftNow.dwHighDateTime;
-    ullNow.LowPart  = ftNow.dwLowDateTime;
+  if (ullNow.QuadPart - last_osd_scale > 1000000ULL) {
+    if (HIWORD (GetAsyncKeyState (config.osd.keys.expand [0])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.expand [1])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.expand [2])))
+    {
+      last_osd_scale = ullNow.QuadPart;
+      BMF_ResizeOSD (+1);
+    }
 
-    if (ullNow.QuadPart - last_osd_scale > 1000000ULL) {
-      if (HIWORD (GetAsyncKeyState (config.osd.keys.expand [0])) &&
-          HIWORD (GetAsyncKeyState (config.osd.keys.expand [1])) &&
-          HIWORD (GetAsyncKeyState (config.osd.keys.expand [2])))
+    if (HIWORD (GetAsyncKeyState (config.osd.keys.shrink [0])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.shrink [1])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.shrink [2])))
+    {
+      last_osd_scale = ullNow.QuadPart;
+      BMF_ResizeOSD (-1);
+    }
+  }
+
+  static bool toggle_time = false;
+  if (HIWORD (GetAsyncKeyState (config.time.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.time.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.time.keys.toggle [2])))
+  {
+    if (! toggle_time)
+      config.time.show = (! config.time.show);
+    toggle_time = true;
+  } else {
+    toggle_time = false;
+  }
+
+  static bool toggle_mem = false;
+  if (HIWORD (GetAsyncKeyState (config.mem.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.mem.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.mem.keys.toggle [2])))
+  {
+    if (! toggle_mem)
+      config.mem.show = (! config.mem.show);
+    toggle_mem = true;
+  } else {
+    toggle_mem = false;
+  }
+
+  static bool toggle_balance = false;
+  if (HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [2])))
+  {
+    if (! toggle_balance)
+      config.load_balance.use = (! config.load_balance.use);
+    toggle_balance = true;
+  } else {
+    toggle_balance = false;
+  }
+
+  static bool toggle_sli = false;
+  if (HIWORD (GetAsyncKeyState (config.sli.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.sli.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.sli.keys.toggle [2])))
+  {
+    if (! toggle_sli)
+      config.sli.show = (! config.sli.show);
+    toggle_sli = true;
+  } else {
+    toggle_sli = false;
+  }
+
+  static bool toggle_io = false;
+  if (HIWORD (GetAsyncKeyState (config.io.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.io.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.io.keys.toggle [2])))
+  {
+    if (! toggle_io)
+      config.io.show = (! config.io.show);
+    toggle_io = true;
+  } else {
+    toggle_io = false;
+  }
+
+  static bool toggle_cpu = false;
+  if (HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [2])))
+  {
+    if (! toggle_cpu)
+      config.cpu.show = (! config.cpu.show);
+    toggle_cpu = true;
+  } else {
+    toggle_cpu = false;
+  }
+
+  static bool toggle_gpu = false;
+  if (HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [2])))
+  {
+    if (! toggle_gpu)
+      config.gpu.show = (! config.gpu.show);
+    toggle_gpu = true;
+  } else {
+    toggle_gpu = false;
+  }
+
+  static bool toggle_fps = false;
+  if (HIWORD (GetAsyncKeyState (config.fps.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.fps.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.fps.keys.toggle [2])))
+  {
+    if (! toggle_fps)
+      config.fps.show = (! config.fps.show);
+    toggle_fps = true;
+  } else {
+    toggle_fps = false;
+  }
+
+  static bool toggle_disk = false;
+  if (HIWORD (GetAsyncKeyState (config.disk.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.disk.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.disk.keys.toggle [2])))
+  {
+    if (! toggle_disk)
+      config.disk.show = (! config.disk.show);
+    toggle_disk = true;
+  } else {
+    toggle_disk = false;
+  }
+
+  static bool toggle_pagefile = false;
+  if (HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [2])))
+  {
+    if (! toggle_pagefile)
+      config.pagefile.show = (! config.pagefile.show);
+    toggle_pagefile = true;
+  } else {
+    toggle_pagefile = false;
+  }
+
+  static bool toggle_osd = false;
+  if (HIWORD (GetAsyncKeyState (config.osd.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.osd.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.osd.keys.toggle [2])))
+  {
+    if (! toggle_osd)
+      config.osd.show = (! config.osd.show);
+    toggle_osd = true;
+  } else {
+    toggle_osd = false;
+  }
+
+  if (config.sli.show && swapchain != nullptr)
+  {
+    // Get SLI status for the frame we just displayed... this will show up
+    //   one frame late, but this is the safest approach.
+    if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
+      IUnknown* pDev = nullptr;
+
+      if (SUCCEEDED (swapchain->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
       {
-        last_osd_scale = ullNow.QuadPart;
-        BMF_ResizeOSD (+1);
-      }
-
-      if (HIWORD (GetAsyncKeyState (config.osd.keys.shrink [0])) &&
-          HIWORD (GetAsyncKeyState (config.osd.keys.shrink [1])) &&
-          HIWORD (GetAsyncKeyState (config.osd.keys.shrink [2])))
-      {
-        last_osd_scale = ullNow.QuadPart;
-        BMF_ResizeOSD (-1);
+        sli_state = bmf::NVAPI::GetSLIState (pDev);
+        pDev->Release ();
       }
     }
-
-    static bool toggle_time = false;
-    if (HIWORD (GetAsyncKeyState (config.time.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.time.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.time.keys.toggle [2])))
-    {
-      if (! toggle_time)
-        config.time.show = (! config.time.show);
-      toggle_time = true;
-    } else {
-      toggle_time = false;
-    }
-
-    static bool toggle_mem = false;
-    if (HIWORD (GetAsyncKeyState (config.mem.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.mem.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.mem.keys.toggle [2])))
-    {
-      if (! toggle_mem)
-        config.mem.show = (! config.mem.show);
-      toggle_mem = true;
-    } else {
-      toggle_mem = false;
-    }
-
-    static bool toggle_balance = false;
-    if (HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [2])))
-    {
-      if (! toggle_balance)
-        config.load_balance.use = (! config.load_balance.use);
-      toggle_balance = true;
-    } else {
-      toggle_balance = false;
-    }
-
-    static bool toggle_sli = false;
-    if (HIWORD (GetAsyncKeyState (config.sli.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.sli.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.sli.keys.toggle [2])))
-    {
-      if (! toggle_sli)
-        config.sli.show = (! config.sli.show);
-      toggle_sli = true;
-    } else {
-      toggle_sli = false;
-    }
-
-    static bool toggle_io = false;
-    if (HIWORD (GetAsyncKeyState (config.io.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.io.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.io.keys.toggle [2])))
-    {
-      if (! toggle_io)
-        config.io.show = (! config.io.show);
-      toggle_io = true;
-    } else {
-      toggle_io = false;
-    }
-
-    static bool toggle_cpu = false;
-    if (HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [2])))
-    {
-      if (! toggle_cpu)
-        config.cpu.show = (! config.cpu.show);
-      toggle_cpu = true;
-    } else {
-      toggle_cpu = false;
-    }
-
-    static bool toggle_gpu = false;
-    if (HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [2])))
-    {
-      if (! toggle_gpu)
-        config.gpu.show = (! config.gpu.show);
-      toggle_gpu = true;
-    } else {
-      toggle_gpu = false;
-    }
-
-    static bool toggle_fps = false;
-    if (HIWORD (GetAsyncKeyState (config.fps.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.fps.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.fps.keys.toggle [2])))
-    {
-      if (! toggle_fps)
-        config.fps.show = (! config.fps.show);
-      toggle_fps = true;
-    } else {
-      toggle_fps = false;
-    }
-
-    static bool toggle_disk = false;
-    if (HIWORD (GetAsyncKeyState (config.disk.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.disk.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.disk.keys.toggle [2])))
-    {
-      if (! toggle_disk)
-        config.disk.show = (! config.disk.show);
-      toggle_disk = true;
-    } else {
-      toggle_disk = false;
-    }
-
-    static bool toggle_pagefile = false;
-    if (HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [2])))
-    {
-      if (! toggle_pagefile)
-        config.pagefile.show = (! config.pagefile.show);
-      toggle_pagefile = true;
-    } else {
-      toggle_pagefile = false;
-    }
-
-    static bool toggle_osd = false;
-    if (HIWORD (GetAsyncKeyState (config.osd.keys.toggle [0])) &&
-        HIWORD (GetAsyncKeyState (config.osd.keys.toggle [1])) &&
-        HIWORD (GetAsyncKeyState (config.osd.keys.toggle [2])))
-    {
-      if (! toggle_osd)
-        config.osd.show = (! config.osd.show);
-      toggle_osd = true;
-    } else {
-      toggle_osd = false;
-    }
-
-    if (config.sli.show && swapchain != nullptr)
-    {
-      // Get SLI status for the frame we just displayed... this will show up
-      //   one frame late, but this is the safest approach.
-      if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
-        IUnknown* pDev = nullptr;
-
-        if (SUCCEEDED (swapchain->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
-        {
-          sli_state = bmf::NVAPI::GetSLIState (pDev);
-          pDev->Release ();
-        }
-      }
-    }
+  }
 
   return hr;
 }

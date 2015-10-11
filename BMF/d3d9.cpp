@@ -510,14 +510,14 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
                                                                               \
     VirtualProtect (&vftable [_Index], 8, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)", \
-             L##_Name, vftable [_Index],                                      \
-             BMF_DescribeVirtualProtectFlags (dwProtect));                    \
+    dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",    \
+                 L##_Name, vftable [_Index],                                  \
+                 BMF_DescribeVirtualProtectFlags (dwProtect));                \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                   \
+    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
@@ -537,9 +537,9 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
                                                                               \
     VirtualProtect (&vftable [_Index], 4, PAGE_EXECUTE_READWRITE, &dwProtect);\
                                                                               \
-  dll_log.Log (L" Original VFTable entry for %s: %08Xh  (Memory Policy: %s)", \
-             L##_Name, vftable [_Index],                                      \
-             BMF_DescribeVirtualProtectFlags (dwProtect));                    \
+    dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",    \
+                 L##_Name, vftable [_Index],                                  \
+                 BMF_DescribeVirtualProtectFlags (dwProtect));                \
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
@@ -611,7 +611,8 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
 
   IDXGIFactory* factory;
 
-  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory), &factory))) {
+  // Only spawn the DXGI 1.4 budget thread if ... DXGI 1.4 is implemented.
+  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory))) {
     IDXGIAdapter* adapter;
     factory->EnumAdapters (0, &adapter);
 

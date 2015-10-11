@@ -873,32 +873,8 @@ BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
 void
 BMF_ReleaseOSD (void)
 {
-  LPVOID pMapAddr =
-    BMF_GetSharedMemory ();
-
+  BMF_UpdateOSD ("");
   osd_shutting_down = true;
-
-  LPRTSS_SHARED_MEMORY pMem     =
-    (LPRTSS_SHARED_MEMORY)pMapAddr;
-
-  if (pMem)
-  {
-    for (DWORD dwEntry = 1; dwEntry < pMem->dwOSDArrSize; dwEntry++)
-    {
-      RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY pEntry =
-          (RTSS_SHARED_MEMORY::LPRTSS_SHARED_MEMORY_OSD_ENTRY)
-            ((LPBYTE)pMem + pMem->dwOSDArrOffset +
-                  dwEntry * pMem->dwOSDEntrySize);
-
-      if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
-      {
-        memset (pEntry, 0, pMem->dwOSDEntrySize);
-        pMem->dwOSDFrame++;
-      }
-    }
-
-    BMF_ReleaseSharedMemory (pMapAddr);
-  }
 }
 
 
