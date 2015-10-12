@@ -542,7 +542,7 @@ extern "C" {
                    (This, SyncInterval, Flags);
     }
 
-    return BMF_EndBufferSwap (hr, This);
+    return BMF_EndBufferSwap (hr);
   }
 
   HRESULT

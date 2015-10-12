@@ -282,6 +282,10 @@ BMF_FormatTemperature (int32_t in_temp, BMF_UNITS in_unit, BMF_UNITS out_unit)
   return wszOut;
 }
 
+
+#include <dwmapi.h>
+#pragma comment (lib, "dwmapi.lib")
+
 BOOL
 BMF_DrawOSD (void)
 {
@@ -296,6 +300,9 @@ BMF_DrawOSD (void)
   }
 
   if (! osd_init) {
+    DwmEnableComposition (DWM_EC_ENABLECOMPOSITION);
+    DwmEnableMMCSS       (TRUE);
+
     osd_init = true;
 
     extern bmf_logger_t dll_log;
