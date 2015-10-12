@@ -100,7 +100,7 @@ extern "C" {
   struct IDXGISwapChain;
 
   void    BMF_BeginBufferSwap (void);
-  HRESULT BMF_EndBufferSwap   (HRESULT hr,IDXGISwapChain* swapchain = nullptr);
+  HRESULT BMF_EndBufferSwap   (HRESULT hr, IUnknown* device = nullptr);
 
   struct IDXGIAdapter;
   void BMF_StartDXGI_1_4_BudgetThread (IDXGIAdapter** ppAdapter);

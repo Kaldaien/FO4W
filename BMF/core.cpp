@@ -1215,7 +1215,7 @@ BMF_BeginBufferSwap (void)
 }
 
 HRESULT
-BMF_EndBufferSwap (HRESULT hr, IDXGISwapChain* swapchain)
+BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
 {
   // Draw after present, this may make stuff 1 frame late, but... it
   //   helps with VSYNC performance.
@@ -1391,18 +1391,12 @@ BMF_EndBufferSwap (HRESULT hr, IDXGISwapChain* swapchain)
     toggle_osd = false;
   }
 
-  if (config.sli.show && swapchain != nullptr)
+  if (config.sli.show && device != nullptr)
   {
     // Get SLI status for the frame we just displayed... this will show up
     //   one frame late, but this is the safest approach.
     if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0) {
-      IUnknown* pDev = nullptr;
-
-      if (SUCCEEDED (swapchain->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
-      {
-        sli_state = bmf::NVAPI::GetSLIState (pDev);
-        pDev->Release ();
-      }
+      sli_state = bmf::NVAPI::GetSLIState (device);
     }
   }
 

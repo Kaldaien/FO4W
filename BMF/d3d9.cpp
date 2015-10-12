@@ -177,7 +177,8 @@ __stdcall D3D9PresentCallback (IDirect3DDevice9 *This,
                                                   pSourceRect,
                                                   pDestRect,
                                                   hDestWindowOverride,
-                                                  pDirtyRegion));
+                                                  pDirtyRegion),
+                            (IUnknown *)This);
 }
 
 COM_DECLSPEC_NOTHROW
@@ -196,7 +197,8 @@ __stdcall D3D9PresentCallbackEx (IDirect3DDevice9Ex *This,
                                                     pDestRect,
                                                     hDestWindowOverride,
                                                     pDirtyRegion,
-                                                    dwFlags));
+                                                    dwFlags),
+                            (IUnknown *)This);
 }
 }
 
@@ -348,6 +350,9 @@ D3DPERF_EndEvent (void)
     }
   }
 
+  //
+  // TODO: For the SLI meter, how the heck do we get a device from this?
+  //
   BMF_EndBufferSwap (S_OK);
 
   return _default_impl ();
@@ -375,6 +380,29 @@ extern "C" {
                              _In_       DWORD             dwFlags)
   {
     BMF_BeginBufferSwap ();
+
+    //
+    // Get the Device Pointer so we can check the SLI state through NvAPI
+    //
+    IDirect3DDevice9* dev;
+    typedef HRESULT (__stdcall *GetDevice_t)
+                (IDirect3DSwapChain9*,IDirect3DDevice9**);
+
+    // Silly to do it this way, but... we can't include d3d9.h
+    void** vtable = *(void ***)This;
+    GetDevice_t GetDevice = (GetDevice_t)vtable [8];
+
+    if (SUCCEEDED (GetDevice (This, &dev))) {
+      HRESULT ret = BMF_EndBufferSwap (D3D9PresentSwap_Original (This,
+                                                                 pSourceRect,
+                                                                 pDestRect,
+                                                                 hDestWindowOverride,
+                                                                 pDirtyRegion,
+                                                                 dwFlags),
+                                       (IUnknown *)dev);
+      ((IUnknown *)dev)->Release ();
+      return ret;
+    }
 
     return BMF_EndBufferSwap (D3D9PresentSwap_Original (This,
                                                         pSourceRect,
@@ -517,9 +545,9 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
                                                pFullscreenDisplayMode,
                                                ppReturnedDeviceInterface));
 
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
-                         "IDirect3DDevice9Ex::Reset", D3D9Reset,
-                         D3D9Reset_Original, D3D9Reset_t);
+  //D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
+                         //"IDirect3DDevice9Ex::Reset", D3D9Reset,
+                         //D3D9Reset_Original, D3D9Reset_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
                          "IDirect3DDevice9Ex::Present", D3D9PresentCallback,
@@ -611,9 +639,9 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                                              pPresentationParameters,
                                              ppReturnedDeviceInterface));
 
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
-                         "IDirect3DDevice9::Reset", D3D9Reset,
-                         D3D9Reset_Original, D3D9Reset_t);
+  //D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
+                         //"IDirect3DDevice9::Reset", D3D9Reset,
+                         //D3D9Reset_Original, D3D9Reset_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
                          "IDirect3DDevice9::Present", D3D9PresentCallback,

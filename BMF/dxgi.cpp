@@ -219,18 +219,6 @@ extern "C" {
   DXGI_LOG_CALL_END                                            \
 }
 
-#ifdef _WIN64
-# define DXGI_PROLOG
-#else
-# define DXGI_PROLOG _asm PUSHAD;
-#endif
-
-#ifdef _WIN64
-# define DXGI_EPILOG
-#else
-# define DXGI_EPILOG _asm POPAD;
-#endif
-
 #define DXGI_STUB(_Return, _Name, _Proto, _Args)                          \
   __declspec (nothrow) _Return STDMETHODCALLTYPE                          \
   _Name _Proto {                                                          \
@@ -471,14 +459,16 @@ extern "C" {
     }
   }
 
-#ifdef _WIN64
+#define __PTR_SIZE   sizeof LPCVOID
+#define __PAGE_PRIVS PAGE_EXECUTE_READWRITE
+
 #define DXGI_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type) { \
   void** vftable = *(void***)*_Base;                                          \
                                                                               \
   if (vftable [_Index] != _Override) {                                        \
     DWORD dwProtect;                                                          \
                                                                               \
-    VirtualProtect (&vftable [_Index], 8, PAGE_EXECUTE_READWRITE, &dwProtect);\
+    VirtualProtect (&vftable [_Index], __PTR_SIZE, __PAGE_PRIVS, &dwProtect); \
                                                                               \
     dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",    \
                  L##_Name, vftable [_Index],                                  \
@@ -491,41 +481,13 @@ extern "C" {
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
-    VirtualProtect (&vftable [_Index], 8, dwProtect, &dwProtect);             \
+    VirtualProtect (&vftable [_Index], __PTR_SIZE, dwProtect, &dwProtect);    \
                                                                               \
     dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
                   L##_Name, vftable [_Index],                                 \
                   BMF_DescribeVirtualProtectFlags (dwProtect));               \
   }                                                                           \
 }
-#else
-#define DXGI_VIRTUAL_OVERRIDE(_Base,_Index,_Name,_Override,_Original,_Type) { \
-  void** vftable = *(void***)*_Base;                                          \
-                                                                              \
-  if (vftable [_Index] != _Override) {                                        \
-    DWORD dwProtect;                                                          \
-                                                                              \
-    VirtualProtect (&vftable [_Index], 4, PAGE_EXECUTE_READWRITE, &dwProtect);\
-                                                                              \
-     dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",   \
-                  L##_Name, vftable [_Index],                                 \
-                  BMF_DescribeVirtualProtectFlags (dwProtect));               \
-                                                                              \
-    if (_Original == NULL)                                                    \
-      _Original = (##_Type)vftable [_Index];                                  \
-                                                                              \
-    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
-                                                                              \
-    vftable [_Index] = _Override;                                             \
-                                                                              \
-    VirtualProtect (&vftable [_Index], 4, dwProtect, &dwProtect);             \
-                                                                              \
-    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
-                  L##_Name, vftable [_Index],                                 \
-                  BMF_DescribeVirtualProtectFlags (dwProtect));               \
-  }                                                                           \
-}
-#endif
 
   HRESULT
     STDMETHODCALLTYPE PresentCallback (IDXGISwapChain *This,
@@ -542,6 +504,16 @@ extern "C" {
                    (This, SyncInterval, Flags);
     }
 
+    IUnknown* pDev = nullptr;
+
+    if (SUCCEEDED (This->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
+    {
+      HRESULT ret = BMF_EndBufferSwap (hr, pDev);
+      pDev->Release ();
+      return ret;
+    }
+
+    // Not a D3D11 device -- weird...
     return BMF_EndBufferSwap (hr);
   }
 
@@ -1056,8 +1028,6 @@ extern "C" {
     STDMETHODCALLTYPE CreateDXGIFactory (REFIID   riid,
                                    _Out_ void   **ppFactory)
   {
-    DXGI_PROLOG
-
 #ifdef HOOK_D3D11_DEVICE_CREATION
     //BMF_InstallD3D11DeviceHooks ();
 #else
@@ -1088,8 +1058,6 @@ extern "C" {
                              EnumAdapters1_t);
     }
 
-    DXGI_EPILOG
-
     return ret;
   }
 
@@ -1098,8 +1066,6 @@ extern "C" {
     STDMETHODCALLTYPE CreateDXGIFactory1 (REFIID   riid,
                                     _Out_ void   **ppFactory)
   {
-    DXGI_PROLOG
-
 #ifdef HOOK_D3D11_DEVICE_CREATION
     BMF_InstallD3D11DeviceHooks ();
 #else
@@ -1115,7 +1081,6 @@ extern "C" {
     // Windows Vista does not have this function -- wrap it with CreateDXGIFactory
     if (CreateDXGIFactory1_Import == nullptr) {
       dll_log.Log (L"  >> Falling back to CreateDXGIFactory on Vista...\n");
-      DXGI_EPILOG
       return CreateDXGIFactory (riid, ppFactory);
     }
 
@@ -1136,8 +1101,6 @@ extern "C" {
                              EnumAdapters1_t);
     }
 
-    DXGI_EPILOG
-
     return ret;
   }
 
@@ -1147,8 +1110,6 @@ extern "C" {
                                           REFIID   riid,
                                     _Out_ void   **ppFactory)
   {
-    DXGI_PROLOG
-
 #ifdef HOOK_D3D11_DEVICE_CREATION
     BMF_InstallD3D11DeviceHooks ();
 #else
@@ -1164,7 +1125,6 @@ extern "C" {
     // Windows 7 does not have this function -- wrap it with CreateDXGIFactory1
     if (CreateDXGIFactory2_Import == nullptr) {
       dll_log.Log (L"  >> Falling back to CreateDXGIFactory1 on Vista/7...\n");
-      DXGI_EPILOG
       return CreateDXGIFactory1 (riid, ppFactory);
     }
 
@@ -1184,8 +1144,6 @@ extern "C" {
                              EnumAdapters1_Override, EnumAdapters1_Original,
                              EnumAdapters1_t);
     }
-
-    DXGI_EPILOG
 
     return ret;
   }
