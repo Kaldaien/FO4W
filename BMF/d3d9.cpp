@@ -221,6 +221,23 @@ typedef struct _D3DPRESENT_PARAMETERS_
   UINT                PresentationInterval;
 } D3DPRESENT_PARAMETERS;
 
+typedef enum D3DSCANLINEORDERING
+{
+  D3DSCANLINEORDERING_UNKNOWN                    = 0, 
+  D3DSCANLINEORDERING_PROGRESSIVE                = 1,
+  D3DSCANLINEORDERING_INTERLACED                 = 2,
+} D3DSCANLINEORDERING;
+
+typedef struct D3DDISPLAYMODEEX
+{
+  UINT                    Size;
+  UINT                    Width;
+  UINT                    Height;
+  UINT                    RefreshRate;
+  D3DFORMAT               Format;
+  D3DSCANLINEORDERING     ScanLineOrdering;
+} D3DDISPLAYMODEEX;
+
 typedef interface IDirect3D9                     IDirect3D9;
 typedef interface IDirect3DDevice9               IDirect3DDevice9;
 typedef interface IDirect3DSwapChain9            IDirect3DSwapChain9;
@@ -242,6 +259,14 @@ _In_       HWND                 hDestWindowOverride,
 _In_ const RGNDATA             *pDirtyRegion/*,
 _In_       DWORD                dwFlags*/);
 
+typedef HRESULT (STDMETHODCALLTYPE *D3D9PresentSwapChainEx_t)(
+           IDirect3DDevice9Ex  *This,
+_In_ const RECT                *pSourceRect,
+_In_ const RECT                *pDestRect,
+_In_       HWND                 hDestWindowOverride,
+_In_ const RGNDATA             *pDirtyRegion,
+_In_       DWORD                dwFlags);
+
 typedef HRESULT (STDMETHODCALLTYPE *D3D9CreateDevice_t)(
            IDirect3D9             *This,
            UINT                    Adapter,
@@ -251,9 +276,21 @@ typedef HRESULT (STDMETHODCALLTYPE *D3D9CreateDevice_t)(
            D3DPRESENT_PARAMETERS  *pPresentationParameters,
            IDirect3DDevice9      **ppReturnedDeviceInterface);
 
-D3D9PresentSwapChain_t   D3D9Present_Original      = nullptr;
-D3D9PresentSwapChain_t   D3D9PresentSwap_Original  = nullptr;
-D3D9CreateDevice_t       D3D9CreateDevice_Original = nullptr;
+typedef HRESULT (STDMETHODCALLTYPE *D3D9CreateDeviceEx_t)(
+           IDirect3D9Ex           *This,
+           UINT                    Adapter,
+           D3DDEVTYPE              DeviceType,
+           HWND                    hFocusWindow,
+           DWORD                   BehaviorFlags,
+           D3DPRESENT_PARAMETERS  *pPresentationParameters,
+           D3DDISPLAYMODEEX       *pFullscreenDisplayMode,
+           IDirect3DDevice9Ex    **ppReturnedDeviceInterface);
+
+D3D9PresentSwapChain_t   D3D9Present_Original        = nullptr;
+D3D9PresentSwapChainEx_t D3D9PresentEx_Original      = nullptr;
+D3D9PresentSwapChain_t   D3D9PresentSwap_Original    = nullptr;
+D3D9CreateDevice_t       D3D9CreateDevice_Original   = nullptr;
+D3D9CreateDeviceEx_t     D3D9CreateDeviceEx_Original = nullptr;
 
 Direct3DCreate9PROC   Direct3DCreate9_Import   = nullptr;
 Direct3DCreate9ExPROC Direct3DCreate9Ex_Import = nullptr;
@@ -331,6 +368,43 @@ __stdcall D3D9PresentCallback (IDirect3DDevice9 *This,
                                                   pDirtyRegion));
 #endif
 }
+
+#ifndef _WIN64
+__declspec (naked)
+void
+#else
+HRESULT
+#endif
+__stdcall D3D9PresentCallbackEx (IDirect3DDevice9Ex *This,
+                      _In_ const RECT               *pSourceRect,
+                      _In_ const RECT               *pDestRect,
+                      _In_       HWND                hDestWindowOverride,
+                      _In_ const RGNDATA            *pDirtyRegion,
+                      _In_       DWORD               dwFlags)
+{
+  D3D9_PROLOG
+
+    BMF_BeginBufferSwap ();
+
+  //dll_log.Log (L"Flip");
+
+#ifndef _WIN64
+  BMF_EndBufferSwap (S_OK);
+
+  D3D9_EPILOG
+
+    __asm {
+    jmp D3D9PresentEx_Original;
+  };
+#else
+  return BMF_EndBufferSwap (D3D9PresentEx_Original (This,
+                                                    pSourceRect,
+                                                    pDestRect,
+                                                    hDestWindowOverride,
+                                                    pDirtyRegion,
+                                                    dwFlags));
+#endif
+}
 }
 
 extern "C" {
@@ -349,7 +423,7 @@ extern "C" {
   {
     D3D9_PROLOG
 
-      BMF_BeginBufferSwap ();
+    BMF_BeginBufferSwap ();
 
     //dll_log.Log (L"Flip");
 
@@ -358,7 +432,7 @@ extern "C" {
 
     D3D9_EPILOG
 
-      __asm {
+    __asm {
       jmp D3D9PresentSwap_Original;
     };
 #else
@@ -544,7 +618,7 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
                                                                               \
-    dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);                   \
+    /*dll_log.Log (L"  + %s: %08Xh", L#_Original, _Original);*/               \
                                                                               \
     vftable [_Index] = _Override;                                             \
                                                                               \
@@ -566,6 +640,169 @@ BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
 typedef HRESULT (WINAPI *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
 typedef HRESULT (STDMETHODCALLTYPE *GetSwapChain_t)
   (IDirect3DDevice9* This, UINT iSwapChain, IDirect3DSwapChain9** pSwapChain);
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateAdditionalSwapChain_t)
+  (IDirect3DDevice9* This, D3DPRESENT_PARAMETERS* pPresentationParameters,
+   IDirect3DSwapChain9** pSwapChain);
+
+CreateAdditionalSwapChain_t D3D9CreateAdditionalSwapChain_Original = nullptr;
+
+__declspec (nothrow)
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateAdditionalSwapChain_Override (IDirect3DDevice9*      This,
+                                        D3DPRESENT_PARAMETERS* pPresentationParameters,
+                                        IDirect3DSwapChain9**  pSwapChain)
+{
+  dll_log.Log (L"[!] %s (%08Xh, %08Xh, %08Xh) - "
+    L"[Calling Thread: 0x%04x]",
+    L"IDirect3DDevice9::CreateAdditionalSwapChain", This, pPresentationParameters,
+    pSwapChain, GetCurrentThreadId ()
+  );
+
+  HRESULT hr;
+
+  D3D9_CALL (hr, D3D9CreateAdditionalSwapChain_Original (This,
+                                                         pPresentationParameters,
+                                                         pSwapChain));
+
+  if (SUCCEEDED (hr)) {
+    D3D9_VIRTUAL_OVERRIDE (pSwapChain, 3,
+                           "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
+                           D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
+  }
+
+  return hr;
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *EndScene_t)
+  (IDirect3DDevice9* This);
+
+EndScene_t D3D9EndScene_Original = nullptr;
+
+__declspec (nothrow)
+HRESULT
+STDMETHODCALLTYPE
+D3D9EndScene_Override (IDirect3DDevice9* This)
+{
+D3D9_PROLOG
+
+#if 0
+  dll_log.Log (L"[!] %s (%08Xh) - "
+    L"[Calling Thread: 0x%04x]",
+    L"IDirect3DDevice9::EndScene", This,
+    GetCurrentThreadId ()
+  );
+#endif
+
+  HRESULT hr;
+
+  hr = D3D9EndScene_Original (This);
+  //D3D9_CALL (hr, D3D9EndScene_Original (This));
+
+  if (SUCCEEDED (hr)) {
+    //BMF_EndBufferSwap (S_OK);
+    //D3D9_VIRTUAL_OVERRIDE (pSwapChain, 3,
+      //"IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
+      //D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
+  }
+
+D3D9_EPILOG
+
+  return hr;
+}
+
+__declspec (nothrow)
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
+                             UINT                    Adapter,
+                             D3DDEVTYPE              DeviceType,
+                             HWND                    hFocusWindow,
+                             DWORD                   BehaviorFlags,
+                             D3DPRESENT_PARAMETERS  *pPresentationParameters,
+                             D3DDISPLAYMODEEX       *pFullscreenDisplayMode,
+                             IDirect3DDevice9Ex    **ppReturnedDeviceInterface)
+{
+  D3D9_PROLOG
+
+  //std::wstring iname = BMF_GetDXGIAdapterInterface (This);
+
+  //dll_log_CALL_I2 (iname.c_str (), L"GetDesc2", L"%08Xh, %08Xh", This, pDesc);
+
+  dll_log.Log (L"[!] %s (%08Xh, %lu, %lu, %08Xh, %lu, %08Xh, %08Xh, %08Xh) - "
+    L"[Calling Thread: 0x%04x]",
+    L"IDirect3D9Ex::D3D9CreateDeviceEx", This, Adapter, DeviceType, hFocusWindow,
+    BehaviorFlags, pPresentationParameters, pFullscreenDisplayMode,
+    ppReturnedDeviceInterface,
+    GetCurrentThreadId ());
+
+  HRESULT ret;
+
+  D3D9_CALL (ret, D3D9CreateDeviceEx_Original (This,
+                                               Adapter,
+                                               DeviceType,
+                                               hFocusWindow,
+                                               BehaviorFlags,
+                                               pPresentationParameters,
+                                               pFullscreenDisplayMode,
+                                               ppReturnedDeviceInterface));
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
+                         "IDirect3DDevice9Ex::Present", D3D9PresentCallback,
+                         D3D9Present_Original, D3D9PresentSwapChain_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 121,
+                         "IDirect3DDevice9Ex::PresentEx", D3D9PresentCallbackEx,
+                         D3D9PresentEx_Original, D3D9PresentSwapChainEx_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 13,
+                         "IDirect3DDevice9Ex::CreateAdditionalSwapChain",
+                         D3D9CreateAdditionalSwapChain_Override,
+                         D3D9CreateAdditionalSwapChain_Original,
+                         CreateAdditionalSwapChain_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 42,
+                         "IDirect3DDevice9Ex::EndScene",
+                         D3D9EndScene_Override,
+                         D3D9EndScene_Original,
+                         EndScene_t);
+
+
+  static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
+  static CreateDXGIFactory_t CreateDXGIFactory =
+    (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
+
+  IDXGIFactory* factory;
+
+  // Only spawn the DXGI 1.4 budget thread if ... DXGI 1.4 is implemented.
+  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory))) {
+    IDXGIAdapter* adapter;
+    factory->EnumAdapters (0, &adapter);
+
+    BMF_StartDXGI_1_4_BudgetThread (&adapter);
+
+    adapter->Release ();
+  }
+
+  void** vftable                    = *(void***)*ppReturnedDeviceInterface;
+  GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftable [14];
+  IDirect3DSwapChain9* SwapChain    = nullptr;
+
+  for (int i = 0; i < 4; i++) {
+    if (SUCCEEDED (GetSwapChain ((IDirect3DDevice9 *)*ppReturnedDeviceInterface, i, &SwapChain))) {
+      D3D9_VIRTUAL_OVERRIDE (&SwapChain, 3,
+                             "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
+                             D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
+
+      ((IUnknown *)SwapChain)->Release ();
+    }
+  }
+
+  D3D9_EPILOG
+
+  return ret;
+}
 
 __declspec (nothrow)
 HRESULT
@@ -604,6 +841,18 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                          "IDirect3DDevice9::Present", D3D9PresentCallback,
                          D3D9Present_Original, D3D9PresentSwapChain_t);
 
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 13,
+                         "IDirect3DDevice9::CreateAdditionalSwapChain",
+                         D3D9CreateAdditionalSwapChain_Override,
+                         D3D9CreateAdditionalSwapChain_Original,
+                         CreateAdditionalSwapChain_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 42,
+                         "IDirect3DDevice9::EndScene",
+                         D3D9EndScene_Override,
+                         D3D9EndScene_Original,
+                         EndScene_t);
+
 
   static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
   static CreateDXGIFactory_t CreateDXGIFactory =
@@ -625,12 +874,14 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
   GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftable [14];
   IDirect3DSwapChain9* SwapChain    = nullptr;
 
-  if (SUCCEEDED (GetSwapChain (*ppReturnedDeviceInterface, 0, &SwapChain))) {
-    D3D9_VIRTUAL_OVERRIDE (&SwapChain, 3,
-                           "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
-                           D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
+  for (int i = 0; i < 4; i++) {
+    if (SUCCEEDED (GetSwapChain (*ppReturnedDeviceInterface, i, &SwapChain))) {
+      D3D9_VIRTUAL_OVERRIDE (&SwapChain, 3,
+                             "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
+                             D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
 
-    ((IUnknown *)SwapChain)->Release ();
+      ((IUnknown *)SwapChain)->Release ();
+    }
   }
 
   D3D9_EPILOG
@@ -679,13 +930,18 @@ Direct3DCreate9Ex (__in UINT SDKVersion, __out IDirect3D9Ex **ppD3D)
 
   HRESULT hr = E_FAIL;
 
-  //if (Direct3DCreate9Ex_Import)
-    //hr = Direct3DCreate9Ex_Import (SDKVersion, ppD3D);
+  if (Direct3DCreate9Ex_Import)
+    D3D9_CALL (hr, Direct3DCreate9Ex_Import (SDKVersion, ppD3D));
 
-  if (SUCCEEDED (hr))
-    D3D9_VIRTUAL_OVERRIDE (ppD3D, 15, "(*d3d9ex)->CreateDevice",
+  if (SUCCEEDED (hr)) {
+    D3D9_VIRTUAL_OVERRIDE (ppD3D, 16, "(*d3d9ex)->CreateDevice",
       D3D9CreateDevice_Override, D3D9CreateDevice_Original,
       D3D9CreateDevice_t);
+
+    D3D9_VIRTUAL_OVERRIDE (ppD3D, 20, "(*d3d9ex)->CreateDeviceEx",
+      D3D9CreateDeviceEx_Override, D3D9CreateDeviceEx_Original,
+      D3D9CreateDeviceEx_t);
+  }
 
   D3D9_EPILOG
 
