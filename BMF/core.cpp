@@ -41,6 +41,7 @@ HANDLE           dll_heap      = { 0 };
 CRITICAL_SECTION budget_mutex  = { 0 };
 CRITICAL_SECTION init_mutex    = { 0 };
 volatile HANDLE  hInitThread   = { 0 };
+         HANDLE  hPumpThread   = { 0 };
 
 struct budget_thread_params_t {
   IDXGIAdapter3   *pAdapter;
@@ -682,6 +683,18 @@ WINAPI BudgetThread (LPVOID user_data)
 
 
 
+DWORD
+WINAPI
+osd_pump (LPVOID lpThreadParam)
+{
+  while (true) {
+    Sleep ((DWORD)(config.osd.pump_interval * 1000.0f));
+    BMF_EndBufferSwap (S_OK, nullptr);
+  }
+
+  return 0;
+}
+
 void
 BMF_InitCore (const wchar_t* backend, void* callback)
 {
@@ -880,7 +893,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"Failed!\n");
   }
 
-  Sleep (33);
+  Sleep (1);
 
   if (disk_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
@@ -892,7 +905,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (33);
+  Sleep (1);
 
   if (pagefile_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
@@ -905,9 +918,8 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (33);
+  Sleep (1);
 
-#if 1
   //
   // Spawn Process Monitor Thread
   //
@@ -919,7 +931,19 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     else
       dll_log.LogEx (false, L"Failed!\n");
   }
-#endif
+
+  dll_log.LogEx (false, L"\n");
+
+  // Create a thread that pumps the OSD
+  if (config.osd.pump) {
+    dll_log.LogEx (true, L" [OSD] Spawning Pump Thread...      ");
+    hPumpThread = CreateThread (NULL, 0, osd_pump, NULL, 0, NULL);
+    if (hPumpThread != nullptr)
+      dll_log.LogEx (false, L"tid=0x%04x, interval=%04.01f ms\n",
+                       hPumpThread, config.osd.pump_interval * 1000.0f);
+    else
+      dll_log.LogEx (false, L"failed!\n");
+  }
 
   dll_log.LogEx (false, L"\n");
 
@@ -1017,19 +1041,28 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
 bool
 BMF_ShutdownCore (const wchar_t* backend)
 {
-  dll_log.LogEx (true,
+  if (hPumpThread != 0) {
+    dll_log.LogEx   (true, L"[OSD] Shutting down Pump Thread... ");
+
+    TerminateThread (hPumpThread, 0);
+    hPumpThread = 0;
+
+    dll_log.LogEx   (false, L"done!\n");
+  }
+
+  dll_log.LogEx  (true,
     L"Closing RivaTuner Statistics Server connection... ");
   // Shutdown the OSD as early as possible to avoid complications
   BMF_ReleaseOSD ();
-  dll_log.LogEx (false, L"done!\n");
+  dll_log.LogEx  (false, L"done!\n");
 
   if (budget_thread != nullptr) {
     config.load_balance.use = false; // Turn this off while shutting down
 
     dll_log.LogEx (
       true,
-      L"Shutting down DXGI 1.4 Memory Budget Change Thread... "
-      );
+        L"Shutting down DXGI 1.4 Memory Budget Change Thread... "
+    );
 
     budget_thread->ready = false;
 

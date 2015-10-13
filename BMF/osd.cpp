@@ -68,9 +68,64 @@ bool osd_shutting_down = false;
 // Initialize some things (like color, position and scale) on first use
 bool osd_init          = false;
 
+static CRITICAL_SECTION osd_cs  = { 0 };
+static bool             cs_init = false;
+
+class BMF_AutoCriticalSection {
+public:
+  BMF_AutoCriticalSection ( CRITICAL_SECTION* pCS,
+                            bool              try_only = false )
+  {
+    cs_ = pCS;
+
+    if (try_only)
+      TryEnter ();
+    else {
+      Enter ();
+    }
+  }
+
+  ~BMF_AutoCriticalSection (void)
+  {
+    Leave ();
+  }
+
+  bool try_result (void)
+  {
+    return acquired_;
+  }
+
+protected:
+  bool TryEnter (void)
+  {
+    return (acquired_ = (TryEnterCriticalSection (cs_) != FALSE));
+  }
+
+  void Enter (void)
+  {
+    EnterCriticalSection (cs_);
+
+    acquired_ = true;
+  }
+
+  void Leave (void)
+  {
+    if (acquired_ != false)
+      LeaveCriticalSection (cs_);
+
+    acquired_ = false;
+  }
+
+private:
+  bool              acquired_;
+  CRITICAL_SECTION* cs_;
+};
+
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   if (lpMemory != nullptr) {
     return UnmapViewOfFile (lpMemory);
   }
@@ -81,7 +136,9 @@ BMF_ReleaseSharedMemory (LPVOID lpMemory)
 LPVOID
 BMF_GetSharedMemory (DWORD dwProcID)
 {
-  if (osd_shutting_down)
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
+  if (osd_shutting_down && osd_init == false)
     return nullptr;
 
   HANDLE hMapFile =
@@ -151,6 +208,8 @@ BMF_GetSharedMemory (DWORD dwProcID)
 LPVOID
 BMF_GetSharedMemory (void)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   return BMF_GetSharedMemory (GetCurrentProcessId ());
 }
 
@@ -289,6 +348,16 @@ BMF_FormatTemperature (int32_t in_temp, BMF_UNITS in_unit, BMF_UNITS out_unit)
 BOOL
 BMF_DrawOSD (void)
 {
+  if (! cs_init) {
+    InitializeCriticalSectionAndSpinCount (&osd_cs, 1234567890UL);
+    cs_init;
+  }
+
+  BMF_AutoCriticalSection auto_cs (&osd_cs, true);
+
+  if (! auto_cs.try_result ())
+    return false;
+
   static unsigned int connect_attempts = 1;
 
   // Bail-out early when shutting down, or RTSS does not know about our process
@@ -296,6 +365,7 @@ BMF_DrawOSD (void)
 
   if (! pMemory) {
     ++connect_attempts;
+    LeaveCriticalSection (&osd_cs);
     return false;
   }
 
@@ -576,6 +646,44 @@ BMF_DrawOSD (void)
 
   //OSD_G_PRINTF "\n" OSD_END
 
+  OSD_C_PRINTF "\n  Total  : %#3llu%%  -  (Kernel: %#3llu%%   "
+                 "User: %#3llu%%   Interrupt: %#3llu%%)\n",
+        cpu_stats.cpus [0].percent_load, 
+          cpu_stats.cpus [0].percent_kernel, 
+            cpu_stats.cpus [0].percent_user, 
+              cpu_stats.cpus [0].percent_interrupt
+  OSD_END
+
+  for (DWORD i = 1; i < cpu_stats.num_cpus; i++) {
+    if (! config.cpu.simple) {
+      OSD_C_PRINTF "  CPU%i   : %#3llu%%  -  (Kernel: %#3llu%%   "
+                   "User: %#3llu%%   Interrupt: %#3llu%%)\n",
+        i-1,
+          cpu_stats.cpus [i].percent_load, 
+            cpu_stats.cpus [i].percent_kernel, 
+              cpu_stats.cpus [i].percent_user, 
+                cpu_stats.cpus [i].percent_interrupt
+      OSD_END
+    } else {
+      OSD_C_PRINTF "  CPU%i   : %#3llu%%\n",
+        i-1,
+          cpu_stats.cpus [i].percent_load
+      OSD_END
+    }
+  }
+
+  // Only do this if the IO data view is active
+  if (config.io.show)
+    BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
+
+  OSD_I_PRINTF "\n  Read   :%#6.02f MiB/s - (%#6.01f IOP/s)"
+               "\n  Write  :%#6.02f MiB/s - (%#6.01f IOP/s)"
+               "\n  Other  :%#6.02f MiB/s - (%#6.01f IOP/s)\n",
+               io_counter.read_mb_sec,  io_counter.read_iop_sec,
+               io_counter.write_mb_sec, io_counter.write_iop_sec,
+               io_counter.other_mb_sec, io_counter.other_iop_sec
+  OSD_END
+
   if (nodes > 0) {
     int i = 0;
 
@@ -690,18 +798,6 @@ BMF_DrawOSD (void)
     gpu_prio
   OSD_END
 
-  // Only do this if the IO data view is active
-  if (config.io.show)
-    BMF_CountIO (io_counter, config.io.interval / 1.0e-7);
-
-  OSD_I_PRINTF "\n  Read   :%#6.02f MiB/s - (%#6.01f IOP/s)"
-               "\n  Write  :%#6.02f MiB/s - (%#6.01f IOP/s)"
-               "\n  Other  :%#6.02f MiB/s - (%#6.01f IOP/s)\n",
-               io_counter.read_mb_sec,  io_counter.read_iop_sec,
-               io_counter.write_mb_sec, io_counter.write_iop_sec,
-               io_counter.other_mb_sec, io_counter.other_iop_sec
-  OSD_END
-
 #if 0
   bool use_mib_sec = disk_stats.num_disks > 0 ?
                        (disk_stats.disks [0].bytes_sec > (1024 * 1024 * 2)) : false;
@@ -759,25 +855,6 @@ BMF_DrawOSD (void)
   }
 #endif
 
-  OSD_C_PRINTF "\n  Total %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
-                 "Interrupt: %#3llu%%)\n",
-        cpu_stats.cpus [0].percent_load, 
-          cpu_stats.cpus [0].percent_kernel, 
-            cpu_stats.cpus [0].percent_user, 
-              cpu_stats.cpus [0].percent_interrupt
-  OSD_END
-
-  for (DWORD i = 1; i < cpu_stats.num_cpus; i++) {
-    OSD_C_PRINTF "  CPU%i: %#3llu%%  -  (Kernel: %#3llu%%   User: %#3llu%%   "
-                 "Interrupt: %#3llu%%)\n",
-      i-1,
-        cpu_stats.cpus [i].percent_load, 
-          cpu_stats.cpus [i].percent_kernel, 
-            cpu_stats.cpus [i].percent_user, 
-              cpu_stats.cpus [i].percent_interrupt
-    OSD_END
-  }
-
   for (DWORD i = 0; i < pagefile_stats.num_pagefiles; i++) {
       std::wstring usage =
         BMF_SizeToStringF (pagefile_stats.pagefiles [i].usage, 5,2);
@@ -806,18 +883,29 @@ BMF_DrawOSD (void)
 BOOL
 BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   static DWORD dwProcID =
     GetCurrentProcessId ();
 
   BOOL bResult = FALSE;
 
-  if (osd_shutting_down)
+  if (osd_shutting_down && osd_init == false) {
     return bResult;
+  }
 
   // If pMapAddr == nullptr, manage memory ourselves
   bool own_memory = false;
   if (pMapAddr == nullptr) {
-    pMapAddr = BMF_GetSharedMemory (dwProcID);
+    // When shutting down, don't care if RivaTuner knows about our process
+    //   anymore ... we simply want the text gone!
+    if (osd_shutting_down) {
+      pMapAddr = BMF_GetSharedMemory (0);
+      osd_init = false;
+      lpText = "\0";
+    }
+    else
+      pMapAddr = BMF_GetSharedMemory (dwProcID);
     own_memory = true;
   }
 
@@ -880,14 +968,18 @@ BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
 void
 BMF_ReleaseOSD (void)
 {
-  BMF_UpdateOSD ("");
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   osd_shutting_down = true;
+  BMF_UpdateOSD ("");
 }
 
 
 void
 BMF_SetOSDPos (int x, int y)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
 
@@ -934,6 +1026,8 @@ BMF_SetOSDPos (int x, int y)
 void
 BMF_SetOSDColor (int red, int green, int blue)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
 
@@ -995,6 +1089,8 @@ BMF_SetOSDColor (int red, int green, int blue)
 void
 BMF_SetOSDScale (DWORD dwScale, bool relative)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
 
@@ -1047,6 +1143,8 @@ BMF_SetOSDScale (DWORD dwScale, bool relative)
 void
 BMF_ResizeOSD (int scale_incr)
 {
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
   BMF_SetOSDScale (scale_incr, true);
 }
 

@@ -75,6 +75,9 @@ struct bmf_config_t
   struct {
     bool   show           = true;
 
+    bool   pump           = false;
+    float  pump_interval  = 0.0166666666f;
+
     DWORD  red            = -1;
     DWORD  green          = -1;
     DWORD  blue           = -1;
@@ -92,7 +95,8 @@ struct bmf_config_t
 
   struct {
     bool   show           = false;
-    float  interval       = 0.166666f;
+    float  interval       = 0.33333333f;
+    bool   simple         = true;
 
     struct {
       BYTE toggle  [4]    = { VK_CONTROL, VK_SHIFT, 'C', 0 };

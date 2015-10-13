@@ -961,8 +961,12 @@ extern "C" {
         );
 
       if (SUCCEEDED (hr)) {
+        bool silence = dll_log.silent;
+        dll_log.silent = true; // Temporarily disable logging
+
         DXGI_ADAPTER_DESC1 desc1;
         if (SUCCEEDED (pAdapter1->GetDesc1 (&desc1))) {
+          dll_log.silent = silence; // Restore logging
 #define DXGI_ADAPTER_FLAG_REMOTE   0x1
 #define DXGI_ADAPTER_FLAG_SOFTWARE 0x2
           if (desc1.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
@@ -972,6 +976,7 @@ extern "C" {
           if (desc1.Flags & DXGI_ADAPTER_FLAG_REMOTE)
             dll_log.LogEx (false, L" [Remote]");
         }
+        dll_log.silent = silence; // Restore logging
         pAdapter1->Release ();
       }
 
