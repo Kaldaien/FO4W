@@ -541,9 +541,9 @@ extern "C" {
       if (SUCCEEDED (pDevice->QueryInterface (__uuidof (ID3D11Device),
         (void **)&pDev)))
       {
-        budget_log.silent = false;
+        //budget_log.silent = false;
 
-        budget_log.LogEx (true, L"Hooking IDXGISwapChain::Present... ");
+        //budget_log.LogEx (true, L"Hooking IDXGISwapChain::Present... ");
 
 #if 0
         void** vftable = *(void***)*ppSwapChain;
@@ -568,10 +568,10 @@ extern "C" {
 
         //SetHook ((*(void***)*ppSwapChain) [8], PresentCallback, pContext);
 
-        budget_log.LogEx (false, L"Done\n");
+        //budget_log.LogEx (false, L"Done\n");
 #endif
 
-        budget_log.silent = true;
+        //budget_log.silent = true;
 
         pDev->Release ();
       }

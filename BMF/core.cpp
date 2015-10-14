@@ -893,7 +893,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"Failed!\n");
   }
 
-  Sleep (1);
+  Sleep (10);
 
   if (disk_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
@@ -905,7 +905,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (1);
+  Sleep (10);
 
   if (pagefile_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
@@ -918,7 +918,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (1);
+  Sleep (10);
 
   //
   // Spawn Process Monitor Thread
@@ -944,8 +944,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     else
       dll_log.LogEx (false, L"failed!\n");
   }
-
-  dll_log.LogEx (false, L"\n");
 
   szOSD =
     (char *)
@@ -1042,7 +1040,7 @@ bool
 BMF_ShutdownCore (const wchar_t* backend)
 {
   if (hPumpThread != 0) {
-    dll_log.LogEx   (true, L"[OSD] Shutting down Pump Thread... ");
+    dll_log.LogEx   (true, L" [OSD] Shutting down Pump Thread... ");
 
     TerminateThread (hPumpThread, 0);
     hPumpThread = 0;
@@ -1051,7 +1049,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   }
 
   dll_log.LogEx  (true,
-    L"Closing RivaTuner Statistics Server connection... ");
+    L"[RTSS] Closing RivaTuner Statistics Server connection... ");
   // Shutdown the OSD as early as possible to avoid complications
   BMF_ReleaseOSD ();
   dll_log.LogEx  (false, L"done!\n");
@@ -1061,7 +1059,7 @@ BMF_ShutdownCore (const wchar_t* backend)
 
     dll_log.LogEx (
       true,
-        L"Shutting down DXGI 1.4 Memory Budget Change Thread... "
+        L"[DXGI] Shutting down DXGI 1.4 Memory Budget Change Thread... "
     );
 
     budget_thread->ready = false;
@@ -1082,7 +1080,6 @@ BMF_ShutdownCore (const wchar_t* backend)
     // Record the final statistics always
     budget_log.silent = false;
 
-    budget_log.LogEx (false, L"\n");
     budget_log.Log   (L"--------------------");
     budget_log.Log   (L"Shutdown Statistics:");
     budget_log.Log   (L"--------------------\n");
@@ -1092,7 +1089,7 @@ BMF_ShutdownCore (const wchar_t* backend)
       mem_stats [0].budget_changes);
 
     for (int i = 0; i < 4; i++) {
-      if (mem_stats [i].min_usage > 0) {
+      if (mem_stats [i].max_usage > 0) {
         if (mem_stats [i].min_reserve == UINT64_MAX)
           mem_stats [i].min_reserve = 0ULL;
 
@@ -1151,7 +1148,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   }
 
   if (process_stats.hThread != 0) {
-    dll_log.LogEx (true,L"[WMI] Shutting down Process Monitor... ");
+    dll_log.LogEx (true,L" [WMI] Shutting down Process Monitor... ");
     // Signal the thread to shutdown
     process_stats.lID = 0;
     WaitForSingleObject
@@ -1164,7 +1161,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   }
 
   if (cpu_stats.hThread != 0) {
-    dll_log.LogEx (true,L"[WMI] Shutting down CPU Monitor... ");
+    dll_log.LogEx (true,L" [WMI] Shutting down CPU Monitor... ");
     // Signal the thread to shutdown
     cpu_stats.lID = 0;
     WaitForSingleObject (cpu_stats.hThread, 1000UL); // Give 1 second, and
@@ -1177,7 +1174,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   }
 
   if (disk_stats.hThread != 0) {
-    dll_log.LogEx (true, L"[WMI] Shutting down Disk Monitor... ");
+    dll_log.LogEx (true, L" [WMI] Shutting down Disk Monitor... ");
     // Signal the thread to shutdown
     disk_stats.lID = 0;
     WaitForSingleObject (disk_stats.hThread, 1000UL); // Give 1 second, and
@@ -1190,7 +1187,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   }
 
   if (pagefile_stats.hThread != 0) {
-    dll_log.LogEx (true, L"[WMI] Shutting down Pagefile Monitor... ");
+    dll_log.LogEx (true, L" [WMI] Shutting down Pagefile Monitor... ");
     // Signal the thread to shutdown
     pagefile_stats.lID = 0;
     WaitForSingleObject (

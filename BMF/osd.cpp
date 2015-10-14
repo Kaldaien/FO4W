@@ -378,7 +378,7 @@ BMF_DrawOSD (void)
     extern bmf_logger_t dll_log;
 
     dll_log.LogEx ( true,
-      L" [RTSS] Opening Connection to RivaTuner Statistics Server... " );
+      L"[RTSS] Opening Connection to RivaTuner Statistics Server... " );
 
     dll_log.LogEx ( false,
       L"successful after %u attempt(s)!\n", connect_attempts );
