@@ -173,12 +173,17 @@ __stdcall D3D9PresentCallback (IDirect3DDevice9 *This,
 {
   BMF_BeginBufferSwap ();
 
-  return BMF_EndBufferSwap (D3D9Present_Original (This,
-                                                  pSourceRect,
-                                                  pDestRect,
-                                                  hDestWindowOverride,
-                                                  pDirtyRegion),
-                            (IUnknown *)This);
+  HRESULT hr = D3D9Present_Original (This,
+                                     pSourceRect,
+                                     pDestRect,
+                                     hDestWindowOverride,
+                                     pDirtyRegion);
+
+  if (! config.osd.pump)
+    return BMF_EndBufferSwap ( hr,
+                               (IUnknown *)This );
+
+  return hr;
 }
 
 COM_DECLSPEC_NOTHROW
@@ -192,13 +197,18 @@ __stdcall D3D9PresentCallbackEx (IDirect3DDevice9Ex *This,
 {
   BMF_BeginBufferSwap ();
 
-  return BMF_EndBufferSwap (D3D9PresentEx_Original (This,
-                                                    pSourceRect,
-                                                    pDestRect,
-                                                    hDestWindowOverride,
-                                                    pDirtyRegion,
-                                                    dwFlags),
-                            (IUnknown *)This);
+  HRESULT hr = D3D9PresentEx_Original (This,
+                                       pSourceRect,
+                                       pDestRect,
+                                       hDestWindowOverride,
+                                       pDirtyRegion,
+                                       dwFlags);
+
+  if (! config.osd.pump)
+    return BMF_EndBufferSwap ( hr,
+                               (IUnknown *)This );
+
+  return hr;
 }
 }
 
@@ -353,7 +363,8 @@ D3DPERF_EndEvent (void)
   //
   // TODO: For the SLI meter, how the heck do we get a device from this?
   //
-  BMF_EndBufferSwap (S_OK);
+  if (! config.osd.pump)
+    BMF_EndBufferSwap (S_OK);
 
   return _default_impl ();
 }
@@ -381,6 +392,18 @@ extern "C" {
   {
     BMF_BeginBufferSwap ();
 
+    HRESULT hr = D3D9PresentSwap_Original (This,
+                                           pSourceRect,
+                                           pDestRect,
+                                           hDestWindowOverride,
+                                           pDirtyRegion,
+                                           dwFlags);
+
+    // We are manually pumping OSD updates, do not do them on buffer swaps.
+    if (config.osd.pump) {
+      return hr;
+    }
+
     //
     // Get the Device Pointer so we can check the SLI state through NvAPI
     //
@@ -393,23 +416,13 @@ extern "C" {
     GetDevice_t GetDevice = (GetDevice_t)vtable [8];
 
     if (SUCCEEDED (GetDevice (This, &dev))) {
-      HRESULT ret = BMF_EndBufferSwap (D3D9PresentSwap_Original (This,
-                                                                 pSourceRect,
-                                                                 pDestRect,
-                                                                 hDestWindowOverride,
-                                                                 pDirtyRegion,
-                                                                 dwFlags),
-                                       (IUnknown *)dev);
+      HRESULT ret = BMF_EndBufferSwap ( hr,
+                                        (IUnknown *)dev );
       ((IUnknown *)dev)->Release ();
       return ret;
     }
 
-    return BMF_EndBufferSwap (D3D9PresentSwap_Original (This,
-                                                        pSourceRect,
-                                                        pDestRect,
-                                                        hDestWindowOverride,
-                                                        pDirtyRegion,
-                                                        dwFlags));
+    return BMF_EndBufferSwap (hr);
   }
 }
 
@@ -463,7 +476,7 @@ D3D9EndScene_Override (IDirect3DDevice9* This)
 
   //D3D9_CALL (hr, D3D9EndScene_Original (This));
 
-  if (SUCCEEDED (hr)) {
+  if (SUCCEEDED (hr) && (! config.osd.pump)) {
     BMF_EndBufferSwap (hr);
   }
 
@@ -508,7 +521,8 @@ extern "C" {
                              D3D9EndScene_Original,
                              EndScene_t);
 
-      BMF_EndBufferSwap (hr);
+      if (! config.osd.pump)
+        BMF_EndBufferSwap (hr);
     }
 
     return hr;

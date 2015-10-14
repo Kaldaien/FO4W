@@ -525,12 +525,11 @@ BMF_DrawOSD (void)
   //
   // DXGI 1.4 Memory Info (VERY accurate)
   ///
-  if (nodes > 0) {
+  if (false) {//nodes > 0) {
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
     //     on that in the future.
     for (int i = 0; i < nodes; i++) {
-#if 1
       if (nvapi_init) {
         OSD_G_PRINTF "  VRAM%i  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
           i,
@@ -562,31 +561,6 @@ BMF_DrawOSD (void)
 #endif
 
       OSD_G_PRINTF "\n" OSD_END
-#else
-      OSD_G_PRINTF "  MEM%u %#5.01lf GiB/s",
-        i,
-        (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
-          (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
-        (1024.0 * 1024.0 * 1024.0) *
-        ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
-        OSD_END
-      OSD_G_PRINTF ", VRAM%u %#4llu MiB, SHARED%u %#3llu MiB",
-        i, mem_info [buffer].local    [i].CurrentUsage >> 20ULL,
-        i, mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL
-      OSD_END
-
-      OSD_G_PRINTF ", %#4lu MHz",
-       gpu_stats.gpus [i].clocks_kHz.ram / 1000UL
-      OSD_END
-
-      // Add memory temperature if it exists
-      if (i <= gpu_stats.num_gpus &&
-        gpu_stats.gpus [i].temps_c.ram != 0) {
-        OSD_G_PRINTF " (%#3luC)",
-          gpu_stats.gpus [i].temps_c.ram
-          OSD_END
-      }
-#endif
     }
 
     for (int i = 0; i < nodes; i++) {
@@ -616,20 +590,59 @@ BMF_DrawOSD (void)
   }
 
   //
-  // NvAPI Memory Info (Reasonably Accurate on Windows 8.1 and older)
+  // NvAPI or ADL Memory Info (Reasonably Accurate on Windows 8.1 and older)
   //
   else {
-    OSD_G_PRINTF "\n" OSD_END
-
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
     //     on that in the future.
     for (int i = 0; i < gpu_stats.num_gpus; i++) {
-      OSD_G_PRINTF "  MEM%d %#4lu MHz, VRAM%d %#4llu MiB, SHARED%d %#3llu MiB",
-        i, gpu_stats.gpus[i].clocks_kHz.ram / 1000UL,
-        i, gpu_stats.gpus [i].memory_B.local    >> 20ULL,
-        i, gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL
+      if (nvapi_init) {
+        OSD_G_PRINTF "  VRAM%i  : %#5llu MiB (%#3lu%%: %#5.01lf GiB/s)",
+          i,
+                      gpu_stats.gpus [i].memory_B.local >> 20ULL,
+                      gpu_stats.gpus [i].loads_percent.fb,
+          (double)((uint64_t)gpu_stats.gpus [i].clocks_kHz.ram * 2ULL * 1000ULL *
+                   (uint64_t)gpu_stats.gpus [i].hwinfo.mem_bus_width) / 8.0 /
+                     (1024.0 * 1024.0 * 1024.0) *
+                    ((double)gpu_stats.gpus [i].loads_percent.fb / 100.0)
+        OSD_END
+      } else {
+        OSD_G_PRINTF "  VRAM%i  : %#5llu MiB",
+          i, gpu_stats.gpus [i].memory_B.local >> 20ULL
+        OSD_END
+      }
+
+      OSD_G_PRINTF ", %#4lu MHz",
+        gpu_stats.gpus [i].clocks_kHz.ram / 1000UL
       OSD_END
+
+      OSD_G_PRINTF "\n" OSD_END
+    }
+
+    for (int i = 0; i < gpu_stats.num_gpus; i++) {
+      // Figure out the generation from the transfer rate...
+      int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
+
+      if (nvapi_init) {
+        OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
+          i,
+                       gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL,
+                       gpu_stats.gpus [i].loads_percent.bus,
+                       gpu_stats.gpus [i].hwinfo.pcie_bandwidth_mb () / 1024.0 *
+              ((double)gpu_stats.gpus [i].loads_percent.bus / 100.0),
+                       pcie_gen,
+                       gpu_stats.gpus [i].hwinfo.pcie_lanes
+                       //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
+        OSD_END
+      } else {
+        OSD_G_PRINTF "  SHARE%u : %#5llu MiB, PCIe %lu.0x%lu\n",
+          i,
+          gpu_stats.gpus [i].memory_B.nonlocal    >> 20ULL,
+          pcie_gen,
+          gpu_stats.gpus [i].hwinfo.pcie_lanes
+        OSD_END
+      }
 
 #if 0
       // Add memory temperature if it exists
@@ -639,8 +652,6 @@ BMF_DrawOSD (void)
         OSD_END
       }
 #endif
-
-      OSD_G_PRINTF "\n" OSD_END
     }
   }
 
