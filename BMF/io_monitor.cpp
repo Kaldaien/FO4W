@@ -135,14 +135,16 @@ BMF_InitCOM (void)
 
   InitializeCriticalSectionAndSpinCount (&com_cs, 5000);
 
-  if (FAILED (hr = CoInitializeSecurity(
-              NULL,
-              -1,
-              NULL,
-              NULL,
-              RPC_C_AUTHN_LEVEL_NONE,
-              RPC_C_IMP_LEVEL_IMPERSONATE,
-              NULL, EOAC_NONE, 0)))
+  if (FAILED (hr = CoInitializeSecurity (
+                     NULL,
+                     -1,
+                     NULL,
+                     NULL,
+                     RPC_C_AUTHN_LEVEL_NONE,
+                     RPC_C_IMP_LEVEL_IMPERSONATE,
+                     NULL, EOAC_NONE, 0 )
+             )
+     )
   {
     // It's possible that the application already did this, in which case
     //   it is immutable and we should try to deal with whatever the app
@@ -154,12 +156,14 @@ BMF_InitCOM (void)
     }
   }
 
-  if (FAILED (hr = CoCreateInstance(
-    CLSID_WbemLocator, 
-    NULL,
-    CLSCTX_INPROC_SERVER,
-    IID_IWbemLocator,
-    (void**) &pWbemLocator)))
+  if (FAILED (hr = CoCreateInstance (
+                     CLSID_WbemLocator, 
+                     NULL,
+                     CLSCTX_INPROC_SERVER,
+                     IID_IWbemLocator,
+                     (void**) &pWbemLocator )
+             )
+     )
   {
     dll_log.Log (L"[COM] Failed to create Wbem Locator (%s:%d) -- 0x%X",
       __FILEW__, __LINE__, hr);
@@ -176,15 +180,17 @@ BMF_InitCOM (void)
     goto COM_CLEANUP;
   }
 
-  if (FAILED (hr = pWbemLocator->ConnectServer(
-      bstrNameSpace,
-      NULL, // User name
-      NULL, // Password
-      NULL, // Locale
-      0L,   // Security flags
-      NULL, // Authority
-      NULL, // Wbem context
-      &pNameSpace)))
+  if (FAILED (hr = pWbemLocator->ConnectServer (
+                     bstrNameSpace,
+                     NULL, // User name
+                     NULL, // Password
+                     NULL, // Locale
+                     0L,   // Security flags
+                     NULL, // Authority
+                     NULL, // Wbem context
+                     &pNameSpace )
+             )
+     )
   {
     dll_log.Log (L"[COM] Failure to Connect to Wbem Server (%s:%d) -- 0x%X",
       __FILEW__, __LINE__, hr);
@@ -215,12 +221,14 @@ COM_CLEANUP:
     pWbemLocator->Release ();
     pWbemLocator = nullptr;
   }
-  
+
   if (pNameSpace != nullptr)
   {
     pNameSpace->Release ();
     pNameSpace = nullptr;
   }
+
+  CoUninitialize ();
 
   com_init = false;
 
@@ -265,11 +273,13 @@ BMF_MonitorCPU (LPVOID user_param)
   HRESULT hr;
 
   if (FAILED (hr = CoCreateInstance (
-      CLSID_WbemRefresher,
-      NULL,
-      CLSCTX_INPROC_SERVER,
-      IID_IWbemRefresher, 
-      (void**) &cpu.pRefresher)))
+                     CLSID_WbemRefresher,
+                     NULL,
+                     CLSCTX_INPROC_SERVER,
+                     IID_IWbemRefresher, 
+                     (void**) &cpu.pRefresher )
+             )
+     )
   {
     dll_log.Log (L" [WMI]: Failed to create Refresher Instance (%s:%d)",
       __FILEW__, __LINE__);
@@ -278,7 +288,9 @@ BMF_MonitorCPU (LPVOID user_param)
 
   if (FAILED (hr = cpu.pRefresher->QueryInterface (
                         IID_IWbemConfigureRefresher,
-                        (void **)&cpu.pConfig)))
+                        (void **)&cpu.pConfig )
+             )
+     )
   {
     dll_log.Log (L" [WMI]: Failed to Query Refresher Interface (%s:%d)",
       __FILEW__, __LINE__);
@@ -287,12 +299,14 @@ BMF_MonitorCPU (LPVOID user_param)
 
   // Add an enumerator to the refresher.
   if (FAILED (hr = cpu.pConfig->AddEnum (
-      pNameSpace,
-      L"Win32_PerfFormattedData_PerfOS_Processor",
-      0, 
-      NULL, 
-      &cpu.pEnum,
-      &cpu.lID)))
+                     pNameSpace,
+                     L"Win32_PerfFormattedData_PerfOS_Processor",
+                     0,
+                     NULL,
+                     &cpu.pEnum,
+                     &cpu.lID )
+             )
+     )
   {
     dll_log.Log (L" [WMI]: Failed to Add Enumerator (%s:%d) - %04X",
       __FILEW__, __LINE__, hr);
@@ -329,10 +343,10 @@ BMF_MonitorCPU (LPVOID user_param)
       goto CPU_CLEANUP;
     }
 
-    hr = cpu.pEnum->GetObjects (0L, 
-                                cpu.dwNumObjects, 
-                                cpu.apEnumAccess, 
-                                &cpu.dwNumReturned);
+    hr = cpu.pEnum->GetObjects ( 0L,
+                                 cpu.dwNumObjects,
+                                 cpu.apEnumAccess,
+                                 &cpu.dwNumReturned );
 
     // If the buffer was not big enough,
     // allocate a bigger buffer and retry.
@@ -353,10 +367,12 @@ BMF_MonitorCPU (LPVOID user_param)
 
       cpu.dwNumObjects = cpu.dwNumReturned;
 
-      if (FAILED (hr = cpu.pEnum->GetObjects (0L, 
-                                              cpu.dwNumObjects, 
-                                              cpu.apEnumAccess, 
-                                              &cpu.dwNumReturned)))
+      if (FAILED (hr = cpu.pEnum->GetObjects ( 0L,
+                                               cpu.dwNumObjects,
+                                               cpu.apEnumAccess,
+                                               &cpu.dwNumReturned )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to get CPU Objects (%s:%d)",
           __FILEW__, __LINE__);
@@ -383,11 +399,13 @@ BMF_MonitorCPU (LPVOID user_param)
       CIMTYPE PercentUserTimeType;
       CIMTYPE PercentProcessorTimeType;
       CIMTYPE PercentIdleTimeType;
-      
+
       if (FAILED (hr = cpu.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentInterruptTime",
                             &PercentInterruptTimeType,
-                            &cpu.lPercentInterruptTimeHandle)))
+                            &cpu.lPercentInterruptTimeHandle )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
           __FILEW__, __LINE__);
@@ -397,7 +415,9 @@ BMF_MonitorCPU (LPVOID user_param)
       if (FAILED (hr = cpu.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentPrivilegedTime",
                             &PercentPrivilegedTimeType,
-                            &cpu.lPercentPrivilegedTimeHandle)))
+                            &cpu.lPercentPrivilegedTimeHandle )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
           __FILEW__, __LINE__);
@@ -407,7 +427,9 @@ BMF_MonitorCPU (LPVOID user_param)
       if (FAILED (hr = cpu.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentUserTime",
                             &PercentUserTimeType,
-                            &cpu.lPercentUserTimeHandle)))
+                            &cpu.lPercentUserTimeHandle )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
           __FILEW__, __LINE__);
@@ -417,7 +439,9 @@ BMF_MonitorCPU (LPVOID user_param)
       if (FAILED (hr = cpu.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentProcessorTime",
                             &PercentProcessorTimeType,
-                            &cpu.lPercentProcessorTimeHandle)))
+                            &cpu.lPercentProcessorTimeHandle )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
           __FILEW__, __LINE__);
@@ -427,7 +451,9 @@ BMF_MonitorCPU (LPVOID user_param)
       if (FAILED (hr = cpu.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentIdleTime",
                             &PercentIdleTimeType,
-                            &cpu.lPercentIdleTimeHandle)))
+                            &cpu.lPercentIdleTimeHandle )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to acquire property handle (%s:%d)",
           __FILEW__, __LINE__);
@@ -445,7 +471,9 @@ BMF_MonitorCPU (LPVOID user_param)
 
       if (FAILED (hr = cpu.apEnumAccess [i]->ReadQWORD (
                              cpu.lPercentInterruptTimeHandle,
-                            &interrupt)))
+                             &interrupt )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
           __FILEW__, __LINE__);
@@ -454,7 +482,9 @@ BMF_MonitorCPU (LPVOID user_param)
 
       if (FAILED (hr = cpu.apEnumAccess [i]->ReadQWORD (
                              cpu.lPercentPrivilegedTimeHandle,
-                            &kernel)))
+                             &kernel )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
           __FILEW__, __LINE__);
@@ -463,7 +493,9 @@ BMF_MonitorCPU (LPVOID user_param)
 
       if (FAILED (hr = cpu.apEnumAccess [i]->ReadQWORD (
                              cpu.lPercentUserTimeHandle,
-                            &user)))
+                             &user )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
           __FILEW__, __LINE__);
@@ -472,7 +504,9 @@ BMF_MonitorCPU (LPVOID user_param)
 
       if (FAILED (hr = cpu.apEnumAccess [i]->ReadQWORD (
                              cpu.lPercentProcessorTimeHandle,
-                            &load)))
+                             &load )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
           __FILEW__, __LINE__);
@@ -481,7 +515,9 @@ BMF_MonitorCPU (LPVOID user_param)
 
       if (FAILED (hr = cpu.apEnumAccess [i]->ReadQWORD (
                              cpu.lPercentIdleTimeHandle,
-                            &idle)))
+                             &idle )
+                 )
+         )
       {
         dll_log.Log (L" [WMI]: Failed to read Quad-Word Property (%s:%d)",
           __FILEW__, __LINE__);
@@ -544,6 +580,8 @@ CPU_CLEANUP:
     cpu.pRefresher = nullptr;
   }
 
+  CoUninitialize ();
+
   LeaveCriticalSection (&com_cs);
 
   return 0;
@@ -567,32 +605,38 @@ BMF_MonitorDisk (LPVOID user)
   HRESULT hr;
 
   if (FAILED (hr = CoCreateInstance (
-      CLSID_WbemRefresher,
-      NULL,
-      CLSCTX_INPROC_SERVER,
-      IID_IWbemRefresher, 
-      (void**) &disk.pRefresher)))
+                     CLSID_WbemRefresher,
+                     NULL,
+                     CLSCTX_INPROC_SERVER,
+                     IID_IWbemRefresher, 
+                     (void**) &disk.pRefresher )
+             )
+     )
   {
     goto DISK_CLEANUP;
   }
 
   if (FAILED (hr = disk.pRefresher->QueryInterface (
                         IID_IWbemConfigureRefresher,
-                        (void **)&disk.pConfig)))
+                        (void **)&disk.pConfig )
+             )
+     )
   {
     goto DISK_CLEANUP;
   }
 
   // Add an enumerator to the refresher.
   if (FAILED (hr = disk.pConfig->AddEnum (
-      pNameSpace,
-      config.disk.type == 1 ? 
-        L"Win32_PerfFormattedData_PerfDisk_LogicalDisk" :
-        L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk",
-      0, 
-      NULL,
-      &disk.pEnum,
-      &disk.lID)))
+                     pNameSpace,
+                     config.disk.type == 1 ? 
+                     L"Win32_PerfFormattedData_PerfDisk_LogicalDisk" :
+                     L"Win32_PerfFormattedData_PerfDisk_PhysicalDisk",
+                     0,
+                     NULL,
+                     &disk.pEnum,
+                     &disk.lID )
+             )
+     )
   {
     goto DISK_CLEANUP;
   }
@@ -625,10 +669,10 @@ BMF_MonitorDisk (LPVOID user)
       goto DISK_CLEANUP;
     }
 
-    hr = disk.pEnum->GetObjects (0L, 
-                                 disk.dwNumObjects, 
-                                 disk.apEnumAccess, 
-                                &disk.dwNumReturned);
+    hr = disk.pEnum->GetObjects ( 0L,
+                                  disk.dwNumObjects,
+                                  disk.apEnumAccess,
+                                 &disk.dwNumReturned );
 
     // If the buffer was not big enough,
     // allocate a bigger buffer and retry.
@@ -647,10 +691,12 @@ BMF_MonitorDisk (LPVOID user)
 
       disk.dwNumObjects = disk.dwNumReturned;
 
-      if (FAILED (hr = disk.pEnum->GetObjects (0L, 
-                                              disk.dwNumObjects, 
-                                              disk.apEnumAccess, 
-                                              &disk.dwNumReturned)))
+      if (FAILED (hr = disk.pEnum->GetObjects ( 0L,
+                                               disk.dwNumObjects,
+                                               disk.apEnumAccess,
+                                               &disk.dwNumReturned )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -681,7 +727,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"Name",
                             &NameType,
-                            &disk.lNameHandle)))
+                            &disk.lNameHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -689,7 +737,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"DiskBytesPerSec",
                             &DiskBytesPerSecType,
-                            &disk.lDiskBytesPerSecHandle)))
+                            &disk.lDiskBytesPerSecHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -697,7 +747,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"DiskReadBytesPerSec",
                             &DiskReadBytesPerSecType,
-                            &disk.lDiskReadBytesPerSecHandle)))
+                            &disk.lDiskReadBytesPerSecHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -705,7 +757,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"DiskWriteBytesPerSec",
                             &DiskWriteBytesPerSecType,
-                            &disk.lDiskWriteBytesPerSecHandle)))
+                            &disk.lDiskWriteBytesPerSecHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -713,7 +767,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentDiskTime",
                             &PercentDiskTimeType,
-                            &disk.lPercentDiskTimeHandle)))
+                            &disk.lPercentDiskTimeHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -721,7 +777,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentDiskReadTime",
                             &PercentDiskReadTimeType,
-                            &disk.lPercentDiskReadTimeHandle)))
+                            &disk.lPercentDiskReadTimeHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -729,7 +787,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentDiskWriteTime",
                             &PercentDiskWriteTimeType,
-                            &disk.lPercentDiskWriteTimeHandle)))
+                            &disk.lPercentDiskWriteTimeHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -737,7 +797,9 @@ BMF_MonitorDisk (LPVOID user)
       if (FAILED (hr = disk.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentIdleTime",
                             &PercentIdleTimeType,
-                            &disk.lPercentIdleTimeHandle)))
+                            &disk.lPercentIdleTimeHandle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -756,49 +818,63 @@ BMF_MonitorDisk (LPVOID user)
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lPercentDiskReadTimeHandle,
-                            &percent_read)))
+                            &percent_read )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lPercentDiskWriteTimeHandle,
-                            &percent_write)))
+                            &percent_write )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lPercentDiskTimeHandle,
-                            &percent_load)))
+                            &percent_load )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lPercentIdleTimeHandle,
-                            &percent_idle)))
+                            &percent_idle )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lDiskBytesPerSecHandle,
-                            &bytes_sec)))
+                            &bytes_sec )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lDiskWriteBytesPerSecHandle,
-                            &bytes_write_sec)))
+                            &bytes_write_sec )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
 
       if (FAILED (hr = disk.apEnumAccess [i]->ReadQWORD (
                              disk.lDiskReadBytesPerSecHandle,
-                            &bytes_read_sec)))
+                            &bytes_read_sec )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -810,7 +886,9 @@ BMF_MonitorDisk (LPVOID user)
                              disk.lNameHandle,
                              sizeof (wchar_t) * 64,
                              &bytes,
-                             (LPBYTE)name)))
+                             (LPBYTE)name )
+                 )
+         )
       {
         goto DISK_CLEANUP;
       }
@@ -880,6 +958,8 @@ DISK_CLEANUP:
     disk.pRefresher = nullptr;
   }
 
+  CoUninitialize ();
+
   LeaveCriticalSection (&com_cs);
 
   return 0;
@@ -901,31 +981,36 @@ BMF_MonitorPagefile (LPVOID user)
   HRESULT hr;
 
   if (FAILED (hr = CoCreateInstance (
-      CLSID_WbemRefresher,
-      NULL,
-      CLSCTX_INPROC_SERVER,
-      IID_IWbemRefresher, 
-      (void**) &pagefile.pRefresher)))
+                     CLSID_WbemRefresher,
+                     NULL,
+                     CLSCTX_INPROC_SERVER,
+                     IID_IWbemRefresher, 
+                     (void**) &pagefile.pRefresher )
+             )
+     )
   {
     goto PAGEFILE_CLEANUP;
   }
 
   if (FAILED (hr = pagefile.pRefresher->QueryInterface (
                         IID_IWbemConfigureRefresher,
-                        (void **)&pagefile.pConfig)))
+                        (void **)&pagefile.pConfig )
+             )
+     )
   {
     goto PAGEFILE_CLEANUP;
   }
 
   // Add an enumerator to the refresher.
   if (FAILED (hr = pagefile.pConfig->AddEnum (
-      pNameSpace,
-      L"Win32_PerfRawData_PerfOS_PagingFile",
-      //L"Win32_PerfFormattedData_PerfOS_PagingFile",
-      0, 
-      NULL,
-      &pagefile.pEnum,
-      &pagefile.lID)))
+                     pNameSpace,
+                     L"Win32_PerfRawData_PerfOS_PagingFile",
+                     0,
+                     NULL,
+                     &pagefile.pEnum,
+                     &pagefile.lID )
+             )
+     )
   {
     goto PAGEFILE_CLEANUP;
   }
@@ -958,10 +1043,10 @@ BMF_MonitorPagefile (LPVOID user)
       goto PAGEFILE_CLEANUP;
     }
 
-    hr = pagefile.pEnum->GetObjects (0L,
-                                     pagefile.dwNumObjects,
-                                     pagefile.apEnumAccess,
-                                     &pagefile.dwNumReturned);
+    hr = pagefile.pEnum->GetObjects ( 0L,
+                                      pagefile.dwNumObjects,
+                                      pagefile.apEnumAccess,
+                                      &pagefile.dwNumReturned );
 
     // If the buffer was not big enough,
     // allocate a bigger buffer and retry.
@@ -980,10 +1065,12 @@ BMF_MonitorPagefile (LPVOID user)
 
       pagefile.dwNumObjects = pagefile.dwNumReturned;
 
-      if (FAILED (hr = pagefile.pEnum->GetObjects (0L, 
-                                                   pagefile.dwNumObjects, 
-                                                   pagefile.apEnumAccess, 
-                                                   &pagefile.dwNumReturned)))
+      if (FAILED (hr = pagefile.pEnum->GetObjects ( 0L,
+                                                    pagefile.dwNumObjects,
+                                                    pagefile.apEnumAccess,
+                                                    &pagefile.dwNumReturned )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1005,11 +1092,13 @@ BMF_MonitorPagefile (LPVOID user)
       CIMTYPE PercentUsageType;
       CIMTYPE PercentUsagePeakType;
       CIMTYPE PercentUsage_BaseType;
-      
+
       if (FAILED (hr = pagefile.apEnumAccess [0]->GetPropertyHandle (
                             L"Name",
                             &NameType,
-                            &pagefile.lNameHandle)))
+                            &pagefile.lNameHandle )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1017,7 +1106,9 @@ BMF_MonitorPagefile (LPVOID user)
       if (FAILED (hr = pagefile.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentUsage",
                             &PercentUsageType,
-                            &pagefile.lPercentUsageHandle)))
+                            &pagefile.lPercentUsageHandle )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1025,7 +1116,9 @@ BMF_MonitorPagefile (LPVOID user)
       if (FAILED (hr = pagefile.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentUsagePeak",
                             &PercentUsagePeakType,
-                            &pagefile.lPercentUsagePeakHandle)))
+                            &pagefile.lPercentUsagePeakHandle )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1033,7 +1126,9 @@ BMF_MonitorPagefile (LPVOID user)
       if (FAILED (hr = pagefile.apEnumAccess [0]->GetPropertyHandle (
                             L"PercentUsage_Base",
                             &PercentUsage_BaseType,
-                            &pagefile.lPercentUsage_BaseHandle)))
+                            &pagefile.lPercentUsage_BaseHandle )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1047,21 +1142,27 @@ BMF_MonitorPagefile (LPVOID user)
 
       if (FAILED (hr = pagefile.apEnumAccess [i]->ReadDWORD (
                                  pagefile.lPercentUsageHandle,
-                                 &usage)))
+                                 &usage )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
 
       if (FAILED (hr = pagefile.apEnumAccess [i]->ReadDWORD (
                                  pagefile.lPercentUsagePeakHandle,
-                                 &usage_peak)))
+                                 &usage_peak )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
 
       if (FAILED (hr = pagefile.apEnumAccess [i]->ReadDWORD (
                                  pagefile.lPercentUsage_BaseHandle,
-                                 &size)))
+                                 &size )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1073,7 +1174,9 @@ BMF_MonitorPagefile (LPVOID user)
                              pagefile.lNameHandle,
                              sizeof (wchar_t) * 255,
                              &bytes,
-                             (LPBYTE)name)))
+                             (LPBYTE)name )
+                 )
+         )
       {
         goto PAGEFILE_CLEANUP;
       }
@@ -1140,6 +1243,8 @@ PAGEFILE_CLEANUP:
     pagefile.pRefresher->Release ();
     pagefile.pRefresher = nullptr;
   }
+
+  CoUninitialize ();
 
   LeaveCriticalSection (&com_cs);
 

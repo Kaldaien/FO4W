@@ -74,6 +74,8 @@ struct cpu_perf_t : WMI_refresh_thread_t
     uint64_t               percent_kernel               = 0;
     uint64_t               percent_user                 = 0;
     uint64_t               percent_interrupt            = 0;
+
+    uint64_t               temp_c                       = 0;
   } cpus [64];
 
   DWORD                    num_cpus                     = 0;

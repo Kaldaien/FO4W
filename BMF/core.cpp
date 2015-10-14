@@ -1092,7 +1092,7 @@ BMF_ShutdownCore (const wchar_t* backend)
       mem_stats [0].budget_changes);
 
     for (int i = 0; i < 4; i++) {
-      if (mem_stats [i].budget_changes > 0) {
+      if (mem_stats [i].min_usage > 0) {
         if (mem_stats [i].min_reserve == UINT64_MAX)
           mem_stats [i].min_reserve = 0ULL;
 

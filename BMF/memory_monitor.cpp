@@ -46,11 +46,13 @@ BMF_MonitorProcess (LPVOID user)
   HRESULT hr;
 
   if (FAILED (hr = CoCreateInstance (
-    CLSID_WbemRefresher,
-    NULL,
-    CLSCTX_INPROC_SERVER,
-    IID_IWbemRefresher, 
-    (void**) &proc.pRefresher)))
+                     CLSID_WbemRefresher,
+                     NULL,
+                     CLSCTX_INPROC_SERVER,
+                     IID_IWbemRefresher, 
+                     (void**) &proc.pRefresher )
+             )
+     )
   {
     dll_log.Log(L" [WMI]: Failed to create Refresher Instance (%s:%d) -- 0x%X",
       __FILEW__, __LINE__, hr);
@@ -58,8 +60,10 @@ BMF_MonitorProcess (LPVOID user)
   }
 
   if (FAILED (hr = proc.pRefresher->QueryInterface (
-    IID_IWbemConfigureRefresher,
-    (void **)&proc.pConfig)))
+                     IID_IWbemConfigureRefresher,
+                     (void **)&proc.pConfig )
+             )
+     )
   {
     dll_log.Log(L" [WMI]: Failed to Query Refresher Interface (%s:%d) -- 0x%X",
       __FILEW__, __LINE__, hr);
@@ -86,16 +90,28 @@ BMF_MonitorProcess (LPVOID user)
                L"Win32_PerfFormattedData_PerfProc_Process.Name='%ws'",
                  pwszShortName );
 
-  if (FAILED (hr = proc.pConfig->AddObjectByPath (pNameSpace, wszInstance, 0, 0, &pClassObj, 0)))
+  if (FAILED (hr = proc.pConfig->AddObjectByPath (
+                     pNameSpace,
+                     wszInstance,
+                     0,
+                     0,
+                     &pClassObj,
+                     0 )
+             )
+     )
   {
     dll_log.Log(L" [WMI]: Failed to AddObjectByPath (%s:%d) -- 0x%X",
       __FILEW__, __LINE__, hr);
     goto PROC_CLEANUP;
   }
 
-  if (FAILED (hr = pClassObj->QueryInterface (IID_IWbemObjectAccess, (void **)(&proc.pAccess))))
+  if (FAILED (hr = pClassObj->QueryInterface ( IID_IWbemObjectAccess,
+                                               (void **)(&proc.pAccess ) )
+             )
+     )
   {
-    dll_log.Log(L" [WMI]: Failed to Query WbemObjectAccess Interface (%s:%d) -- 0x%X",
+    dll_log.Log(L" [WMI]: Failed to Query WbemObjectAccess Interface (%s:%d)"
+                L" -- 0x%X",
       __FILEW__, __LINE__, hr);
     pClassObj->Release ();
     pClassObj = nullptr;
@@ -107,35 +123,74 @@ BMF_MonitorProcess (LPVOID user)
   pClassObj = nullptr;
 
   CIMTYPE variant;
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"PageFileBytes", &variant, &proc.hPageFileBytes)))
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"PageFileBytes",
+                                                     &variant,
+                                                     &proc.hPageFileBytes )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"PageFileBytesPeak", &variant, &proc.hPageFileBytesPeak)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"PageFileBytesPeak",
+                                                     &variant,
+                                                     &proc.hPageFileBytesPeak )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"ThreadCount", &variant, &proc.hThreadCount)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"ThreadCount",
+                                                     &variant,
+                                                     &proc.hThreadCount )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"PrivateBytes", &variant, &proc.hPrivateBytes)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"PrivateBytes",
+                                                     &variant,
+                                                     &proc.hPrivateBytes )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"WorkingSetPeak", &variant, &proc.hWorkingSetPeak)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"WorkingSetPeak",
+                                                     &variant,
+                                                     &proc.hWorkingSetPeak )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"WorkingSet", &variant, &proc.hWorkingSet)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"WorkingSet",
+                                                     &variant,
+                                                     &proc.hWorkingSet )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"VirtualBytesPeak", &variant, &proc.hVirtualBytesPeak)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"VirtualBytesPeak",
+                                                     &variant,
+                                                     &proc.hVirtualBytesPeak )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
-  if (FAILED (hr = proc.pAccess->GetPropertyHandle (L"VirtualBytes", &variant, &proc.hVirtualBytes)))
+
+  if (FAILED (hr = proc.pAccess->GetPropertyHandle ( L"VirtualBytes",
+                                                     &variant,
+                                                     &proc.hVirtualBytes )
+             )
+     )
   {
     goto PROC_CLEANUP;
   }
@@ -213,6 +268,8 @@ PROC_CLEANUP:
     proc.pRefresher->Release ();
     proc.pRefresher = nullptr;
   }
+
+  CoUninitialize ();
 
   LeaveCriticalSection (&com_cs);
 
