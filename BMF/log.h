@@ -18,8 +18,10 @@
 #ifndef __BMF__LOG_H__
 #define __BMF__LOG_H__
 
-#include <Windows.h>
 #include <cstdio>
+
+#include <minwindef.h>
+#include <minwinbase.h>
 
 #define BMF_AutoClose_Log(log) bmf_logger_t::AutoClose closeme_##log = (log).auto_close ();
 
