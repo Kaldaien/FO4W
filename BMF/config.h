@@ -149,6 +149,14 @@ struct bmf_config_t
 
 
   struct {
+    std::wstring
+            achievement_sound = L"";
+    bool    nosound           = false;
+    bool    silent            = false;
+  } steam;
+
+
+  struct {
     int     init_delay        = 250;
     bool    silent            = false;
     bool    allow_dev_trans   = false;

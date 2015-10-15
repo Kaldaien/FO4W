@@ -28,11 +28,6 @@
 #include <cstdlib>
 #include <string>
 
-//#define HOOK_D3D11_DEVICE_CREATION
-#ifdef HOOK_D3D11_DEVICE_CREATION
-#include "minhook/MinHook.h"
-#endif
-
 #include "log.h"
 
 #include "core.h"
@@ -40,12 +35,6 @@
 static CRITICAL_SECTION d3dhook_mutex = { 0 };
 
 extern int                      gpu_prio;
-
-// Breaks Metal Gear Solid V
-//#define ALLOW_DEVICE_TRANSITION
-
-//static ID3D11Device* g_pD3D11Dev;
-//static IDXGIDevice*  g_pDXGIDev;
 
 extern "C" {
   typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
@@ -651,37 +640,6 @@ extern "C" {
     if (res == S_OK && (ppDevice != NULL))
     {
       dll_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
-
-#if 0
-      g_pD3D11Dev = (*ppDevice);
-
-      if (g_pDXGIDev == nullptr && g_pD3D11Dev != nullptr)
-      {
-        // First device created, this is the sane case...
-        g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
-          (void **)&g_pDXGIDev);
-      }
-
-      ///
-      // This does not happen often, but sometimes a game creates multiple
-      //   devices, let us just transition the DXGI device to the new D3D
-      //     device.
-      //
-      //   Is this the proper behavior? Who can say? Why do these games need
-      //     multiple devices capable of presenting swapchains in the first
-      //       place?
-      //
-      else if (g_pD3D11Dev != nullptr)
-      {
-        //if (config.allow_dev_trans) {
-#ifdef ALLOW_DEVICE_TRANSITION
-        g_pDXGIDev->Release ();
-        g_pD3D11Dev->QueryInterface (__uuidof (IDXGIDevice),
-          (void **)&g_pDXGIDev);
-#endif
-        //}
-      }
-#endif
     }
 
     return res;
@@ -790,71 +748,6 @@ extern "C" {
     Microsoft = 0x1414,
     Intel     = 0x8086
   } Vendors;
-
-#ifdef HOOK_D3D11_DEVICE_CREATION
-  volatile bool init = false;
-
-  DWORD
-    WINAPI HookThread (LPVOID user)
-  {
-    if (init) {
-      //LeaveCriticalSection (&d3dhook_mutex);
-      return 1;
-    }
-
-    init = true;
-
-    LoadLibrary (L"d3d11.dll");
-
-    dll_log.LogEx (true, L"Hooking D3D11CreateDeviceAndSwapChain... ");
-
-    MH_STATUS stat =
-      MH_CreateHookApi (L"d3d11.dll",
-        "D3D11CreateDeviceAndSwapChain",
-        D3D11CreateDeviceAndSwapChain,
-        (void **)&D3D11CreateDeviceAndSwapChain_Import);
-
-    if (stat != MH_ERROR_ALREADY_CREATED &&
-      stat != MH_OK) {
-      dll_log.LogEx (false, L" failed\n");
-    }
-    else {
-      dll_log.LogEx (false, L" %p\n", D3D11CreateDeviceAndSwapChain_Import);
-    }
-
-    dll_log.LogEx (false, L"\n");
-
-    MH_ApplyQueued ();
-    MH_EnableHook  (MH_ALL_HOOKS);
-
-    return 0;
-  }
-
-  void
-    BMF_InstallD3D11DeviceHooks (void)
-  {
-    EnterCriticalSection (&d3dhook_mutex);
-    {
-      WaitForInit ();
-
-      if (init) {
-        LeaveCriticalSection (&d3dhook_mutex);
-        return;
-      }
-
-      HANDLE hThread =
-        CreateThread (NULL, 0, HookThread, NULL, 0, NULL);
-
-      if (hThread != 0)
-        WaitForSingleObject (hThread, INFINITE);
-      else
-        Sleep (20);
-
-      init = true;
-    }
-    LeaveCriticalSection (&d3dhook_mutex);
-  }
-#endif
 
   HRESULT
   STDMETHODCALLTYPE EnumAdapters_Common (IDXGIFactory       *This,
@@ -1033,11 +926,7 @@ extern "C" {
     STDMETHODCALLTYPE CreateDXGIFactory (REFIID   riid,
                                    _Out_ void   **ppFactory)
   {
-#ifdef HOOK_D3D11_DEVICE_CREATION
-    //BMF_InstallD3D11DeviceHooks ();
-#else
     WaitForInit ();
-#endif
 
     std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
     int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
@@ -1071,11 +960,7 @@ extern "C" {
     STDMETHODCALLTYPE CreateDXGIFactory1 (REFIID   riid,
                                     _Out_ void   **ppFactory)
   {
-#ifdef HOOK_D3D11_DEVICE_CREATION
-    BMF_InstallD3D11DeviceHooks ();
-#else
     WaitForInit ();
-#endif
 
     std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
     int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);
@@ -1115,11 +1000,7 @@ extern "C" {
                                           REFIID   riid,
                                     _Out_ void   **ppFactory)
   {
-#ifdef HOOK_D3D11_DEVICE_CREATION
-    BMF_InstallD3D11DeviceHooks ();
-#else
     WaitForInit ();
-#endif
 
     std::wstring iname = BMF_GetDXGIFactoryInterfaceEx  (riid);
     int          iver  = BMF_GetDXGIFactoryInterfaceVer (riid);

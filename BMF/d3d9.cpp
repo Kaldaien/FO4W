@@ -429,26 +429,29 @@ extern "C" {
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
-D3D9CreateAdditionalSwapChain_Override (IDirect3DDevice9       *This,
-                                        D3DPRESENT_PARAMETERS  *pPresentationParameters,
-                                        IDirect3DSwapChain9   **pSwapChain)
+D3D9CreateAdditionalSwapChain_Override (
+    IDirect3DDevice9       *This,
+    D3DPRESENT_PARAMETERS  *pPresentationParameters,
+    IDirect3DSwapChain9   **pSwapChain
+  )
 {
   dll_log.Log (L"[!] %s (%08Xh, %08Xh, %08Xh) - "
     L"[Calling Thread: 0x%04x]",
-    L"IDirect3DDevice9::CreateAdditionalSwapChain", This, pPresentationParameters,
-    pSwapChain, GetCurrentThreadId ()
+    L"IDirect3DDevice9::CreateAdditionalSwapChain", This,
+    pPresentationParameters, pSwapChain, GetCurrentThreadId ()
   );
 
   HRESULT hr;
 
-  D3D9_CALL (hr, D3D9CreateAdditionalSwapChain_Original (This,
-                                                         pPresentationParameters,
-                                                         pSwapChain));
+  D3D9_CALL (hr,D3D9CreateAdditionalSwapChain_Original(This,
+                                                       pPresentationParameters,
+                                                       pSwapChain));
 
   if (SUCCEEDED (hr)) {
-    D3D9_VIRTUAL_OVERRIDE (pSwapChain, 3,
-                           "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
-                           D3D9PresentSwap_Original, D3D9PresentSwapChain_t);
+    D3D9_VIRTUAL_OVERRIDE ( pSwapChain, 3,
+                            "IDirect3DSwapChain9::Present",
+                            D3D9PresentSwapCallback, D3D9PresentSwap_Original,
+                            D3D9PresentSwapChain_t );
   }
 
   return hr;
@@ -543,10 +546,9 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
 {
   dll_log.Log (L"[!] %s (%08Xh, %lu, %lu, %08Xh, %lu, %08Xh, %08Xh, %08Xh) - "
     L"[Calling Thread: 0x%04x]",
-    L"IDirect3D9Ex::D3D9CreateDeviceEx", This, Adapter, DeviceType, hFocusWindow,
-    BehaviorFlags, pPresentationParameters, pFullscreenDisplayMode,
-    ppReturnedDeviceInterface,
-    GetCurrentThreadId ());
+    L"IDirect3D9Ex::D3D9CreateDeviceEx", This, Adapter, (DWORD)DeviceType,
+    hFocusWindow, BehaviorFlags, pPresentationParameters,
+    pFullscreenDisplayMode, ppReturnedDeviceInterface, GetCurrentThreadId ());
 
   HRESULT ret;
 
@@ -568,7 +570,7 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
                          D3D9Present_Original, D3D9PresentDevice_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 121,
-                         "IDirect3DDevice9Ex::PresentEx", D3D9PresentCallbackEx,
+                         "IDirect3DDevice9Ex::PresentEx",D3D9PresentCallbackEx,
                          D3D9PresentEx_Original, D3D9PresentDeviceEx_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 13,
@@ -601,8 +603,8 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
     factory->Release ();
   }
 
-  void** vftable                    = *(void***)*ppReturnedDeviceInterface;
-  GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftable [14];
+  void** vtable                     = *(void***)*ppReturnedDeviceInterface;
+  GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vtable [14];
   IDirect3DSwapChain9* SwapChain    = nullptr;
 
   for (int i = 0; i < 4; i++) {
@@ -639,9 +641,9 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
 {
   dll_log.Log (L"[!] %s (%08Xh, %lu, %lu, %08Xh, %lu, %08Xh, %08Xh) - "
     L"[Calling Thread: 0x%04x]",
-    L"IDirect3D9::D3D9CreateDevice", This, Adapter, DeviceType, hFocusWindow,
-    BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface,
-    GetCurrentThreadId ());
+    L"IDirect3D9::D3D9CreateDevice", This, Adapter, (DWORD)DeviceType,
+    hFocusWindow, BehaviorFlags, pPresentationParameters,
+    ppReturnedDeviceInterface, GetCurrentThreadId ());
 
   HRESULT ret;
 
@@ -691,15 +693,16 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
     factory->Release ();
   }
 
-  void** vftable                    = *(void***)*ppReturnedDeviceInterface;
-  GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftable [14];
+  void** vftbl                      = *(void***)*ppReturnedDeviceInterface;
+  GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftbl [14];
   IDirect3DSwapChain9* SwapChain    = nullptr;
 
   for (int i = 0; i < 4; i++) {
     if (SUCCEEDED (GetSwapChain (*ppReturnedDeviceInterface, i, &SwapChain))) {
       D3D9_VIRTUAL_OVERRIDE (&SwapChain, 3,
-                             "IDirect3DSwapChain9::Present", D3D9PresentSwapCallback,
-                             D3D9PresentSwap_Original,       D3D9PresentSwapChain_t);
+                             "IDirect3DSwapChain9::Present",
+                             D3D9PresentSwapCallback, D3D9PresentSwap_Original,
+                             D3D9PresentSwapChain_t);
 
       ((IUnknown *)SwapChain)->Release ();
     }
@@ -725,8 +728,8 @@ Direct3DCreate9 (UINT SDKVersion)
 
   if (d3d9 != nullptr)
     D3D9_VIRTUAL_OVERRIDE (&d3d9, 16, "d3d9->CreateDevice",
-                           D3D9CreateDevice_Override, D3D9CreateDevice_Original,
-                           D3D9CreateDevice_t);
+                           D3D9CreateDevice_Override,
+                           D3D9CreateDevice_Original, D3D9CreateDevice_t);
 
   return d3d9;
 }

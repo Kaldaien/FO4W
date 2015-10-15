@@ -21,6 +21,8 @@
 #include <Windows.h>
 #include <cstdio>
 
+#define BMF_AutoClose_Log(log) bmf_logger_t::AutoClose closeme_##log = (log).auto_close ();
+
 //
 // NOTE: This is a barbaric approach to the problem... we clearly have a
 //         multi-threaded execution model but the logging assumes otherwise.
@@ -32,7 +34,31 @@
 //        * Consdier using a stack-based approach if these logs become
 //            indecipherable in the future.
 //            
-struct bmf_logger_t {
+struct bmf_logger_t
+{
+  class AutoClose
+  {
+  friend struct bmf_logger_t;
+  public:
+    ~AutoClose (void)
+    {
+      if (log_ != nullptr)
+        log_->close ();
+
+      log_ = nullptr;
+    }
+
+  protected:
+    AutoClose (bmf_logger_t* log) : log_ (log) { }
+
+  private:
+    bmf_logger_t* log_;
+  };
+
+  AutoClose auto_close (void) {
+    return AutoClose (this);
+  }
+
   bool init (const char* const szFilename,
     const char* const szMode);
 

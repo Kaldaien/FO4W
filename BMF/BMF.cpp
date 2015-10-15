@@ -97,6 +97,9 @@ BMF_Detach (DLL_ROLE role)
 }
 
 
+// We need this to load embedded resources correctly...
+HMODULE hModSelf;
+
 BOOL
 APIENTRY DllMain ( HMODULE hModule,
                    DWORD   ul_reason_for_call,
@@ -106,6 +109,8 @@ APIENTRY DllMain ( HMODULE hModule,
   {
     case DLL_PROCESS_ATTACH:
     {
+       hModSelf = hModule;
+
        BMF_EstablishDllRole (hModule);
        BMF_Attach           (dll_role);
     } break;
@@ -124,8 +129,8 @@ APIENTRY DllMain ( HMODULE hModule,
     {
       BMF_Detach (dll_role);
 
-      extern void BMF_ShutdownCOM (void);
-      BMF_ShutdownCOM ();
+      //  extern void BMF_ShutdownCOM (void);
+      //BMF_ShutdownCOM ();
     } break;
   }
 

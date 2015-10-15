@@ -21,6 +21,14 @@
 #undef COM_NO_WINDOWS_H
 #include <Windows.h>
 
+#include "MinHook/include/MinHook.h"
+
+#ifdef _WIN64
+#pragma comment (lib, "Minhook/lib/libMinHook.x64.lib")
+#else
+#pragma comment (lib, "Minhook/lib/libMinHook.x86.lib")
+#endif
+
 #include "memory_monitor.h"
 #include "nvapi.h"
 
@@ -96,6 +104,25 @@ extern "C" {
   void BMF_InitCore     (const wchar_t* backend, void* callback);
   bool BMF_StartupCore  (const wchar_t* backend, void* callback);
   bool BMF_ShutdownCore (const wchar_t* backend);
+
+  MH_STATUS WINAPI
+      BMF_CreateFuncHook ( LPCWSTR pwszFuncName,
+                           LPVOID  pTarget,
+                           LPVOID  pDetour,
+                           LPVOID *ppOriginal );
+
+  MH_STATUS WINAPI
+      BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
+                          LPVOID  pDetour,    LPVOID *ppOriginal );
+
+  MH_STATUS WINAPI
+       BMF_EnableHook   (LPVOID pTarget);
+
+  MH_STATUS WINAPI
+       BMF_DisableHook  (LPVOID pTarget);
+
+  MH_STATUS WINAPI
+       BMF_RemoveHook   (LPVOID pTarget);
 
   struct IDXGISwapChain;
 

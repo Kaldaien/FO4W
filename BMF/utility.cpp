@@ -121,12 +121,4 @@ void
 BMF_SetNormalFileAttribs (std::wstring file)
 {
   SetFileAttributes (file.c_str (), FILE_ATTRIBUTE_NORMAL);
-  //TakeOwnership     ((LPWSTR)file.c_str ());
 }
-
-//Forward declaration of SetPrivilege
-BOOL SetPrivilege (
-  HANDLE hToken,          // access token handle
-  LPCTSTR lpszPrivilege,  // name of privilege to enable/disable
-  BOOL bEnablePrivilege   // to enable or disable privilege
-  );

@@ -15,10 +15,14 @@
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "core.h"
 #include "stdafx.h"
 
 #include "log.h"
+
+#include "steam_api.h"
 
 #pragma warning   (push)
 #pragma warning   (disable: 4091)
@@ -682,7 +686,8 @@ WINAPI BudgetThread (LPVOID user_data)
 }
 
 
-
+// Stupid solution for games that inexplicibly draw to the screen
+//   without ever swapping buffers.
 DWORD
 WINAPI
 osd_pump (LPVOID lpThreadParam)
@@ -694,6 +699,7 @@ osd_pump (LPVOID lpThreadParam)
 
   return 0;
 }
+
 
 void
 BMF_InitCore (const wchar_t* backend, void* callback)
@@ -764,8 +770,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
 
   backend_dll = LoadLibrary (wszBackendDLL);
 
-  //CreateThread (NULL, 0, LoadD3D11, NULL, 0, NULL);
-
   if (backend_dll != NULL)
     dll_log.LogEx (false, L" (%s)\n", wszBackendDLL);
   else
@@ -794,13 +798,26 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   BMF_LoadEarlyImports32 ();
 #endif
 
+
+  // Module was already loaded... yay!
+#ifdef _WIN64
+  if (GetModuleHandle (L"steam_api64.dll"))
+#else
+  if (GetModuleHandle (L"steam_api.dll"))
+#endif
+    BMF::SteamAPI::Init (true);  // The DLL is loaded, but is it initialized?
+  else {
+    BMF::SteamAPI::Init (false); // It's neither...
+  }
+
+
   if (config.system.silent) {
     dll_log.silent = true;
 
-    std::wstring log_fname (backend);
-    log_fname += L".log";
+    std::wstring log_fnameW (backend);
+    log_fnameW += L".log";
 
-    DeleteFile     (log_fname.c_str ());
+    DeleteFile     (log_fnameW.c_str ());
   } else {
     dll_log.silent = false;
   }
@@ -945,6 +962,8 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
+  dll_log.LogEx (false, L"\n");
+
   szOSD =
     (char *)
     HeapAlloc ( dll_heap,
@@ -976,7 +995,7 @@ WaitForInit (void)
 struct init_params_t {
   const wchar_t* backend;
   void*          callback;
-} params;
+};
 
 DWORD
 WINAPI DllThread (LPVOID user)
@@ -995,6 +1014,222 @@ WINAPI DllThread (LPVOID user)
 }
 
 
+typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryA_t)(LPCSTR  lpFileName);
+typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryW_t)(LPCWSTR lpFileName);
+
+LoadLibraryA_t LoadLibraryA_Original = nullptr;
+LoadLibraryW_t LoadLibraryW_Original = nullptr;
+
+HMODULE
+WINAPI
+LoadLibraryA_Detour (LPCSTR lpFileName)
+{
+  if (lpFileName == nullptr)
+    return NULL;
+
+  HMODULE hMod = LoadLibraryA_Original (lpFileName);
+
+  if (strstr (lpFileName, "steam_api") ||
+      strstr (lpFileName, "SteamworksNative")) {
+    BMF::SteamAPI::Init (false);
+  }
+
+  return hMod;
+}
+
+HMODULE
+WINAPI
+LoadLibraryW_Detour (LPCWSTR lpFileName)
+{
+  if (lpFileName == nullptr)
+    return NULL;
+
+  HMODULE hMod = LoadLibraryW_Original (lpFileName);
+
+  if (wcsstr (lpFileName, L"steam_api") ||
+      wcsstr (lpFileName, L"SteamworksNative")) {
+    BMF::SteamAPI::Init (false);
+  }
+
+  return hMod;
+}
+
+
+MH_STATUS
+WINAPI
+BMF_CreateFuncHook ( LPCWSTR pwszFuncName,
+                     LPVOID  pTarget,
+                     LPVOID  pDetour,
+                     LPVOID *ppOriginal )
+{
+  MH_STATUS status =
+    MH_CreateHook ( pTarget,
+                      pDetour,
+                        ppOriginal );
+
+  if (status != MH_OK) {
+    dll_log.Log ( L" [ MinHook ] Failed to Install Hook for '%s' "
+                  L"[Address: %04Xh]!  (Status: \"%hs\")",
+                    pwszFuncName,
+                      pTarget,
+                        MH_StatusToString (status) );
+  }
+
+  return status;
+}
+
+MH_STATUS
+WINAPI
+BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
+                    LPVOID  pDetour,    LPVOID *ppOriginal )
+{
+#if 1
+  HMODULE hMod = GetModuleHandle (pwszModule);
+
+  if (hMod == NULL) {
+    if (LoadLibraryW_Original != nullptr) {
+      hMod = LoadLibraryW_Original (pwszModule);
+    } else {
+      hMod = LoadLibraryW (pwszModule);
+    }
+  }
+
+  LPVOID pFuncAddr =
+    GetProcAddress (hMod, pszProcName);
+
+  MH_STATUS status =
+    MH_CreateHook ( pFuncAddr,
+                      pDetour,
+                        ppOriginal );
+#else
+  MH_STATUS status =
+    MH_CreateHookApi ( pwszModule,
+                         pszProcName,
+                           pDetour,
+                             ppOriginal );
+#endif
+
+  if (status != MH_OK) {
+    dll_log.Log ( L" [ MinHook ] Failed to Install Hook for: '%hs' in '%s'! "
+                  L"(Status: \"%hs\")",
+                    pszProcName,
+                      pwszModule,
+                        MH_StatusToString (status) );
+  }
+
+  return status;
+}
+
+MH_STATUS
+WINAPI
+BMF_EnableHook (LPVOID pTarget)
+{
+  MH_STATUS status =
+    MH_EnableHook (pTarget);
+
+  if (status != MH_OK) {
+    if (pTarget != MH_ALL_HOOKS) {
+      dll_log.Log(L" [ MinHook ] Failed to Enable Hook with Address: %04Xh!"
+                  L" (Status: \"%hs\")",
+                    pTarget,
+                      MH_StatusToString (status) );
+    } else {
+      dll_log.Log ( L" [ MinHook ] Failed to Enable All Hooks! "
+                    L"(Status: \"%hs\")",
+                      MH_StatusToString (status) );
+    }
+  }
+
+  return status;
+}
+
+MH_STATUS
+WINAPI
+BMF_DisableHook (LPVOID pTarget)
+{
+  MH_STATUS status =
+    MH_DisableHook (pTarget);
+
+  if (status != MH_OK) {
+    if (pTarget != MH_ALL_HOOKS) {
+      dll_log.Log(L" [ MinHook ] Failed to Disable Hook with Address: %04Xh!"
+                  L" (Status: \"%hs\")",
+                    pTarget,
+                      MH_StatusToString (status));
+    } else {
+      dll_log.Log ( L" [ MinHook ] Failed to Disable All Hooks! "
+                    L"(Status: \"%hs\")",
+                      MH_StatusToString (status) );
+    }
+  }
+
+  return status;
+}
+
+MH_STATUS
+WINAPI
+BMF_RemoveHook (LPVOID pTarget)
+{
+  MH_STATUS status =
+    MH_RemoveHook (pTarget);
+
+  if (status != MH_OK) {
+    dll_log.Log ( L" [ MinHook ] Failed to Remove Hook with Address: %04Xh! "
+                  L"(Status: \"%hs\")",
+                    pTarget,
+                      MH_StatusToString (status) );
+  }
+
+  return status;
+}
+
+MH_STATUS
+WINAPI
+BMF_Init_MinHook (void)
+{
+  MH_STATUS status;
+
+  if ((status = MH_Initialize ()) != MH_OK) {
+    dll_log.Log ( L" [ MinHook ] Failed to Initialize MinHook Library! "
+                  L"(Status: \"%hs\")",
+                    MH_StatusToString (status) );
+  }
+
+  //
+  // Hook LoadLibrary so that we can watch for things like steam_api*.dll
+  //
+  BMF_CreateDLLHook ( L"kernel32.dll",
+                        "LoadLibraryA",
+                          LoadLibraryA_Detour,
+                            (LPVOID *)&LoadLibraryA_Original );
+
+  BMF_CreateDLLHook ( L"kernel32.dll",
+                        "LoadLibraryW",
+                          LoadLibraryW_Detour,
+                            (LPVOID *)&LoadLibraryW_Original );
+
+  BMF_EnableHook (MH_ALL_HOOKS);
+
+  return status;
+}
+
+MH_STATUS
+WINAPI
+BMF_UnInit_MinHook (void)
+{
+  MH_STATUS status;
+
+  if ((status = MH_Uninitialize ()) != MH_OK) {
+    dll_log.Log ( L" [ MinHook ] Failed to Uninitialize MinHook Library! "
+                  L"(Status: \"%hs\")",
+                    MH_StatusToString (status) );
+  }
+
+  return status;
+}
+
+
+
 bool
 BMF_StartupCore (const wchar_t* backend, void* callback)
 {
@@ -1003,14 +1238,7 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
   if (! dll_heap)
     return false;
 
-#ifdef HOOK_D3D11_DEVICE_CREATION
-  MH_Initialize ();
-#endif
-
   InitializeCriticalSectionAndSpinCount (&budget_mutex,  4000);
-#ifdef HOOK_D3D11_DEVICE_CREATION
-  bRet = InitializeCriticalSectionAndSpinCount (&d3dhook_mutex, 500);
-#endif
   InitializeCriticalSectionAndSpinCount (&init_mutex,    50000);
 
   init_params_t *init =
@@ -1039,6 +1267,11 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
 bool
 BMF_ShutdownCore (const wchar_t* backend)
 {
+  BMF_AutoClose_Log (budget_log);
+  BMF_AutoClose_Log (  dll_log );
+
+  BMF::SteamAPI::Shutdown ();
+
   if (hPumpThread != 0) {
     dll_log.LogEx   (true, L" [OSD] Shutting down Pump Thread... ");
 
@@ -1200,29 +1433,21 @@ BMF_ShutdownCore (const wchar_t* backend)
     dll_log.LogEx (false, L"done!\n");
   }
 
-  dll_log.LogEx (true, L"Saving user preferences to %s.ini... ", backend);
+  dll_log.LogEx  (true, L"Saving user preferences to %s.ini... ", backend);
   BMF_SaveConfig (backend);
-  dll_log.LogEx (false, L"done!\n");
+  dll_log.LogEx  (false, L"done!\n");
 
   // Hopefully these things are done by now...
   DeleteCriticalSection (&init_mutex);
-#ifdef HOOK_D3D11_DEVICE_CREATION
-  DeleteCriticalSection (&d3dhook_mutex);
-#endif
   DeleteCriticalSection (&budget_mutex);
 
-#ifdef HOOK_D3D11_DEVICE_CREATION
-  MH_Uninitialize ();
-#endif
+  BMF_UnInit_MinHook ();
 
   if (nvapi_init)
     bmf::NVAPI::UnloadLibrary ();
 
   dll_log.Log (L"Custom %s.dll Detached (pid=0x%04x)",
     backend, GetCurrentProcessId ());
-
-  budget_log.close ();
-  dll_log.close   ();
 
   HeapDestroy (dll_heap);
 
@@ -1242,7 +1467,25 @@ BMF_BeginBufferSwap (void)
 #else
   BMF_LoadLateImports32 ();
 #endif
+
+  // Module was already loaded... yay!
+#ifdef _WIN64
+  if (GetModuleHandle (L"steam_api64.dll"))
+#else
+  if (GetModuleHandle (L"steam_api.dll"))
+#endif
+    BMF::SteamAPI::Init (true);
+  else {
+    //
+    // YIKES, Steam's still not loaded?!
+    //
+    //   ** This probably is not a SteamWorks game...
+    //
+    BMF::SteamAPI::Init (false);
+  }
 }
+
+extern void BMF_UnlockSteamAchievement (int idx);
 
 HRESULT
 BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
@@ -1294,8 +1537,11 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
       HIWORD (GetAsyncKeyState (config.time.keys.toggle [1])) &&
       HIWORD (GetAsyncKeyState (config.time.keys.toggle [2])))
   {
-    if (! toggle_time)
+    if (! toggle_time) {
+      BMF_UnlockSteamAchievement (0);
+
       config.time.show = (! config.time.show);
+    }
     toggle_time = true;
   } else {
     toggle_time = false;

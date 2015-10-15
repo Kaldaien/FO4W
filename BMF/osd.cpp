@@ -96,19 +96,19 @@ public:
   }
 
 protected:
-  bool TryEnter (void)
+  bool TryEnter (_Acquires_lock_(* this->cs_) void)
   {
     return (acquired_ = (TryEnterCriticalSection (cs_) != FALSE));
   }
 
-  void Enter (void)
+  void Enter (_Acquires_lock_(* this->cs_) void)
   {
     EnterCriticalSection (cs_);
 
     acquired_ = true;
   }
 
-  void Leave (void)
+  void Leave (_Releases_lock_(* this->cs_) void)
   {
     if (acquired_ != false)
       LeaveCriticalSection (cs_);
@@ -173,24 +173,6 @@ BMF_GetSharedMemory (DWORD dwProcID)
 
           if (pApp->dwProcessID == dwProcID)
           {
-#if 0
-            wchar_t wszFlags [1024];
-            wsprintf (wszFlags, L"Flags=%X, StatFlags=%X, ScreenCaptureFlags=%X",
-               pApp->dwFlags, pApp->dwStatFlags, pApp->dwScreenCaptureFlags);
-            if (pApp->dwFlags != 0x1000000 &&
-              pApp->dwFlags != 0x0 || pApp->dwStatFlags != 0x0)
-            MessageBox(NULL, wszFlags, L"OSD Flags", MB_OK);
-            //pApp->dwFlags &= ~0x1000000;
-            //pApp->
-            //sprintf (pEntry->szOSDEx, ");
-            //*((float *)&pApp->dwOSDPixel) = 200.0f;
-            //pApp->dwOSDPixel++;
-            //pApp->dwOSDX++;
-            //pApp->dwOSDY++;
-            //pApp->dwOSDColor     = 0xffffffff;
-            //pApp->dwOSDBgndColor = 0xffffffff;
-            //pApp->dwFlags |= OSDFLAG_UPDATED;
-#endif
             // Everything is good and RTSS knows about dwProcID!
             return pMapAddr;
           }
@@ -370,8 +352,7 @@ BMF_DrawOSD (void)
   }
 
   if (! osd_init) {
-    DwmEnableComposition (DWM_EC_ENABLECOMPOSITION);
-    DwmEnableMMCSS       (TRUE);
+    DwmEnableMMCSS (TRUE);
 
     osd_init = true;
 
@@ -525,7 +506,7 @@ BMF_DrawOSD (void)
   //
   // DXGI 1.4 Memory Info (VERY accurate)
   ///
-  if (false) {//nodes > 0) {
+  if (nodes > 0) {
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
     //     on that in the future.
@@ -568,7 +549,7 @@ BMF_DrawOSD (void)
       int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
 
       if (nvapi_init) {
-        OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
           i,
            mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
@@ -579,7 +560,7 @@ BMF_DrawOSD (void)
                        //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
         OSD_END
       } else {
-        OSD_G_PRINTF "  SHARE%u : %#5llu MiB, PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB, PCIe %lu.0x%lu\n",
           i,
           mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
           pcie_gen,
@@ -625,7 +606,7 @@ BMF_DrawOSD (void)
       int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
 
       if (nvapi_init) {
-        OSD_G_PRINTF "  SHARE%u : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
           i,
                        gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
@@ -636,7 +617,7 @@ BMF_DrawOSD (void)
                        //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
         OSD_END
       } else {
-        OSD_G_PRINTF "  SHARE%u : %#5llu MiB, PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB, PCIe %lu.0x%lu\n",
           i,
           gpu_stats.gpus [i].memory_B.nonlocal    >> 20ULL,
           pcie_gen,
@@ -667,7 +648,7 @@ BMF_DrawOSD (void)
 
   for (DWORD i = 1; i < cpu_stats.num_cpus; i++) {
     if (! config.cpu.simple) {
-      OSD_C_PRINTF "  CPU%i   : %#3llu%%  -  (Kernel: %#3llu%%   "
+      OSD_C_PRINTF "  CPU%lu   : %#3llu%%  -  (Kernel: %#3llu%%   "
                    "User: %#3llu%%   Interrupt: %#3llu%%)\n",
         i-1,
           cpu_stats.cpus [i].percent_load, 
@@ -676,7 +657,7 @@ BMF_DrawOSD (void)
                 cpu_stats.cpus [i].percent_interrupt
       OSD_END
     } else {
-      OSD_C_PRINTF "  CPU%i   : %#3llu%%\n",
+      OSD_C_PRINTF "  CPU%lu   : %#3llu%%\n",
         i-1,
           cpu_stats.cpus [i].percent_load
       OSD_END

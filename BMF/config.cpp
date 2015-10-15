@@ -31,70 +31,81 @@ bmf::ParameterFactory g_ParameterFactory;
 
 struct {
   struct {
-    bmf::ParameterBool*  show;
+    bmf::ParameterBool*    show;
   } time;
 
   struct {
-    bmf::ParameterBool*  show;
-    bmf::ParameterFloat* interval;
+    bmf::ParameterBool*    show;
+    bmf::ParameterFloat*   interval;
   } io;
 
   struct {
-    bmf::ParameterBool*  show;
+    bmf::ParameterBool*    show;
   } fps;
 
   struct {
-    bmf::ParameterBool*  show;
+    bmf::ParameterBool*    show;
   } memory;
 
   struct {
-    bmf::ParameterBool*  show;
+    bmf::ParameterBool*    show;
   } SLI;
 
   struct {
-    bmf::ParameterBool*  show;
-    bmf::ParameterFloat* interval;
-    bmf::ParameterBool*  simple;
+    bmf::ParameterBool*    show;
+    bmf::ParameterFloat*   interval;
+    bmf::ParameterBool*    simple;
   } cpu;
 
   struct {
-    bmf::ParameterBool*  show;
-    bmf::ParameterBool*  print_slowdown;
-    bmf::ParameterFloat* interval;
+    bmf::ParameterBool*    show;
+    bmf::ParameterBool*    print_slowdown;
+    bmf::ParameterFloat*   interval;
   } gpu;
 
   struct {
-    bmf::ParameterBool*  show;
-    bmf::ParameterFloat* interval;
-    bmf::ParameterInt*   type;
+    bmf::ParameterBool*    show;
+    bmf::ParameterFloat*   interval;
+    bmf::ParameterInt*     type;
   } disk;
 
   struct {
-    bmf::ParameterBool*  show;
-    bmf::ParameterFloat* interval;
+    bmf::ParameterBool*    show;
+    bmf::ParameterFloat*   interval;
   } pagefile;
 } monitoring;
 
 struct {
-  bmf::ParameterBool*    show;
+  bmf::ParameterBool*      show;
 
   struct {
-    bmf::ParameterBool*  pump;
-    bmf::ParameterFloat* pump_interval;
+    bmf::ParameterBool*    pump;
+    bmf::ParameterFloat*   pump_interval;
   } update_method;
 
   struct {
-    bmf::ParameterInt*   red;
-    bmf::ParameterInt*   green;
-    bmf::ParameterInt*   blue;
+    bmf::ParameterInt*     red;
+    bmf::ParameterInt*     green;
+    bmf::ParameterInt*     blue;
   } text;
 
   struct {
-    bmf::ParameterInt*   scale;
-    bmf::ParameterInt*   pos_x;
-    bmf::ParameterInt*   pos_y;
+    bmf::ParameterInt*     scale;
+    bmf::ParameterInt*     pos_x;
+    bmf::ParameterInt*     pos_y;
   } viewport;
 } osd;
+
+struct {
+  struct {
+    bmf::ParameterStringW* sound_file;
+    bmf::ParameterBool*    nosound;
+  } achievements;
+
+  struct {
+    bmf::ParameterBool*    silent;
+  } log;
+} steam;
 
 bmf::ParameterFloat*     mem_reserve;
 bmf::ParameterInt*       init_delay;
@@ -403,6 +414,37 @@ BMF_LoadConfig (std::wstring name) {
       L"Monitor.SLI",
         L"Show" );
 
+
+  steam.achievements.sound_file =
+    static_cast <bmf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"Achievement Sound File")
+      );
+  steam.achievements.sound_file->register_to_ini(
+    dll_ini,
+      L"Steam.Achievements",
+        L"SoundFile" );
+
+  steam.achievements.nosound =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Silence is Bliss?")
+      );
+  steam.achievements.nosound->register_to_ini(
+    dll_ini,
+      L"Steam.Achievements",
+        L"NoSound" );
+
+  steam.log.silent =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Makes steam_api.log go away")
+      );
+  steam.log.silent->register_to_ini(
+    dll_ini,
+      L"Steam.Log",
+        L"Silent" );
+
   const std::map <std::wstring, bmf::INI::File::Section>& sections =
     dll_ini->get_sections ();
 
@@ -538,6 +580,14 @@ BMF_LoadConfig (std::wstring name) {
   if (monitoring.SLI.show->load ())
     config.sli.show = monitoring.SLI.show->get_value ();
 
+  if (steam.achievements.nosound->load ())
+    config.steam.nosound = steam.achievements.nosound->get_value ();
+  if (steam.achievements.sound_file->load ())
+    config.steam.achievement_sound =
+      steam.achievements.sound_file->get_value ();
+  if (steam.log.silent->load ())
+    config.steam.silent = steam.log.silent->get_value ();
+
   if (init_delay->load ())
     config.system.init_delay = init_delay->get_value ();
   if (silent->load ())
@@ -591,6 +641,10 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.SLI.show->set_value             (config.sli.show);
   monitoring.time.show->set_value            (config.time.show);
 
+  steam.achievements.sound_file->set_value   (config.steam.achievement_sound);
+  steam.achievements.nosound->set_value      (config.steam.nosound);
+  steam.log.silent->set_value                (config.steam.silent);
+
   init_delay->set_value                      (config.system.init_delay);
   silent->set_value                          (config.system.silent);
   prefer_fahrenheit->set_value               (config.system.prefer_fahrenheit);
@@ -630,6 +684,10 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   osd.viewport.pos_x->store              ();
   osd.viewport.pos_y->store              ();
   osd.viewport.scale->store              ();
+
+  steam.achievements.sound_file->store   ();
+  steam.achievements.nosound->store      ();
+  steam.log.silent->store                ();
 
   init_delay->store                      ();
   silent->store                          ();
