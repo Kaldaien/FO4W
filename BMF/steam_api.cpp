@@ -38,6 +38,9 @@ static bool init = false;
 S_API typedef bool (S_CALLTYPE *SteamAPI_Init_t    )(void);
 S_API typedef bool (S_CALLTYPE *SteamAPI_InitSafe_t)(void);
 
+S_API typedef bool (S_CALLTYPE *SteamAPI_RestartAppIfNecessary_t)( uint32 unOwnAppID );
+S_API typedef bool (S_CALLTYPE *SteamAPI_IsSteamRunning_t)(void);
+
 S_API typedef void (S_CALLTYPE *SteamAPI_Shutdown_t)(void);
 
 S_API typedef void (S_CALLTYPE *SteamAPI_RegisterCallback_t)
@@ -58,6 +61,9 @@ S_API SteamAPI_UnregisterCallback_t SteamAPI_UnregisterCallback = nullptr;
 S_API SteamAPI_Init_t               SteamAPI_Init               = nullptr;
 S_API SteamAPI_InitSafe_t           SteamAPI_InitSafe           = nullptr;
 S_API SteamAPI_Shutdown_t           SteamAPI_Shutdown           = nullptr;
+
+S_API SteamAPI_RestartAppIfNecessary_t SteamAPI_RestartAppIfNecessary=nullptr;
+S_API SteamAPI_IsSteamRunning_t        SteamAPI_IsSteamRunning       =nullptr;
 
 S_API SteamAPI_GetHSteamUser_t      SteamAPI_GetHSteamUser      = nullptr;
 S_API SteamAPI_GetHSteamPipe_t      SteamAPI_GetHSteamPipe      = nullptr;
@@ -201,6 +207,8 @@ public:
   }
 
   void Shutdown (void) {
+
+
     if (hSteamHeap != nullptr) {
       HeapDestroy (hSteamHeap);
       hSteamHeap = nullptr;
@@ -298,7 +306,9 @@ public:
 
       unlock_sound = (uint8_t *)HeapAlloc (hSteamHeap, HEAP_ZERO_MEMORY, size);
 
-      fread  (unlock_sound, size, 1, fWAV);
+      if (unlock_sound != nullptr)
+        fread  (unlock_sound, size, 1, fWAV);
+
       fclose (fWAV);
 
       steam_log.LogEx (false, L" %d bytes\n", size);
@@ -311,11 +321,14 @@ public:
       extern HMODULE hModSelf;
       HRSRC   default_sound =
         FindResource (hModSelf, MAKEINTRESOURCE (IDR_WAVE1), L"WAVE");
-      HGLOBAL sound_ref     =
-        LoadResource (hModSelf, default_sound);
-      unlock_sound          = (uint8_t *)LockResource (sound_ref);
 
-      default_loaded = true;
+      if (default_sound != nullptr) {
+        HGLOBAL sound_ref     =
+          LoadResource (hModSelf, default_sound);
+        unlock_sound          = (uint8_t *)LockResource (sound_ref);
+
+        default_loaded = true;
+      }
     }
   }
 
@@ -350,7 +363,7 @@ public:
   {
     ISteamUserStats* stats = steam_ctx.UserStats ();
 
-    for (int i = 0; i < stats->GetNumAchievements (); i++)
+    for (uint32 i = 0; i < stats->GetNumAchievements (); i++)
     {
       BMF_SteamAchievement achievement (
         stats->GetAchievementName (i),
@@ -495,6 +508,7 @@ BMF_UnlockSteamAchievement (int idx)
       UserAchievementStored_t store;
       store.m_nCurProgress = 0;
       store.m_nMaxProgress = 0;
+      store.m_nGameID = BMF::SteamAPI::AppID ();
       strncpy (store.m_rgchAchievementName, szName, 128);
 
       steam_achievements->OnUnlock (&store);
@@ -535,28 +549,130 @@ BMF_UnlockSteamAchievement (int idx)
   }
 }
 
+#define STEAMAPI_CALL1(x,y,z) ((x) = SteamAPI_##y z)
+#define STEAMAPI_CALL0(y,z)   (SteamAPI_##y z)
+
+#include <Windows.h>
+
+extern "C"
+void
+__cdecl
+SteamAPIDebugTextHook (int nSeverity, const char *pchDebugText)
+{
+  steam_log.Log (" [SteamAPI] Severity: %d - '%hs'",
+    nSeverity, pchDebugText);
+}
+
 // Fancy name, for something that barely does anything ...
 //   most init is done in the BMF_SteamAPIContext singleton.
 bool
 BMF_Load_SteamAPI_Imports (HMODULE hDLL)
 {
+  if (SteamAPI_Init == nullptr) {
+    SteamAPI_Init =
+      (SteamAPI_Init_t)GetProcAddress (
+        hDLL,
+        "SteamAPI_Init"
+      );
+  }
+
   SteamAPI_InitSafe =
     (SteamAPI_InitSafe_t)GetProcAddress (
        hDLL,
          "SteamAPI_InitSafe"
     );
 
-  if (SteamAPI_InitSafe != nullptr)
-    return true;
+  SteamAPI_RestartAppIfNecessary =
+    (SteamAPI_RestartAppIfNecessary_t)GetProcAddress (
+      hDLL,
+        "SteamAPI_RestartAppIfNecessary"
+    );
+
+  SteamAPI_IsSteamRunning =
+    (SteamAPI_IsSteamRunning_t)GetProcAddress (
+       hDLL,
+         "SteamAPI_IsSteamRunning"
+    );
+
+    if (SteamClient == nullptr) {
+      SteamClient =
+        (SteamClient_t)GetProcAddress (
+           hDLL,
+             "SteamClient"
+        );
+    }
+
+  if (SteamAPI_Init                  != nullptr &&
+      SteamAPI_RestartAppIfNecessary != nullptr &&
+      SteamAPI_IsSteamRunning        != nullptr) {
+    int appid;
+
+    FILE* steam_appid = fopen ("steam_appid.txt", "r+");
+    if (steam_appid == nullptr) {
+      steam_log.LogEx (true, L"  * No steam_appid.txt in the CWD... ");
+      if (config.steam.appid != 0 &&
+          config.steam.appid != 1) {
+        steam_appid = fopen ("steam_appid.txt", "w+");
+        fprintf (steam_appid, "%d", config.steam.appid);
+        fclose (steam_appid);
+        steam_log.LogEx (false, L"wrote one for %d!\n\n",
+                           config.steam.appid);
+        return BMF_Load_SteamAPI_Imports (hDLL);
+      }
+      return false;
+    } else {
+      fscanf (steam_appid, "%d\n", &appid);
+      fclose (steam_appid);
+
+      config.steam.appid = appid;
+    }
+
+    bool ret;
+    steam_log.LogEx (true, L"Starting Steam App (%u)... ", appid);
+
+     STEAMAPI_CALL1 (ret, RestartAppIfNecessary, (appid));
+
+     if (ret) {
+       steam_log.LogEx (false, L"Steam will Restart!\n");
+       return false;
+     }
+     else {
+       steam_log.LogEx (false, L"Success!\n");
+     }
+
+     steam_log.LogEx (true, L" [!] SteamAPI_Init ()...");
+
+     STEAMAPI_CALL1 (ret, Init, ());
+
+     steam_log.LogEx (false, L"%s! (Status: %d) [%d-bit]\n\n",
+       ret ? L"done" : L"failed",
+       (unsigned)ret,
+#ifdef _WIN64
+       64
+#else
+       32
+#endif
+       );
+
+     steam_log.LogEx (true, L" # Instaling Steam API Debug Text Callback... ");
+     SteamClient ()->SetWarningMessageHook (&SteamAPIDebugTextHook);
+     steam_log.LogEx (false, L"SteamAPIDebugTextHook\n\n");
+
+     if (SteamAPI_InitSafe != nullptr)
+       return true;
+  }
 
   return false;
 }
+
+#include <ctime>
 
 void
 BMF::SteamAPI::Init (bool pre_load)
 {
   // We allow a fixed number of chances to initialize, and then we give up.
-  static int  init_tries = 0;
+  static int    init_tries = 0;
+  static time_t last_try   = 0;
 
   if (init)
     return;
@@ -564,8 +680,10 @@ BMF::SteamAPI::Init (bool pre_load)
   // We want to give the init a second-chance because it's not quite
   //  up to snuff yet, but some games would just continue to try and
   //   do this indefinitely.
-  if (init_tries > 4)
+  if (init_tries > 4 && (time (NULL) - last_try) < 5)
     return;
+
+  last_try = time (NULL);
 
   if (init_tries++ == 0) {
     steam_log.init ("steam_api.log", "w");
@@ -586,45 +704,23 @@ BMF::SteamAPI::Init (bool pre_load)
 
   if (pre_load) {
     if (init_tries == 1) {
-      steam_log.Log (L" @ %s was already loaded => Assuming "
-                     L"library needs no initialization...", steam_dll_str);
+      steam_log.Log (L" @ %s was already loaded...\n", steam_dll_str);
     }
 
-    hSteamAPI = GetModuleHandle           (steam_dll_str);
-    bImported = BMF_Load_SteamAPI_Imports (hSteamAPI);
-
-    steam_ctx.Init (hSteamAPI);
+    hSteamAPI = GetModuleHandle (steam_dll_str);
   }
   else {
-    hSteamAPI = LoadLibrary               (steam_dll_str);
-    bImported = BMF_Load_SteamAPI_Imports (hSteamAPI);
-
-    if (bImported) {
-      steam_log.LogEx (true, L" bool SteamAPI_InitSafe (void)... ");
-      bool bRet = SteamAPI_InitSafe ();
-      steam_log.LogEx (false, L"%s! (Status: %d) [%d-bit]\n",
-                bRet ? L"done" : L"failed",
-                bRet,
-#ifdef _WIN64
-        64
-#else
-        32
-#endif
-      );
-
-      if (! bRet) {
-        init = false;
-        return;
-      }
-
-      steam_ctx.Init (hSteamAPI);
-    }
+    hSteamAPI = LoadLibrary (steam_dll_str);
   }
+
+  bImported = BMF_Load_SteamAPI_Imports (hSteamAPI);
 
   if (! bImported) {
     init = false;
     return;
   }
+
+  steam_ctx.Init (hSteamAPI);
 
   ISteamUserStats* stats = steam_ctx.UserStats ();
 
@@ -678,7 +774,6 @@ BMF::SteamAPI::AppID (void)
 
   if (utils != nullptr)
     return utils->GetAppID ();
-
 
   return 0;
 }

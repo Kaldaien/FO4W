@@ -161,6 +161,8 @@ struct bmf_config_t
 
     bool    nosound           = false;
     bool    silent            = false;
+
+    int     appid             = 0;
   } steam;
 
 

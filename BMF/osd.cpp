@@ -96,7 +96,7 @@ public:
   }
 
 protected:
-  bool TryEnter (_Acquires_lock_(* this->cs_) void)
+  bool TryEnter _Acquires_lock_(* this->cs_) (void)
   {
     return (acquired_ = (TryEnterCriticalSection (cs_) != FALSE));
   }
@@ -108,7 +108,7 @@ protected:
     acquired_ = true;
   }
 
-  void Leave (_Releases_lock_(* this->cs_) void)
+  void Leave _Releases_lock_(* this->cs_) (void)
   {
     if (acquired_ != false)
       LeaveCriticalSection (cs_);
@@ -124,7 +124,7 @@ private:
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
 {
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   if (lpMemory != nullptr) {
     return UnmapViewOfFile (lpMemory);
@@ -190,7 +190,7 @@ BMF_GetSharedMemory (DWORD dwProcID)
 LPVOID
 BMF_GetSharedMemory (void)
 {
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   return BMF_GetSharedMemory (GetCurrentProcessId ());
 }
@@ -562,7 +562,7 @@ BMF_DrawOSD (void)
       int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
 
       if (nvapi_init) {
-        OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %li.0x%lu\n",
           i,
            mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
@@ -573,7 +573,7 @@ BMF_DrawOSD (void)
                        //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
         OSD_END
       } else {
-        OSD_G_PRINTF "  SHARE%i : %#5llu MiB, PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB, PCIe %li.0x%lu\n",
           i,
           mem_info [buffer].nonlocal [i].CurrentUsage >> 20ULL,
           pcie_gen,
@@ -619,7 +619,7 @@ BMF_DrawOSD (void)
       int pcie_gen = gpu_stats.gpus [i].hwinfo.pcie_gen;
 
       if (nvapi_init) {
-        OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3lu%%: %#5.02lf GiB/s), PCIe %li.0x%lu\n",
           i,
                        gpu_stats.gpus [i].memory_B.nonlocal >> 20ULL,
                        gpu_stats.gpus [i].loads_percent.bus,
@@ -630,7 +630,7 @@ BMF_DrawOSD (void)
                        //gpu_stats.gpus [i].hwinfo.pcie_transfer_rate
         OSD_END
       } else {
-        OSD_G_PRINTF "  SHARE%i : %#5llu MiB, PCIe %lu.0x%lu\n",
+        OSD_G_PRINTF "  SHARE%i : %#5llu MiB, PCIe %li.0x%lu\n",
           i,
           gpu_stats.gpus [i].memory_B.nonlocal    >> 20ULL,
           pcie_gen,

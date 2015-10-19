@@ -69,7 +69,7 @@
 //S_API void S_CALLTYPE SteamAPI_Shutdown();
 
 // checks if a local Steam client is running 
-S_API bool S_CALLTYPE SteamAPI_IsSteamRunning();
+////////////////S_API bool S_CALLTYPE SteamAPI_IsSteamRunning();
 
 // Detects if your executable was launched through the Steam client, and restarts your game through 
 // the client if necessary. The Steam client will be started if it is not running.
@@ -82,7 +82,7 @@ S_API bool S_CALLTYPE SteamAPI_IsSteamRunning();
 //
 // NOTE: This function should be used only if you are using CEG or not using Steam's DRM. Once applied
 //       to your executable, Steam's DRM will handle restarting through Steam if necessary.
-S_API bool S_CALLTYPE SteamAPI_RestartAppIfNecessary( uint32 unOwnAppID );
+/////////////////////S_API bool S_CALLTYPE SteamAPI_RestartAppIfNecessary( uint32 unOwnAppID );
 
 // crash dump recording functions
 S_API void S_CALLTYPE SteamAPI_WriteMiniDump( uint32 uStructuredExceptionCode, void* pvExceptionInfo, uint32 uBuildID );

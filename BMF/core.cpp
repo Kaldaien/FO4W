@@ -722,6 +722,21 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     L"------------------------------------------------------------------------"
     L"-----------\n");
 
+  // Start Steam EARLY, so that it can hook into everything at an opportune
+  //   time.
+  if (BMF::SteamAPI::AppID () == 0)
+  {
+    // Module was already loaded... yay!
+#ifdef _WIN64
+    if (GetModuleHandle (L"steam_api64.dll"))
+#else
+    if (GetModuleHandle (L"steam_api.dll"))
+#endif
+      BMF::SteamAPI::Init (true);
+    else
+      BMF::SteamAPI::Init (false);
+  }
+
   extern bool BMF_InitCOM (void);
   BMF_InitCOM ();
 
@@ -798,20 +813,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   BMF_LoadEarlyImports32 ();
 #endif
 
-
-  // Module was already loaded... yay!
-#ifdef _WIN64
-  if (GetModuleHandle (L"steam_api64.dll"))
-#else
-  if (GetModuleHandle (L"steam_api.dll"))
-#endif
-  {
-    //BMF::SteamAPI::Init (true);  // The DLL is loaded, but is it initialized?
-  } else {
-    //BMF::SteamAPI::Init (false); // It's neither...
-  }
-
-
   if (config.system.silent) {
     dll_log.silent = true;
 
@@ -836,7 +837,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       bmf::NVAPI::GetDriverVersion ().c_str ());
 
     dll_log.Log (L"  * Number of Installed NVIDIA GPUs: %i "
-      L"(%u are in SLI mode)",
+      L"(%i are in SLI mode)",
       bmf::NVAPI::CountPhysicalGPUs (), num_sli_gpus);
 
     if (num_sli_gpus > 0) {
@@ -1271,8 +1272,6 @@ BMF_ShutdownCore (const wchar_t* backend)
   BMF_AutoClose_Log (budget_log);
   BMF_AutoClose_Log (  dll_log );
 
-  BMF::SteamAPI::Shutdown ();
-
   if (hPumpThread != 0) {
     dll_log.LogEx   (true, L" [OSD] Shutting down Pump Thread... ");
 
@@ -1438,6 +1437,10 @@ BMF_ShutdownCore (const wchar_t* backend)
   BMF_SaveConfig (backend);
   dll_log.LogEx  (false, L"done!\n");
 
+  dll_log.LogEx  (true, L"Shutting down Steam API... ");
+  BMF::SteamAPI::Shutdown ();
+  dll_log.LogEx  (false, L"done!\n");
+
   // Hopefully these things are done by now...
   DeleteCriticalSection (&init_mutex);
   DeleteCriticalSection (&budget_mutex);
@@ -1462,6 +1465,8 @@ BMF_ShutdownCore (const wchar_t* backend)
 void
 BMF_BeginBufferSwap (void)
 {
+  static int import_tries = 0;
+
   // Load user-defined DLLs (Late)
 #ifdef _WIN64
   BMF_LoadLateImports64 ();
@@ -1469,23 +1474,24 @@ BMF_BeginBufferSwap (void)
   BMF_LoadLateImports32 ();
 #endif
 
-  // Module was already loaded... yay!
-#ifdef _WIN64
-  if (GetModuleHandle (L"steam_api64.dll"))
-#else
-  if (GetModuleHandle (L"steam_api.dll"))
-#endif
+  if (BMF::SteamAPI::AppID () == 0 && import_tries++ < 5)
   {
-    BMF::SteamAPI::Init (true);
-  } else {
-#if 0
-    //
-    // YIKES, Steam's still not loaded?!
-    //
-    //   ** This probably is not a SteamWorks game...
-    //
-    BMF::SteamAPI::Init (false);
+    // Module was already loaded... yay!
+#ifdef _WIN64
+    if (GetModuleHandle (L"steam_api64.dll"))
+#else
+    if (GetModuleHandle (L"steam_api.dll"))
 #endif
+    {
+      BMF::SteamAPI::Init (true);
+    } else {
+      //
+      // YIKES, Steam's still not loaded?!
+      //
+      //   ** This probably is not a SteamWorks game...
+      //
+      BMF::SteamAPI::Init (false);
+    }
   }
 }
 

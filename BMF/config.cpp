@@ -20,8 +20,9 @@
 #include "import.h"
 #include "ini.h"
 #include "log.h"
+#include "steam_api.h"
 
-std::wstring BMF_VER_STR = L"0.15";
+std::wstring BMF_VER_STR = L"0.16";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -104,6 +105,10 @@ struct {
     bmf::ParameterInt*     notify_insetX;
     bmf::ParameterInt*     notify_insetY;
   } achievements;
+
+  struct {
+    bmf::ParameterInt* appid;
+  } system;
 
   struct {
     bmf::ParameterBool*    silent;
@@ -468,6 +473,16 @@ BMF_LoadConfig (std::wstring name) {
       L"Steam.Achievements",
         L"NotifyInsetY" );
 
+  steam.system.appid = 
+    static_cast <bmf::ParameterInt *>
+    (g_ParameterFactory.create_parameter <int> (
+      L"Steam AppID")
+    );
+  steam.system.appid->register_to_ini (
+    dll_ini,
+      L"Steam.System",
+        L"AppID" );
+
   steam.log.silent =
     static_cast <bmf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (
@@ -625,8 +640,12 @@ BMF_LoadConfig (std::wstring name) {
     config.steam.inset_x = steam.achievements.notify_insetX->get_value ();
   if (steam.achievements.notify_insetY->get_value ())
     config.steam.inset_y = steam.achievements.notify_insetY->get_value ();
+
   if (steam.log.silent->load ())
     config.steam.silent = steam.log.silent->get_value ();
+
+  if (steam.system.appid->load ())
+    config.steam.appid = steam.system.appid->get_value ();
 
   if (init_delay->load ())
     config.system.init_delay = init_delay->get_value ();
@@ -686,7 +705,16 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   steam.achievements.notify_corner->set_value (config.steam.notify_corner);
   steam.achievements.notify_insetX->set_value (config.steam.inset_x);
   steam.achievements.notify_insetY->set_value (config.steam.inset_y);
-  steam.log.silent->set_value                 (config.steam.silent);
+
+  if (config.steam.appid == 0) {
+    if (BMF::SteamAPI::AppID () != 0 &&
+        BMF::SteamAPI::AppID () != 1)
+    config.steam.appid = BMF::SteamAPI::AppID ();
+  }
+
+  steam.system.appid->set_value              (config.steam.appid);
+
+  steam.log.silent->set_value                (config.steam.silent);
 
   init_delay->set_value                      (config.system.init_delay);
   silent->set_value                          (config.system.silent);
@@ -733,6 +761,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   steam.achievements.notify_corner->store ();
   steam.achievements.notify_insetX->store ();
   steam.achievements.notify_insetY->store ();
+  steam.system.appid->store               ();
   steam.log.silent->store                 ();
 
   init_delay->store                      ();
