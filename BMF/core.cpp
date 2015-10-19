@@ -805,9 +805,10 @@ BMF_InitCore (const wchar_t* backend, void* callback)
 #else
   if (GetModuleHandle (L"steam_api.dll"))
 #endif
-    BMF::SteamAPI::Init (true);  // The DLL is loaded, but is it initialized?
-  else {
-    BMF::SteamAPI::Init (false); // It's neither...
+  {
+    //BMF::SteamAPI::Init (true);  // The DLL is loaded, but is it initialized?
+  } else {
+    //BMF::SteamAPI::Init (false); // It's neither...
   }
 
 
@@ -910,7 +911,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"Failed!\n");
   }
 
-  Sleep (10);
+  Sleep (90);
 
   if (disk_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
@@ -922,7 +923,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (10);
+  Sleep (90);
 
   if (pagefile_stats.hThread == 0) {
     dll_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
@@ -935,7 +936,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
       dll_log.LogEx (false, L"failed!\n");
   }
 
-  Sleep (10);
+  Sleep (90);
 
   //
   // Spawn Process Monitor Thread
@@ -1031,7 +1032,7 @@ LoadLibraryA_Detour (LPCSTR lpFileName)
 
   if (strstr (lpFileName, "steam_api") ||
       strstr (lpFileName, "SteamworksNative")) {
-    BMF::SteamAPI::Init (false);
+    //BMF::SteamAPI::Init (false);
   }
 
   return hMod;
@@ -1048,7 +1049,7 @@ LoadLibraryW_Detour (LPCWSTR lpFileName)
 
   if (wcsstr (lpFileName, L"steam_api") ||
       wcsstr (lpFileName, L"SteamworksNative")) {
-    BMF::SteamAPI::Init (false);
+    //BMF::SteamAPI::Init (false);
   }
 
   return hMod;
@@ -1233,7 +1234,7 @@ BMF_UnInit_MinHook (void)
 bool
 BMF_StartupCore (const wchar_t* backend, void* callback)
 {
-  dll_heap = HeapCreate (0, 0, 0);
+  dll_heap = HeapCreate (HEAP_CREATE_ENABLE_EXECUTE, 0, 0);
 
   if (! dll_heap)
     return false;
@@ -1441,7 +1442,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   DeleteCriticalSection (&init_mutex);
   DeleteCriticalSection (&budget_mutex);
 
-  BMF_UnInit_MinHook ();
+/////  BMF_UnInit_MinHook ();
 
   if (nvapi_init)
     bmf::NVAPI::UnloadLibrary ();
@@ -1474,14 +1475,17 @@ BMF_BeginBufferSwap (void)
 #else
   if (GetModuleHandle (L"steam_api.dll"))
 #endif
+  {
     BMF::SteamAPI::Init (true);
-  else {
+  } else {
+#if 0
     //
     // YIKES, Steam's still not loaded?!
     //
     //   ** This probably is not a SteamWorks game...
     //
     BMF::SteamAPI::Init (false);
+#endif
   }
 }
 
@@ -1675,6 +1679,8 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
       sli_state = bmf::NVAPI::GetSLIState (device);
     }
   }
+
+  //BMF::SteamAPI::Pump ();
 
   return hr;
 }

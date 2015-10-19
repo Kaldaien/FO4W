@@ -38,6 +38,8 @@ static bool init = false;
 S_API typedef bool (S_CALLTYPE *SteamAPI_Init_t    )(void);
 S_API typedef bool (S_CALLTYPE *SteamAPI_InitSafe_t)(void);
 
+S_API typedef void (S_CALLTYPE *SteamAPI_Shutdown_t)(void);
+
 S_API typedef void (S_CALLTYPE *SteamAPI_RegisterCallback_t)
           (class CCallbackBase *pCallback, int iCallback);
 S_API typedef void (S_CALLTYPE *SteamAPI_UnregisterCallback_t)
@@ -48,19 +50,19 @@ S_API typedef HSteamUser (S_CALLTYPE *SteamAPI_GetHSteamUser_t)(void);
 S_API typedef HSteamPipe (S_CALLTYPE *SteamAPI_GetHSteamPipe_t)(void);
 
 S_API typedef ISteamClient*    (S_CALLTYPE *SteamClient_t   )(void);
-S_API typedef ISteamUserStats* (S_CALLTYPE *SteamUserStats_t)(void);
 
 S_API SteamAPI_RunCallbacks_t       SteamAPI_RunCallbacks       = nullptr;
 S_API SteamAPI_RegisterCallback_t   SteamAPI_RegisterCallback   = nullptr;
 S_API SteamAPI_UnregisterCallback_t SteamAPI_UnregisterCallback = nullptr;
+
 S_API SteamAPI_Init_t               SteamAPI_Init               = nullptr;
 S_API SteamAPI_InitSafe_t           SteamAPI_InitSafe           = nullptr;
+S_API SteamAPI_Shutdown_t           SteamAPI_Shutdown           = nullptr;
 
 S_API SteamAPI_GetHSteamUser_t      SteamAPI_GetHSteamUser      = nullptr;
 S_API SteamAPI_GetHSteamPipe_t      SteamAPI_GetHSteamPipe      = nullptr;
 
 S_API SteamClient_t                 SteamClient                 = nullptr;
-S_API SteamUserStats_t              SteamUserStats              = nullptr;
 
 
 class BMF_SteamAPIContext {
@@ -126,6 +128,14 @@ public:
         );
     }
 
+    if (SteamAPI_Shutdown == nullptr) {
+      SteamAPI_Shutdown =
+        (SteamAPI_Shutdown_t)GetProcAddress (
+          hSteamDLL,
+            "SteamAPI_Shutdown"
+        );
+    }
+
     if (SteamAPI_InitSafe == nullptr)
       return false;
 
@@ -168,6 +178,25 @@ public:
     if (user_stats_ == nullptr)
       return false;
 
+    utils_ =
+      client_->GetISteamUtils ( hSteamPipe,
+                                  STEAMUTILS_INTERFACE_VERSION );
+
+   if (utils_ == nullptr)
+     return false;
+
+    // 4 == Don't Care
+    if (config.steam.notify_corner != 4)
+      utils_->SetOverlayNotificationPosition (
+        (ENotificationPosition)config.steam.notify_corner
+      );
+
+    if (config.steam.inset_x != 0 ||
+        config.steam.inset_y != 0) {
+      utils_->SetOverlayNotificationInset (config.steam.inset_x,
+                                           config.steam.inset_y);
+    }
+
     return true;
   }
 
@@ -179,13 +208,17 @@ public:
 
     client_     = nullptr;
     user_stats_ = nullptr;
+    utils_      = nullptr;
 
-    // We probably should not shutdown Steam API; the underlying
-    //  game will do this at a more opportune time for sure.
-    //SteamAPI_Shutdown ();
+    if (SteamAPI_Shutdown != nullptr) {
+      // We probably should not shutdown Steam API; the underlying
+      //  game will do this at a more opportune time for sure.
+      SteamAPI_Shutdown ();
+    }
   }
 
   ISteamUserStats* UserStats (void) { return user_stats_; }
+  ISteamUtils*     Utils     (void) { return utils_; }
 
 protected:
 private:
@@ -193,6 +226,7 @@ private:
 
   ISteamClient*    client_     = nullptr;
   ISteamUserStats* user_stats_ = nullptr;
+  ISteamUtils*     utils_      = nullptr;
 } static steam_ctx;
 
 #if 0
@@ -248,7 +282,9 @@ Steam_Callback_RunStatEx (CCallbackBase *pThis, void           *pvParam,
 class BMF_Steam_AchievementManager {
 public:
   BMF_Steam_AchievementManager (const wchar_t* wszUnlockSound) :
-       unlock_listener ( this, &BMF_Steam_AchievementManager::OnUnlock )
+       unlock_listener ( this, &BMF_Steam_AchievementManager::OnUnlock      ),
+       stat_listener   ( this, &BMF_Steam_AchievementManager::OnRecvStats   ),
+       stat_receipt    ( this, &BMF_Steam_AchievementManager::AckStoreStats )
   {
     FILE* fWAV = _wfopen (wszUnlockSound, L"rb");
 
@@ -283,11 +319,91 @@ public:
     }
   }
 
-  ~BMF_Steam_AchievementManager(void) {
+  ~BMF_Steam_AchievementManager (void) {
     if ((! default_loaded) && (unlock_sound != nullptr)) {
       HeapFree (hSteamHeap, 0, unlock_sound);
       unlock_sound = nullptr;
     }
+  }
+
+  class BMF_SteamAchievement {
+  public:
+    BMF_SteamAchievement (const char* szName, ISteamUserStats* stats) {
+      name_ =
+        stats->GetAchievementDisplayAttribute (szName, "name");
+      desc_ =
+        stats->GetAchievementDisplayAttribute (szName, "desc");
+
+      stats->GetAchievementAndUnlockTime ( szName,
+                                             &unlocked_,
+                                               (uint32_t *)&time_ );
+    }
+
+    const char* name_;
+    const char* desc_;
+
+    bool        unlocked_;
+    __time32_t  time_;
+  };
+
+  void log_all_achievements (void)
+  {
+    ISteamUserStats* stats = steam_ctx.UserStats ();
+
+    for (int i = 0; i < stats->GetNumAchievements (); i++)
+    {
+      BMF_SteamAchievement achievement (
+        stats->GetAchievementName (i),
+        stats
+      );
+
+      steam_log.LogEx (false, L"\n [%c] Achievement %03lu......: '%hs'\n",
+                         achievement.unlocked_ ? L'X' : L' ',
+                           i, stats->GetAchievementName (i)
+                      );
+      steam_log.LogEx (false,
+                              L"  + Human Readable Name...: %hs\n",
+                         achievement.name_);
+      if (strlen (achievement.desc_))
+        steam_log.LogEx (false,
+                                L"  *- Detailed Description.: %hs\n",
+                          achievement.desc_);
+
+      if (achievement.unlocked_) {
+        steam_log.LogEx (false,
+                                L"  @-- Player Unlocked At..: %s",
+                                  _wctime32 (&achievement.time_));
+      }
+    }
+
+    steam_log.LogEx (false, L"\n");
+  }
+
+  STEAM_CALLBACK ( BMF_Steam_AchievementManager,
+                   AckStoreStats,
+                   UserStatsStored_t,
+                   stat_receipt )
+  {
+    // Sometimes we receive event callbacks for games that aren't this one...
+    //   ignore those!
+    if (pParam->m_nGameID != BMF::SteamAPI::AppID ())
+      return;
+
+    steam_log.Log ( L" >> Stats Stored for AppID: %llu",
+                      pParam->m_nGameID );
+  }
+
+  STEAM_CALLBACK ( BMF_Steam_AchievementManager,
+                   OnRecvStats,
+                   UserStatsReceived_t,
+                   stat_listener )
+  {
+    // Sometimes we receive event callbacks for games that aren't this one...
+    //   ignore those!
+    if (pParam->m_nGameID != BMF::SteamAPI::AppID ())
+      return;
+
+    log_all_achievements ();
   }
 
   STEAM_CALLBACK ( BMF_Steam_AchievementManager,
@@ -295,19 +411,33 @@ public:
                    UserAchievementStored_t,
                    unlock_listener )
   {
+    // Sometimes we receive event callbacks for games that aren't this one...
+    //   ignore those!
+    if (pParam->m_nGameID != BMF::SteamAPI::AppID ())
+      return;
+
+    BMF_SteamAchievement achievement (
+      pParam->m_rgchAchievementName,
+        steam_ctx.UserStats ()
+    );
+
     if (pParam->m_nMaxProgress == 0 &&
         pParam->m_nCurProgress == 0) {
-      PlaySound ( (LPCWSTR)unlock_sound, NULL, SND_ASYNC | SND_MEMORY );
+      if (! config.steam.nosound)
+        PlaySound ( (LPCWSTR)unlock_sound, NULL, SND_ASYNC | SND_MEMORY );
 
-      steam_log.Log (L" Achievement '%hs' - Unlocked!",
-        pParam->m_rgchAchievementName);
+      steam_log.Log (L" Achievement: '%hs' (%hs) - Unlocked!",
+        achievement.name_, achievement.desc_);
     }
 
     else {
-      steam_log.Log (L" Achievement '%hs' - Progress %lu / %lu (%04.01f%%)",
-                       pParam->m_rgchAchievementName, pParam->m_nCurProgress,
-                       pParam->m_nMaxProgress,
-                (float)pParam->m_nCurProgress / (float)pParam->m_nMaxProgress);
+      steam_log.Log (L" Achievement: '%hs' (%hs) - "
+                     L"Progress %lu / %lu (%04.01f%%)",
+                achievement.name_,
+                achievement.desc_,
+                      pParam->m_nCurProgress,
+                      pParam->m_nMaxProgress,
+     100.0f * ((float)pParam->m_nCurProgress / (float)pParam->m_nMaxProgress));
     }
   }
 
@@ -362,14 +492,39 @@ BMF_UnlockSteamAchievement (int idx)
     if (szName != nullptr) {
       steam_log.LogEx (false, L" (%hs - Found)\n", szName);
 
-      stats->ClearAchievement            (szName);
-      stats->SetAchievement              (szName);
-      stats->IndicateAchievementProgress (szName, 0, 0);
-      stats->StoreStats                  ();
+      UserAchievementStored_t store;
+      store.m_nCurProgress = 0;
+      store.m_nMaxProgress = 0;
+      strncpy (store.m_rgchAchievementName, szName, 128);
 
-      // Dispatch these ASAP, there's a lot of latency apparently...
-      SteamAPI_RunCallbacks ();
+      steam_achievements->OnUnlock (&store);
 
+//      stats->ClearAchievement            (szName);
+//      stats->IndicateAchievementProgress (szName, 0, 1);
+//      stats->StoreStats                  ();
+#if 0
+      bool achieved;
+      if (stats->GetAchievement (szName, &achieved)) {
+        if (achieved) {
+          steam_log.LogEx (true, L"Clearing first\n");
+          stats->ClearAchievement            (szName);
+          stats->StoreStats                  ();
+
+          SteamAPI_RunCallbacks              ();
+        } else {
+          steam_log.LogEx (true, L"Truly unlocking\n");
+          stats->SetAchievement              (szName);
+
+          stats->StoreStats                  ();
+
+          // Dispatch these ASAP, there's a lot of latency apparently...
+          SteamAPI_RunCallbacks ();
+        }
+      }
+      else {
+        steam_log.LogEx (true, L" >> GetAchievement (...) Failed\n");
+      }
+#endif
       free ((void *)szName);
     }
     else {
@@ -385,16 +540,14 @@ BMF_UnlockSteamAchievement (int idx)
 bool
 BMF_Load_SteamAPI_Imports (HMODULE hDLL)
 {
-  SteamAPI_Init =
-    (SteamAPI_Init_t)GetProcAddress (
-          hDLL,
-            "SteamAPI_Init"
+  SteamAPI_InitSafe =
+    (SteamAPI_InitSafe_t)GetProcAddress (
+       hDLL,
+         "SteamAPI_InitSafe"
     );
 
-  if (SteamAPI_Init != nullptr) {
-    SteamAPI_Init ();
-    return true; 
-  }
+  if (SteamAPI_InitSafe != nullptr)
+    return true;
 
   return false;
 }
@@ -447,8 +600,8 @@ BMF::SteamAPI::Init (bool pre_load)
     bImported = BMF_Load_SteamAPI_Imports (hSteamAPI);
 
     if (bImported) {
-      steam_log.LogEx (true, L" bool SteamAPI_Init (void)... ");
-      bool bRet = SteamAPI_Init ();
+      steam_log.LogEx (true, L" bool SteamAPI_InitSafe (void)... ");
+      bool bRet = SteamAPI_InitSafe ();
       steam_log.LogEx (false, L"%s! (Status: %d) [%d-bit]\n",
                 bRet ? L"done" : L"failed",
                 bRet,
@@ -493,7 +646,7 @@ BMF::SteamAPI::Init (bool pre_load)
   steam_log.LogEx (false, L"\n");
 
   // Phew, finally!
-  steam_log.Log (L"--- Initialization Finished ---\n\n");
+  steam_log.Log (L"--- Initialization Finished (%d tries) ---", init_tries);
 
   init = true;
 }
@@ -504,4 +657,28 @@ BMF::SteamAPI::Shutdown (void)
   BMF_AutoClose_Log (steam_log);
 
   steam_ctx.Shutdown ();
+}
+
+void BMF::SteamAPI::Pump (void)
+{
+#if 0
+  if (steam_ctx.UserStats ()) {
+    if (SteamAPI_RunCallbacks != nullptr)
+      SteamAPI_RunCallbacks ();
+  } else {
+    Init (true);
+  }
+#endif
+}
+
+uint32_t
+BMF::SteamAPI::AppID (void)
+{
+  ISteamUtils* utils = steam_ctx.Utils ();
+
+  if (utils != nullptr)
+    return utils->GetAppID ();
+
+
+  return 0;
 }

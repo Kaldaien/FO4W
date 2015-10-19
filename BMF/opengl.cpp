@@ -17,75 +17,106 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI
-#include <Windows.h>
+#include "stdafx.h"
+//#include <Windows.h>
 
 #include "opengl_backend.h"
 #include "log.h"
 
-bmf_logger_t opengl_log;
-HMODULE      hOpenGL = nullptr;
+#include "core.h"
+
+#define WaitForInit()
+
+extern "C"
+{
+
+void
+opengl_init_callback (void)
+{
+  dll_log.Log (L"Skipping Stones Because of GL...");
+  dll_log.Log (L"================================");
+
+  typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
+
+  static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
+  static CreateDXGIFactory_t CreateDXGIFactory =
+    (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
+
+  IDXGIFactory* factory;
+
+  // Only spawn the DXGI 1.4 budget thread if ... DXGI 1.4 is implemented.
+  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory))) {
+    IDXGIAdapter* adapter;
+    factory->EnumAdapters (0, &adapter);
+
+    BMF_StartDXGI_1_4_BudgetThread (&adapter);
+
+    adapter->Release ();
+    factory->Release ();
+  }
+}
+
+}
 
 bool
 BMF::OpenGL::Startup (void)
 {
-  opengl_log.init ("opengl.log", "w+");
-  hOpenGL = LoadLibrary (L"OpenGL32.dll");
-
-  return false;
+  return BMF_StartupCore (L"OpenGL32", opengl_init_callback);
 }
 
 bool
 BMF::OpenGL::Shutdown (void)
 {
-  return false;
+  return BMF_ShutdownCore (L"OpenGL32");
 }
 
-#define WaitForInit()
+extern "C"
+{
 
-#define OPENGL_STUB(_Return, _Name, _Proto, _Args)                    \
-  __declspec (dllexport) _Return STDMETHODCALLTYPE                    \
-  _Name _Proto {                                                      \
-    WaitForInit ();                                                   \
-                                                                      \
-    typedef _Return (STDMETHODCALLTYPE *passthrough_t) _Proto;        \
-    static passthrough_t _default_impl = nullptr;                     \
-                                                                      \
-    if (_default_impl == nullptr) {                                   \
-      static const char* szName = #_Name;                             \
-      _default_impl = (passthrough_t)GetProcAddress (hOpenGL, szName);\
-                                                                      \
-      if (_default_impl == nullptr) {                                 \
-        opengl_log.Log (                                              \
-          L"Unable to locate symbol  %s in OpenGL32.dll",             \
-          L#_Name);                                                   \
-        return 0;                                                     \
-      }                                                               \
-    }                                                                 \
-                                                                      \
-    return _default_impl _Args;                                       \
+#define OPENGL_STUB(_Return, _Name, _Proto, _Args)                        \
+  COM_DECLSPEC_NOTHROW _Return STDMETHODCALLTYPE                          \
+  _Name _Proto {                                                          \
+    WaitForInit ();                                                       \
+                                                                          \
+    typedef _Return (STDMETHODCALLTYPE *passthrough_t) _Proto;            \
+    static passthrough_t _default_impl = nullptr;                         \
+                                                                          \
+    if (_default_impl == nullptr) {                                       \
+      static const char* szName = #_Name;                                 \
+      _default_impl = (passthrough_t)GetProcAddress (backend_dll, szName);\
+                                                                          \
+      if (_default_impl == nullptr) {                                     \
+        dll_log.Log (                                                     \
+          L"Unable to locate symbol  %s in OpenGL32.dll",                 \
+          L#_Name);                                                       \
+        return 0;                                                         \
+      }                                                                   \
+    }                                                                     \
+                                                                          \
+    return _default_impl _Args;                                           \
 }
 
-#define OPENGL_STUB_(_Name, _Proto, _Args)                            \
-  __declspec (dllexport) void STDMETHODCALLTYPE                       \
-  _Name _Proto {                                                      \
-    WaitForInit ();                                                   \
-                                                                      \
-    typedef void (STDMETHODCALLTYPE *passthrough_t) _Proto;           \
-    static passthrough_t _default_impl = nullptr;                     \
-                                                                      \
-    if (_default_impl == nullptr) {                                   \
-      static const char* szName = #_Name;                             \
-      _default_impl = (passthrough_t)GetProcAddress (hOpenGL, szName);\
-                                                                      \
-      if (_default_impl == nullptr) {                                 \
-        opengl_log.Log (                                              \
-          L"Unable to locate symbol  %s in OpenGL32.dll",             \
-          L#_Name);                                                   \
-        return;                                                       \
-      }                                                               \
-    }                                                                 \
-                                                                      \
-    _default_impl _Args;                                              \
+#define OPENGL_STUB_(_Name, _Proto, _Args)                                \
+  COM_DECLSPEC_NOTHROW void STDMETHODCALLTYPE                             \
+  _Name _Proto {                                                          \
+    WaitForInit ();                                                       \
+                                                                          \
+    typedef void (STDMETHODCALLTYPE *passthrough_t) _Proto;               \
+    static passthrough_t _default_impl = nullptr;                         \
+                                                                          \
+    if (_default_impl == nullptr) {                                       \
+      static const char* szName = #_Name;                                 \
+      _default_impl = (passthrough_t)GetProcAddress (backend_dll, szName);\
+                                                                          \
+      if (_default_impl == nullptr) {                                     \
+        dll_log.Log (                                                     \
+          L"Unable to locate symbol  %s in OpenGL32.dll",                 \
+          L#_Name);                                                       \
+        return;                                                           \
+      }                                                                   \
+    }                                                                     \
+                                                                          \
+    _default_impl _Args;                                                  \
 }
 
 #include <stdint.h>
@@ -229,6 +260,10 @@ OPENGL_STUB_(glCopyTexSubImage2D, (GLenum target,GLint level,GLint xoffset,GLint
 
 OPENGL_STUB_(glCullFace,          (GLenum mode),
                                   (       mode));
+
+// ???
+OPENGL_STUB(GLint,glDebugEntry,   (GLint unknown0, GLint unknown1),
+                                  (      unknown0,       unknown1));
 
 OPENGL_STUB_(glDeleteLists,       (GLuint list,GLsizei range),
                                   (       list,        range));
@@ -887,25 +922,164 @@ OPENGL_STUB(BOOL, wglUseFontBitmapsA, (HDC hDC, DWORD dw0, DWORD dw1, DWORD dw2)
 OPENGL_STUB(BOOL, wglUseFontBitmapsW, (HDC hDC, DWORD dw0, DWORD dw1, DWORD dw2),
                                       (    hDC,       dw0,       dw1,       dw2));
 
+/* Pixel format descriptor */
+typedef struct tagPIXELFORMATDESCRIPTOR
+{
+  WORD  nSize;
+  WORD  nVersion;
+  DWORD dwFlags;
+  BYTE  iPixelType;
+  BYTE  cColorBits;
+  BYTE  cRedBits;
+  BYTE  cRedShift;
+  BYTE  cGreenBits;
+  BYTE  cGreenShift;
+  BYTE  cBlueBits;
+  BYTE  cBlueShift;
+  BYTE  cAlphaBits;
+  BYTE  cAlphaShift;
+  BYTE  cAccumBits;
+  BYTE  cAccumRedBits;
+  BYTE  cAccumGreenBits;
+  BYTE  cAccumBlueBits;
+  BYTE  cAccumAlphaBits;
+  BYTE  cDepthBits;
+  BYTE  cStencilBits;
+  BYTE  cAuxBuffers;
+  BYTE  iLayerType;
+  BYTE  bReserved;
+  DWORD dwLayerMask;
+  DWORD dwVisibleMask;
+  DWORD dwDamageMask;
+} PIXELFORMATDESCRIPTOR, *PPIXELFORMATDESCRIPTOR, FAR *LPPIXELFORMATDESCRIPTOR;
 
-// THIS IS THE ONLY THING WE CARE ABOUT, GOOD GRIEF!!!
-__declspec (dllexport)
+OPENGL_STUB(INT, wglChoosePixelFormat, (HDC hDC, CONST PIXELFORMATDESCRIPTOR *pfd),
+                                       (    hDC,                              pfd));
+
+/* Layer plane descriptor */
+typedef struct tagLAYERPLANEDESCRIPTOR { // lpd
+  WORD  nSize;
+  WORD  nVersion;
+  DWORD dwFlags;
+  BYTE  iPixelType;
+  BYTE  cColorBits;
+  BYTE  cRedBits;
+  BYTE  cRedShift;
+  BYTE  cGreenBits;
+  BYTE  cGreenShift;
+  BYTE  cBlueBits;
+  BYTE  cBlueShift;
+  BYTE  cAlphaBits;
+  BYTE  cAlphaShift;
+  BYTE  cAccumBits;
+  BYTE  cAccumRedBits;
+  BYTE  cAccumGreenBits;
+  BYTE  cAccumBlueBits;
+  BYTE  cAccumAlphaBits;
+  BYTE  cDepthBits;
+  BYTE  cStencilBits;
+  BYTE  cAuxBuffers;
+  BYTE  iLayerPlane;
+  BYTE  bReserved;
+  COLORREF crTransparent;
+} LAYERPLANEDESCRIPTOR, *PLAYERPLANEDESCRIPTOR, FAR *LPLAYERPLANEDESCRIPTOR;
+
+OPENGL_STUB(BOOL, wglDescribeLayerPlane, (HDC hDC, DWORD PixelFormat, DWORD LayerPlane, UINT nBytes, LPLAYERPLANEDESCRIPTOR lpd),
+                                         (    hDC,       PixelFormat,       LayerPlane,      nBytes,                        lpd));
+
+OPENGL_STUB(DWORD, wglDescribePixelFormat, (HDC hDC, DWORD PixelFormat, UINT nBytes, LPPIXELFORMATDESCRIPTOR pfd),
+                                           (    hDC,       PixelFormat,      nBytes,                         pfd));
+
+OPENGL_STUB(DWORD, wglGetLayerPaletteEntries, (HDC hDC, DWORD LayerPlane, DWORD Start, DWORD Entries, COLORREF *cr),
+                                              (    hDC,       LayerPlane,       Start,       Entries,           cr));
+
+OPENGL_STUB(BOOL, wglGetPixelFormat, (HDC hDC, DWORD iPixelFormat, DWORD iLayerPlane, UINT nAttributes, DWORD *piAttributes, DWORD *pValues),
+                                     (    hDC,       iPixelFormat,       iLayerPlane,      nAttributes,        piAttributes,        pValues));
+
+OPENGL_STUB(BOOL, wglRealizeLayerPalette, (HDC hDC, DWORD LayerPlane, BOOL Realize),
+                                          (    hDC,       LayerPlane,      Realize));
+
+OPENGL_STUB(DWORD, wglSetLayerPaletteEntries, (HDC hDC, DWORD LayerPlane, DWORD Start, DWORD Entries, CONST COLORREF *cr),
+                                              (    hDC,       LayerPlane,       Start,       Entries,                 cr));
+
+OPENGL_STUB(BOOL, wglSetPixelFormat, (HDC hDC, DWORD PixelFormat, CONST PIXELFORMATDESCRIPTOR *pdf),
+                                     (    hDC,       PixelFormat,                              pdf));
+
+
+
+#if 1
+__declspec (nothrow)
 BOOL
 WINAPI
-SwapBuffers (HDC hDC)
+wglSwapBuffers (HDC hDC)
 {
+  WaitForInit ();
+
+  BMF_BeginBufferSwap ();
+
   typedef BOOL (WINAPI *SwapBuffers_t)(HDC);
   static SwapBuffers_t gdi_swap_buffers = nullptr;
 
   if (gdi_swap_buffers == nullptr) {
     gdi_swap_buffers =
-      (SwapBuffers_t)GetProcAddress (hOpenGL, "SwapBuffers");
+      (SwapBuffers_t)GetProcAddress (backend_dll, "wglSwapBuffers");
   }
 
-  BOOL status = gdi_swap_buffers (hDC);
+  BOOL status = FALSE;
+
+  BMF_EndBufferSwap (S_OK);
+
+  if (gdi_swap_buffers != nullptr)
+    status = gdi_swap_buffers (hDC);
 
   return status;
 }
+
+
+// THIS IS THE ONLY THING WE CARE ABOUT, GOOD GRIEF!!!
+__declspec (nothrow)
+BOOL
+WINAPI
+SwapBuffers (HDC hDC)
+{
+  WaitForInit ();
+
+  BMF_BeginBufferSwap ();
+
+  typedef BOOL (WINAPI *SwapBuffers_t)(HDC);
+  static SwapBuffers_t gdi_swap_buffers = nullptr;
+
+  if (gdi_swap_buffers == nullptr) {
+    gdi_swap_buffers =
+      (SwapBuffers_t)GetProcAddress (backend_dll, "wglSwapBuffers");
+  }
+
+  BOOL status = FALSE;
+
+  BMF_EndBufferSwap (S_OK);
+
+  if (gdi_swap_buffers != nullptr)
+    status = gdi_swap_buffers (hDC);
+
+  return status;
+  //WaitForInit ();
+
+  // Disassembling the actual GDI library suggests this is routed through the
+  //   ICD differently somehow... but proxying it through SwapBuffers seems to
+  //     work fine.
+  //return wglSwapBuffers (hDC);
+  return true;
+}
+#else
+OPENGL_STUB(BOOL,    SwapBuffers, (HDC hDC), (hDC));
+OPENGL_STUB(BOOL, wglSwapBuffers, (HDC hDC), (hDC));
+#endif
+
+OPENGL_STUB(BOOL, wglSwapLayerBuffers, ( HDC hDC, UINT nPlanes ),
+                                       (     hDC,      nPlanes ));
+
+OPENGL_STUB(DWORD, wglSwapMultipleBuffers, ( UINT x, CONST LPVOID* y ),
+                                           (      x,               y ));
 
 
 typedef struct _POINTFLOAT {
@@ -925,3 +1099,5 @@ OPENGL_STUB(BOOL,wglUseFontOutlinesA,(HDC hDC, DWORD dw0, DWORD dw1, DWORD dw2, 
                                      (    hDC,       dw0,       dw1,       dw2,       f0,       f1,     i0,                     pgmf));
 OPENGL_STUB(BOOL,wglUseFontOutlinesW,(HDC hDC, DWORD dw0, DWORD dw1, DWORD dw2, FLOAT f0, FLOAT f1, int i0, LPGLYPHMETRICSFLOAT pgmf),
                                      (    hDC,       dw0,       dw1,       dw2,       f0,       f1,     i0,                     pgmf));
+
+}

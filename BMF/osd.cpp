@@ -124,7 +124,7 @@ private:
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   if (lpMemory != nullptr) {
     return UnmapViewOfFile (lpMemory);
@@ -136,7 +136,7 @@ BMF_ReleaseSharedMemory (LPVOID lpMemory)
 LPVOID
 BMF_GetSharedMemory (DWORD dwProcID)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   if (osd_shutting_down && osd_init == false)
     return nullptr;
@@ -190,7 +190,7 @@ BMF_GetSharedMemory (DWORD dwProcID)
 LPVOID
 BMF_GetSharedMemory (void)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   return BMF_GetSharedMemory (GetCurrentProcessId ());
 }
@@ -206,17 +206,15 @@ BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
   if (dwFlags & APPFLAG_D3D10)
     return L"D3D10";
 
-  // Never going to happen
-#ifdef HELL_FROZEN_OVER
   if (dwFlags & APPFLAG_OGL)
     return L"OpenGL";
-#endif
 
   // Plan to expand this to D3D9 eventually
   if (dwFlags & APPFLAG_D3D9EX)
     return L"D3D9EX";
   if (dwFlags & APPFLAG_D3D9)
     return L"D3D9";
+
 #ifdef OLDER_D3D_SUPPORT
   if (dwFlags & APPFLAG_D3D8)
     return L"D3D8";
@@ -335,10 +333,10 @@ BMF_DrawOSD (void)
     cs_init;
   }
 
-  BMF_AutoCriticalSection auto_cs (&osd_cs, true);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs, true);
 
-  if (! auto_cs.try_result ())
-    return false;
+  //if (! auto_cs.try_result ())
+    //return false;
 
   static unsigned int connect_attempts = 1;
 
@@ -434,8 +432,12 @@ BMF_DrawOSD (void)
   // Poll GPU stats...
   BMF_PollGPU ();
 
+  int afr_idx  = sli_state.currentAFRIndex,
+      afr_last = sli_state.previousFrameAFRIndex,
+      afr_next = sli_state.nextFrameAFRIndex;
+
   for (int i = 0; i < gpu_stats.num_gpus; i++) {
-    OSD_G_PRINTF "  GPU%i   :            %#3lu%%",
+    OSD_G_PRINTF "  GPU%i     :            %#3lu%%",
       i, gpu_stats.gpus [i].loads_percent.gpu
     OSD_END
 
@@ -482,6 +484,17 @@ BMF_DrawOSD (void)
     OSD_G_PRINTF ", (%ws)",
       temp.c_str ()
     OSD_END
+
+    if (config.sli.show) {
+      if (afr_last == i)
+        OSD_G_PRINTF "@" OSD_END
+
+      if (afr_idx == i)
+        OSD_G_PRINTF "!" OSD_END
+
+      if (afr_next == i)
+        OSD_G_PRINTF "#" OSD_END
+    }
 
     if (nvapi_init &&
         config.gpu.print_slowdown &&
@@ -679,10 +692,6 @@ BMF_DrawOSD (void)
   if (nodes > 0) {
     int i = 0;
 
-    int afr_idx  = sli_state.currentAFRIndex,
-        afr_last = sli_state.previousFrameAFRIndex,
-        afr_next = sli_state.nextFrameAFRIndex;
-
     OSD_M_PRINTF "\n"
                    "----- (DXGI 1.4): Local Memory -------"
                    "--------------------------------------\n"
@@ -875,7 +884,7 @@ BMF_DrawOSD (void)
 BOOL
 BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   static DWORD dwProcID =
     GetCurrentProcessId ();
@@ -960,7 +969,7 @@ BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
 void
 BMF_ReleaseOSD (void)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   osd_shutting_down = true;
   BMF_UpdateOSD ("");
@@ -970,7 +979,11 @@ BMF_ReleaseOSD (void)
 void
 BMF_SetOSDPos (int x, int y)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+
+  // 0,0 means don't touch anything.
+  if (x == 0 && y == 0)
+    return;
 
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
@@ -1018,7 +1031,7 @@ BMF_SetOSDPos (int x, int y)
 void
 BMF_SetOSDColor (int red, int green, int blue)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
@@ -1081,7 +1094,7 @@ BMF_SetOSDColor (int red, int green, int blue)
 void
 BMF_SetOSDScale (DWORD dwScale, bool relative)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
@@ -1135,7 +1148,7 @@ BMF_SetOSDScale (DWORD dwScale, bool relative)
 void
 BMF_ResizeOSD (int scale_incr)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   BMF_SetOSDScale (scale_incr, true);
 }

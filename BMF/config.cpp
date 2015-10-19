@@ -100,6 +100,9 @@ struct {
   struct {
     bmf::ParameterStringW* sound_file;
     bmf::ParameterBool*    nosound;
+    bmf::ParameterInt*     notify_corner;
+    bmf::ParameterInt*     notify_insetX;
+    bmf::ParameterInt*     notify_insetY;
   } achievements;
 
   struct {
@@ -435,6 +438,36 @@ BMF_LoadConfig (std::wstring name) {
       L"Steam.Achievements",
         L"NoSound" );
 
+  steam.achievements.notify_corner =
+    static_cast <bmf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Achievement Notification Position")
+      );
+  steam.achievements.notify_corner->register_to_ini (
+    dll_ini,
+      L"Steam.Achievements",
+        L"NotifyCorner" );
+
+  steam.achievements.notify_insetX =
+    static_cast <bmf::ParameterInt *>
+    (g_ParameterFactory.create_parameter <int> (
+      L"Achievement Notification Inset X")
+    );
+  steam.achievements.notify_insetX->register_to_ini (
+    dll_ini,
+      L"Steam.Achievements",
+        L"NotifyInsetX" );
+
+  steam.achievements.notify_insetY =
+    static_cast <bmf::ParameterInt *>
+    (g_ParameterFactory.create_parameter <int> (
+      L"Achievement Notification Inset Y")
+    );
+  steam.achievements.notify_insetY->register_to_ini (
+    dll_ini,
+      L"Steam.Achievements",
+        L"NotifyInsetY" );
+
   steam.log.silent =
     static_cast <bmf::ParameterBool *>
       (g_ParameterFactory.create_parameter <bool> (
@@ -585,6 +618,13 @@ BMF_LoadConfig (std::wstring name) {
   if (steam.achievements.sound_file->load ())
     config.steam.achievement_sound =
       steam.achievements.sound_file->get_value ();
+  if (steam.achievements.notify_corner->load ())
+    config.steam.notify_corner =
+      steam.achievements.notify_corner->get_value ();
+  if (steam.achievements.notify_insetX->get_value ())
+    config.steam.inset_x = steam.achievements.notify_insetX->get_value ();
+  if (steam.achievements.notify_insetY->get_value ())
+    config.steam.inset_y = steam.achievements.notify_insetY->get_value ();
   if (steam.log.silent->load ())
     config.steam.silent = steam.log.silent->get_value ();
 
@@ -641,9 +681,12 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.SLI.show->set_value             (config.sli.show);
   monitoring.time.show->set_value            (config.time.show);
 
-  steam.achievements.sound_file->set_value   (config.steam.achievement_sound);
-  steam.achievements.nosound->set_value      (config.steam.nosound);
-  steam.log.silent->set_value                (config.steam.silent);
+  steam.achievements.sound_file->set_value    (config.steam.achievement_sound);
+  steam.achievements.nosound->set_value       (config.steam.nosound);
+  steam.achievements.notify_corner->set_value (config.steam.notify_corner);
+  steam.achievements.notify_insetX->set_value (config.steam.inset_x);
+  steam.achievements.notify_insetY->set_value (config.steam.inset_y);
+  steam.log.silent->set_value                 (config.steam.silent);
 
   init_delay->set_value                      (config.system.init_delay);
   silent->set_value                          (config.system.silent);
@@ -685,9 +728,12 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   osd.viewport.pos_y->store              ();
   osd.viewport.scale->store              ();
 
-  steam.achievements.sound_file->store   ();
-  steam.achievements.nosound->store      ();
-  steam.log.silent->store                ();
+  steam.achievements.sound_file->store    ();
+  steam.achievements.nosound->store       ();
+  steam.achievements.notify_corner->store ();
+  steam.achievements.notify_insetX->store ();
+  steam.achievements.notify_insetY->store ();
+  steam.log.silent->store                 ();
 
   init_delay->store                      ();
   silent->store                          ();

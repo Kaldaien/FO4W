@@ -20,12 +20,17 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "steamapi/steam_api.h"
 
+#include <stdint.h>
+
 namespace BMF
 {
   namespace SteamAPI
   {
     void Init     (bool preload);
     void Shutdown (void);
+    void Pump     (void);
+
+    uint32_t AppID (void);
   }
 }
 

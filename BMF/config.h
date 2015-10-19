@@ -151,6 +151,14 @@ struct bmf_config_t
   struct {
     std::wstring
             achievement_sound = L"";
+    int     notify_corner     = 4; // 0=Top-Left,
+                                   // 1=Top-Right,
+                                   // 2=Bottom-Left,
+                                   // 3=Bottom-Right,
+                                   // 4=Don't Care
+    int     inset_x           = 0;
+    int     inset_y           = 0;
+
     bool    nosound           = false;
     bool    silent            = false;
   } steam;
