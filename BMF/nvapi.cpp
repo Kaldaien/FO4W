@@ -80,7 +80,8 @@ L"Error Calling NVAPI Function", MB_OK | MB_ICONASTERISK); }
 #define NVAPI_SET_DWORD(x,y,z) (x).version = NVDRS_SETTING_VER;       \
                                (x).settingId = (y); (x).settingType = \
                                  NVDRS_DWORD_TYPE;                    \
-                               (x).u32CurrentValue = (z);
+                               (x).u32CurrentValue = (z);             \
+                               (x).isCurrentPredefined = 0;
 
 
 std::wstring
@@ -491,12 +492,18 @@ NVAPI::GetSLIState (IUnknown* pDev)
 }
 
 
+#include "config.h"
+
 // Easier to DLL export this way
 BOOL
 __stdcall
 BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
                               uint32_t       limit )
 {
+  // Allow the end-user to override this using the INI file
+  if (config.system.target_fps != 0)
+    limit = config.system.target_fps;
+
   NvDRSSessionHandle hSession;
   NVAPI_CALL (DRS_CreateSession (&hSession));
 
@@ -515,10 +522,11 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
   NVAPI_CALL2 (DRS_FindApplicationByName (hSession, (NvU16 *)wszAppName, &hProfile, &app), ret);
 
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
+    NVAPI_VERBOSE ();
     NVDRS_PROFILE custom_profile;
     memset (&custom_profile, 0, sizeof (NVDRS_PROFILE));
 
-    custom_profile.isPredefined = true;
+    custom_profile.isPredefined = false;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
     custom_profile.version = NVDRS_PROFILE_VER;
 
@@ -536,22 +544,29 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
       app.isMetro      = false;
 
       NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+      NVAPI_CALL2 (DRS_SaveSettings (hSession), ret);
     }
   }
 
-  NVDRS_SETTING fps_limiter;
+  NVDRS_SETTING fps_limiter = { 0 };
   fps_limiter.version = NVDRS_SETTING_VER;
 
-  NVDRS_SETTING gps_ctrl;
+  NVDRS_SETTING gps_ctrl = { 0 };
   gps_ctrl.version = NVDRS_SETTING_VER;
 
+  NVDRS_SETTING prerendered_frames = { 0 };
+  prerendered_frames.version = NVDRS_SETTING_VER;
+
+  NVAPI_SILENT ();
   NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_ID,          &fps_limiter));
   NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, &gps_ctrl));
+  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PRERENDERLIMIT_ID,                &prerendered_frames));
+  NVAPI_VERBOSE ();
 
   NvU32 limit_mask = ( PS_FRAMERATE_LIMITER_ENABLED        |
-    PS_FRAMERATE_LIMITER_FORCEON        |
-    PS_FRAMERATE_LIMITER_ALLOW_WINDOWED |
-    PS_FRAMERATE_LIMITER_ACCURATE );
+                       PS_FRAMERATE_LIMITER_FORCEON        |
+                       PS_FRAMERATE_LIMITER_ALLOW_WINDOWED |
+                       PS_FRAMERATE_LIMITER_ACCURATE );
 
   limit_mask |= (limit & PS_FRAMERATE_LIMITER_FPSMASK);
 
@@ -565,11 +580,18 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
     already_set = false;
   }
 
+  ZeroMemory (&fps_limiter,        sizeof NVDRS_SETTING); fps_limiter.version        = NVDRS_SETTING_VER;
+  ZeroMemory (&gps_ctrl,           sizeof NVDRS_SETTING); gps_ctrl.version           = NVDRS_SETTING_VER;
+  ZeroMemory (&prerendered_frames, sizeof NVDRS_SETTING); prerendered_frames.version = NVDRS_SETTING_VER;
+
   NVAPI_SET_DWORD (fps_limiter, PS_FRAMERATE_LIMITER_ID, limit_mask);
   NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &fps_limiter));
 
   NVAPI_SET_DWORD (gps_ctrl, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, PS_FRAMERATE_LIMITER_GPS_CTRL_OPTIMAL_SETTING);
   NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &gps_ctrl));
+
+  NVAPI_SET_DWORD (prerendered_frames, PRERENDERLIMIT_ID, 1);
+  NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &prerendered_frames));
 
   NVAPI_VERBOSE ();
 
