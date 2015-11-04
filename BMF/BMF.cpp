@@ -54,18 +54,23 @@ BMF_EstablishDllRole (HMODULE hModule)
 }
 
 
+__declspec(dllexport) bool attached = false;
+
 bool
 BMF_Attach (DLL_ROLE role)
 {
   switch (role)
   {
   case DLL_ROLE::DXGI:
+    attached = true;
     return BMF::DXGI::Startup ();
     break;
   case DLL_ROLE::D3D9:
+    attached = true;
     return BMF::D3D9::Startup ();
     break;
   case DLL_ROLE::OpenGL:
+    attached = true;
     return BMF::OpenGL::Startup ();
     break;
   case DLL_ROLE::Vulkan:
@@ -81,12 +86,15 @@ BMF_Detach (DLL_ROLE role)
   switch (role)
   {
   case DLL_ROLE::DXGI:
+    attached = false;
     return BMF::DXGI::Shutdown ();
     break;
   case DLL_ROLE::D3D9:
+    attached = false;
     return BMF::D3D9::Shutdown ();
     break;
   case DLL_ROLE::OpenGL:
+    attached = false;
     return BMF::OpenGL::Shutdown ();
     break;
   case DLL_ROLE::Vulkan:
@@ -99,6 +107,7 @@ BMF_Detach (DLL_ROLE role)
 
 // We need this to load embedded resources correctly...
 HMODULE hModSelf;
+HHOOK   hKeyboardHook;
 
 BOOL
 APIENTRY DllMain ( HMODULE hModule,
@@ -109,10 +118,13 @@ APIENTRY DllMain ( HMODULE hModule,
   {
     case DLL_PROCESS_ATTACH:
     {
-       hModSelf = hModule;
+      if (! attached)
+      {
+        hModSelf = hModule;
 
-       BMF_EstablishDllRole (hModule);
-       BMF_Attach           (dll_role);
+        BMF_EstablishDllRole (hModule);
+        BMF_Attach           (dll_role);
+      }
     } break;
 
     case DLL_THREAD_ATTACH:
@@ -127,10 +139,15 @@ APIENTRY DllMain ( HMODULE hModule,
 
     case DLL_PROCESS_DETACH:
     {
-      BMF_Detach (dll_role);
+      if (attached)
+      {
+        BMF_Detach (dll_role);
 
-      //  extern void BMF_ShutdownCOM (void);
-      //BMF_ShutdownCOM ();
+        UnhookWindowsHookEx (hKeyboardHook);
+
+        //  extern void BMF_ShutdownCOM (void);
+        //BMF_ShutdownCOM ();
+      }
     } break;
   }
 

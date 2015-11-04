@@ -61,10 +61,43 @@ bmf_logger_t::close (void)
 
 bool
 bmf_logger_t::init (const char* const szFileName,
-  const char* const szMode)
+                    const char* const szMode)
 {
   if (initialized)
     return true;
+
+  //
+  // Split the path, so we can create the log directory if necessary
+  //
+  if (strstr (szFileName, "\\") ||
+      strstr (szFileName, "/")) {
+    char* szSplitPath = _strdup (szFileName);
+
+    // Replace all instances of '/' with '\'
+    size_t len = strlen (szSplitPath);
+    for (size_t i = 0; i < len; i++) {
+      if (szSplitPath [i] == '/')
+        szSplitPath [i] = '\\';
+    }
+
+    char* szSplitter  = strrchr (szSplitPath, '\\');
+         *szSplitter  = '\0';
+
+    char path [MAX_PATH] = { '\0' };
+
+    char* subpath = strtok (szSplitPath, "\\");
+
+    // For each subdirectory, create it...
+    while (subpath != nullptr) {
+      strcat           (path, subpath);
+      CreateDirectoryA (path, NULL);
+      strcat           (path, "\\");
+
+      subpath = strtok (NULL, "\\");
+    }
+
+    free (szSplitPath);
+  }
 
   fLog = fopen (szFileName, szMode);
 

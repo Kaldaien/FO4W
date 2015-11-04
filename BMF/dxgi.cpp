@@ -132,7 +132,9 @@ extern "C" {
     }
   }
 
-  void dxgi_init_callback (void)
+  void
+  WINAPI
+  dxgi_init_callback (void)
   {
     HMODULE hBackend = backend_dll;
 

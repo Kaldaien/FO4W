@@ -31,6 +31,7 @@ extern "C"
 {
 
 void
+WINAPI
 opengl_init_callback (void)
 {
   dll_log.Log (L"Skipping Stones Because of GL...");

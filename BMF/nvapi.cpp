@@ -437,7 +437,7 @@ NVAPI::InitializeLibrary (void)
       pcieinfo.version = NV_GPU_PCIE_INFO_VER;
       if (NVAPI_OK == NvAPI_GPU_GetPCIEInfo(gpus[2], &pcieinfo)) {
         bmf_logger_t nvapi_log;
-        nvapi_log.init ("nvapi.log", "w");
+        nvapi_log.init ("logs/nvapi.log", "w");
         //nvapi_log.Log (L" Size: %d Bytes\n", i);
         nvapi_log.Log (L" Version: %lu\n", pcieinfo.version);
         nvapi_log.Log (L" Current: %lu\n", current_pstate);
@@ -455,12 +455,12 @@ NVAPI::InitializeLibrary (void)
     nv_hardware = true;
   }
 
-  if (! CheckDriverVersion ()) {
-    MessageBox (NULL,
-                L"WARNING:  Your display drivers are too old to play this game!\n",
-                L"Please update your display drivers (Minimum Version = 355.82)",
-                MB_OK | MB_ICONEXCLAMATION);
-  }
+  //if (! CheckDriverVersion ()) {
+    //MessageBox (NULL,
+                //L"WARNING:  Your display drivers are too old to play this game!\n",
+                //L"Please update your display drivers (Minimum Version = 355.82)",
+                //MB_OK | MB_ICONEXCLAMATION);
+  //}
 
   return (bLibInit = TRUE);
 }
@@ -490,4 +490,121 @@ NVAPI::GetSLIState (IUnknown* pDev)
   return state;
 }
 
-bool NVAPI::nv_hardware = false;
+
+// Easier to DLL export this way
+BOOL
+__stdcall
+BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
+                              uint32_t       limit )
+{
+  NvDRSSessionHandle hSession;
+  NVAPI_CALL (DRS_CreateSession (&hSession));
+
+  NvDRSProfileHandle hProfile;
+
+  NVDRS_APPLICATION app;
+  app.version = NVDRS_APPLICATION_VER;
+
+  NVAPI_CALL (DRS_LoadSettings (hSession));
+
+  extern std::wstring executable;
+
+  NVAPI_SILENT ();
+
+  NvAPI_Status ret;
+  NVAPI_CALL2 (DRS_FindApplicationByName (hSession, (NvU16 *)wszAppName, &hProfile, &app), ret);
+
+  if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
+    NVDRS_PROFILE custom_profile;
+    memset (&custom_profile, 0, sizeof (NVDRS_PROFILE));
+
+    custom_profile.isPredefined = true;
+    lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
+    custom_profile.version = NVDRS_PROFILE_VER;
+
+    NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+
+    if (ret == NVAPI_OK) {
+      memset (&app, 0, sizeof (NVDRS_APPLICATION));
+      app.version = NVDRS_APPLICATION_VER;
+
+      //lstrcpyW ((wchar_t *)app.fileInFolder,   L"Tales of Zestiria.exe");
+      lstrcpyW ((wchar_t *)app.appName,          wszAppName);
+      lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+      app.version      = NVDRS_APPLICATION_VER;
+      app.isPredefined = false;
+      app.isMetro      = false;
+
+      NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+    }
+  }
+
+  NVDRS_SETTING fps_limiter;
+  fps_limiter.version = NVDRS_SETTING_VER;
+
+  NVDRS_SETTING gps_ctrl;
+  gps_ctrl.version = NVDRS_SETTING_VER;
+
+  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_ID,          &fps_limiter));
+  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, &gps_ctrl));
+
+  NvU32 limit_mask = ( PS_FRAMERATE_LIMITER_ENABLED        |
+    PS_FRAMERATE_LIMITER_FORCEON        |
+    PS_FRAMERATE_LIMITER_ALLOW_WINDOWED |
+    PS_FRAMERATE_LIMITER_ACCURATE );
+
+  limit_mask |= (limit & PS_FRAMERATE_LIMITER_FPSMASK);
+
+  bool already_set = true;
+
+  if (fps_limiter.u32CurrentValue != limit_mask) {
+    already_set = false;
+  }
+
+  if (gps_ctrl.u32CurrentValue != PS_FRAMERATE_LIMITER_GPS_CTRL_OPTIMAL_SETTING) {
+    already_set = false;
+  }
+
+  NVAPI_SET_DWORD (fps_limiter, PS_FRAMERATE_LIMITER_ID, limit_mask);
+  NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &fps_limiter));
+
+  NVAPI_SET_DWORD (gps_ctrl, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, PS_FRAMERATE_LIMITER_GPS_CTRL_OPTIMAL_SETTING);
+  NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &gps_ctrl));
+
+  NVAPI_VERBOSE ();
+
+  NVAPI_CALL (DRS_SaveSettings   (hSession));
+  NVAPI_CALL (DRS_DestroySession (hSession));
+
+  return already_set;
+}
+
+BOOL
+bmf::NVAPI::SetFramerateLimit ( const wchar_t* wszAppName,
+                                uint32_t       limit )
+{
+  return BMF_NvAPI_SetFramerateLimit (wszAppName, limit);
+}
+
+void
+__stdcall
+BMF_NvAPI_SetAppFriendlyName (const wchar_t* wszFriendlyName)
+{
+  friendly_name = wszFriendlyName;
+}
+
+void
+bmf::NVAPI::SetAppFriendlyName (const wchar_t* wszFriendlyName)
+{
+  friendly_name = wszFriendlyName;
+}
+
+BOOL
+__stdcall
+BMF_NvAPI_IsInit (void)
+{
+  return NVAPI::nv_hardware;
+}
+
+bool         NVAPI::nv_hardware        = false;
+std::wstring bmf::NVAPI::friendly_name = L"Tales of Zestiria";

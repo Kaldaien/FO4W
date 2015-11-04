@@ -29,7 +29,7 @@ LPVOID BMF_GetSharedMemory     (void);
 BOOL   BMF_ReleaseSharedMemory (LPVOID pMemory);
 
 BOOL BMF_DrawOSD          (void);
-BOOL BMF_UpdateOSD        (LPCSTR lpText, LPVOID pMapAddr = nullptr);
+BOOL BMF_UpdateOSD        (LPCSTR lpText, LPVOID pMapAddr = nullptr, LPCSTR lpAppName = nullptr);
 void BMF_ReleaseOSD       (void);
 
 void BMF_SetOSDPos        (int x,   int y);

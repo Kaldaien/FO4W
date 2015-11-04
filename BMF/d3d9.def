@@ -11,7 +11,12 @@ EXPORTS
 	Direct3DCreate9=Direct3DCreate9 @8
 	Direct3DCreate9Ex=Direct3DCreate9Ex @9
 
-LIBRARY "dxgi"
+  D3D9SetSamplerState_Override=D3D9SetSamplerState_Override                   @500
+  D3D9SetVertexShaderConstantF_Override=D3D9SetVertexShaderConstantF_Override @501
+  D3D9SetVertexShader_Override=D3D9SetVertexShader_Override                   @502
+  D3D9SetPixelShaderConstantF_Override=D3D9SetPixelShaderConstantF_Override   @503
+
+;LIBRARY "dxgi"
 
 EXPORTS
 	CreateDXGIFactory=CreateDXGIFactory @10
@@ -24,7 +29,7 @@ EXPORTS
 	DXGIDumpJournal=DXGIDumpJournal @17
 	DXGIReportAdapterConfiguration=DXGIReportAdapterConfiguration @18
 
-LIBRARY "OpenGL32"
+;LIBRARY "OpenGL32"
 
 EXPORTS
 glAccum                    = glAccum                    @19
@@ -396,3 +401,10 @@ wglUseFontBitmapsW         = wglUseFontBitmapsW         @384
 wglUseFontOutlinesA        = wglUseFontOutlinesA        @385
 wglUseFontOutlinesW        = wglUseFontOutlinesW        @386
 SwapBuffers                = SwapBuffers                @387
+
+BMF_DrawExternalOSD      = BMF_DrawExternalOSD      @400
+BMF_SetPresentParamsD3D9 = BMF_SetPresentParamsD3D9 @401
+
+BMF_NvAPI_IsInit             = BMF_NvAPI_IsInit             @402
+BMF_NvAPI_SetFramerateLimit  = BMF_NvAPI_SetFramerateLimit  @403
+BMF_NvAPI_SetAppFriendlyName = BMF_NvAPI_SetAppFriendlyName @404

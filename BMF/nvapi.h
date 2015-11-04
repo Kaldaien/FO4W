@@ -92,6 +92,11 @@ namespace NVAPI {
   DXGI_ADAPTER_DESC*
        FindGPUByDXGIName (const wchar_t* wszName);
 
+  void SetAppFriendlyName(const wchar_t* wszFriendlyName);
+
+  BOOL SetFramerateLimit (const wchar_t* wszAppName,
+                          uint32_t       limit);
+
   std::wstring
        GetDriverVersion  (NvU32* pVer = NULL);
 
@@ -109,6 +114,8 @@ namespace NVAPI {
                           UINT          line_no,
                           const char*   function_name,
                           const char*   file_name);
+
+  extern std::wstring friendly_name;
 
   // Guilty until proven innocent
   extern bool nv_hardware;

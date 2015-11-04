@@ -171,6 +171,7 @@ struct bmf_config_t
     bool    silent            = false;
     bool    allow_dev_trans   = false;
     bool    prefer_fahrenheit = true;
+    int     target_fps        = 0;
     std::wstring
             version           = BMF_VER_STR;
   } system;

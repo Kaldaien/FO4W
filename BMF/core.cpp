@@ -67,6 +67,8 @@ HMODULE backend_dll;
 
 char*   szOSD;
 
+#include <d3d9.h>
+
 const wchar_t*
 BMF_DescribeHRESULT (HRESULT result)
 {
@@ -178,11 +180,79 @@ BMF_DescribeHRESULT (HRESULT result)
   case D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD:
     return L"D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD";
 
-    //case D3DERR_INVALIDCALL:
-    //return L"D3DERR_INVALIDCALL";
 
-    //case D3DERR_WASSTILLDRAWING:
-    //return L"D3DERR_WASSTILLDRAWING";
+    /* D3D9 */
+
+  case D3DERR_WRONGTEXTUREFORMAT:
+    return L"D3DERR_WRONGTEXTUREFORMAT";
+
+  case D3DERR_UNSUPPORTEDCOLOROPERATION:
+    return L"D3DERR_UNSUPPORTEDCOLOROPERATION";
+
+  case D3DERR_UNSUPPORTEDCOLORARG:
+    return L"D3DERR_UNSUPPORTEDCOLORARG";
+
+  case D3DERR_UNSUPPORTEDALPHAOPERATION:
+    return L"D3DERR_UNSUPPORTEDALPHAOPERATION";
+
+  case D3DERR_UNSUPPORTEDALPHAARG:
+    return L"D3DERR_UNSUPPORTEDALPHAARG";
+
+  case D3DERR_TOOMANYOPERATIONS:
+    return L"D3DERR_TOOMANYOPERATIONS";
+
+  case D3DERR_CONFLICTINGTEXTUREFILTER:
+    return L"D3DERR_CONFLICTINGTEXTUREFILTER";
+
+  case D3DERR_UNSUPPORTEDFACTORVALUE:
+    return L"D3DERR_UNSUPPORTEDFACTORVALUE";
+
+  case D3DERR_CONFLICTINGRENDERSTATE:
+    return L"D3DERR_CONFLICTINGRENDERSTATE";
+
+  case D3DERR_UNSUPPORTEDTEXTUREFILTER:
+    return L"D3DERR_UNSUPPORTEDTEXTUREFILTER";
+
+  case D3DERR_CONFLICTINGTEXTUREPALETTE:
+    return L"D3DERR_CONFLICTINGTEXTUREPALETTE";
+
+  case D3DERR_DRIVERINTERNALERROR:
+    return L"D3DERR_DRIVERINTERNALERROR";
+
+
+  case D3DERR_NOTFOUND:
+    return L"D3DERR_NOTFOUND";
+
+  case D3DERR_MOREDATA:
+    return L"D3DERR_MOREDATA";
+
+  case D3DERR_DEVICELOST:
+    return L"D3DERR_DEVICELOST";
+
+  case D3DERR_DEVICENOTRESET:
+    return L"D3DERR_DEVICENOTRESET";
+
+  case D3DERR_NOTAVAILABLE:
+    return L"D3DERR_NOTAVAILABLE";
+
+  case D3DERR_OUTOFVIDEOMEMORY:
+    return L"D3DERR_OUTOFVIDEOMEMORY";
+
+  case D3DERR_INVALIDDEVICE:
+    return L"D3DERR_INVALIDDEVICE";
+
+  case D3DERR_INVALIDCALL:
+    return L"D3DERR_INVALIDCALL";
+
+  case D3DERR_DRIVERINVALIDCALL:
+    return L"D3DERR_DRIVERINVALIDCALL";
+
+  case D3DERR_WASSTILLDRAWING:
+    return L"D3DERR_WASSTILLDRAWING";
+
+
+  case D3DOK_NOAUTOGEN:
+    return L"D3DOK_NOAUTOGEN";
 
 
     /* D3D12 */
@@ -419,7 +489,7 @@ WINAPI BudgetThread (LPVOID user_data)
   budget_thread_params_t* params =
     (budget_thread_params_t *)user_data;
 
-  if (budget_log.init ("dxgi_budget.log", "w")) {
+  if (budget_log.init ("logs/dxgi_budget.log", "w")) {
     params->tid       = GetCurrentThreadId ();
     params->event     = CreateEvent (NULL, FALSE, FALSE, L"DXGIMemoryBudget");
     budget_log.silent = true;
@@ -713,7 +783,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   char log_fname [MAX_PATH];
   log_fname [MAX_PATH - 1] = '\0';
 
-  sprintf (log_fname, "%ws.log", backend);
+  sprintf (log_fname, "logs/%ws.log", backend);
 
   dll_log.init (log_fname, "w");
   dll_log.Log  (L"%s.log created", backend);
@@ -721,21 +791,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   dll_log.LogEx (false,
     L"------------------------------------------------------------------------"
     L"-----------\n");
-
-  // Start Steam EARLY, so that it can hook into everything at an opportune
-  //   time.
-  if (BMF::SteamAPI::AppID () == 0)
-  {
-    // Module was already loaded... yay!
-#ifdef _WIN64
-    if (GetModuleHandle (L"steam_api64.dll"))
-#else
-    if (GetModuleHandle (L"steam_api.dll"))
-#endif
-      BMF::SteamAPI::Init (true);
-    else
-      BMF::SteamAPI::Init (false);
-  }
 
   extern bool BMF_InitCOM (void);
   BMF_InitCOM ();
@@ -806,12 +861,33 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     dll_log.LogEx (false, L"done!\n\n");
   }
 
+
+  // Hard-code the AppID for ToZ
+  if (! lstrcmpW (pwszShortName, L"Tales of Zestiria.exe"))
+    config.steam.appid = 351970;
+
+
   // Load user-defined DLLs (Early)
 #ifdef _WIN64
   BMF_LoadEarlyImports64 ();
 #else
   BMF_LoadEarlyImports32 ();
 #endif
+
+  // Start Steam EARLY, so that it can hook into everything at an opportune
+  //   time.
+  if (BMF::SteamAPI::AppID () == 0)
+  {
+    // Module was already loaded... yay!
+#ifdef _WIN64
+    if (GetModuleHandle (L"steam_api64.dll"))
+#else
+    if (GetModuleHandle (L"steam_api.dll"))
+#endif
+      BMF::SteamAPI::Init (true);
+    else
+      BMF::SteamAPI::Init (false);
+  }
 
   if (config.system.silent) {
     dll_log.silent = true;
@@ -1095,6 +1171,9 @@ BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
       hMod = LoadLibraryW (pwszModule);
     }
   }
+
+  if (hMod == 0)
+    return MH_ERROR_MODULE_NOT_FOUND;
 
   LPVOID pFuncAddr =
     GetProcAddress (hMod, pszProcName);

@@ -96,7 +96,7 @@ public:
   }
 
 protected:
-  bool TryEnter _Acquires_lock_(* this->cs_) (void)
+  bool TryEnter (_Acquires_lock_(* this->cs_) void)
   {
     return (acquired_ = (TryEnterCriticalSection (cs_) != FALSE));
   }
@@ -108,7 +108,7 @@ protected:
     acquired_ = true;
   }
 
-  void Leave _Releases_lock_(* this->cs_) (void)
+  void Leave (_Releases_lock_(* this->cs_) void)
   {
     if (acquired_ != false)
       LeaveCriticalSection (cs_);
@@ -124,7 +124,7 @@ private:
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   if (lpMemory != nullptr) {
     return UnmapViewOfFile (lpMemory);
@@ -190,7 +190,7 @@ BMF_GetSharedMemory (DWORD dwProcID)
 LPVOID
 BMF_GetSharedMemory (void)
 {
-  BMF_AutoCriticalSection auto_cs (&osd_cs);
+  //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   return BMF_GetSharedMemory (GetCurrentProcessId ());
 }
@@ -325,12 +325,30 @@ BMF_FormatTemperature (int32_t in_temp, BMF_UNITS in_unit, BMF_UNITS out_unit)
 #include <dwmapi.h>
 #pragma comment (lib, "dwmapi.lib")
 
+#define CINTERFACE
+#include <d3d9.h>
+extern IDirect3DSwapChain9* g_pSwapChain9;
+
+BOOL
+__stdcall
+BMF_DrawExternalOSD (std::string app_name, std::string text)
+{
+  if (! cs_init) {
+    InitializeCriticalSectionAndSpinCount (&osd_cs, 123UL);
+    cs_init = true;
+  }
+
+  BMF_UpdateOSD (text.c_str (), nullptr, app_name.c_str ());
+
+  return TRUE;
+}
+
 BOOL
 BMF_DrawOSD (void)
 {
   if (! cs_init) {
-    InitializeCriticalSectionAndSpinCount (&osd_cs, 1234567890UL);
-    cs_init;
+    InitializeCriticalSectionAndSpinCount (&osd_cs, 123UL);
+    cs_init = true;
   }
 
   //BMF_AutoCriticalSection auto_cs (&osd_cs, true);
@@ -386,8 +404,8 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Batman \"Fix\" v %ws   %ws\n\n",
-      BMF_VER_STR.c_str (), time
+    OSD_PRINTF "Tales of Zestiria \"Fix\" v 0.3.7   %ws\n\n",
+      time
     OSD_END
   }
 
@@ -413,15 +431,36 @@ BMF_DrawOSD (void)
           //
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
+            static float last_ms = pApp->dwFrameTime / 1000.0f;
+
+            // Logic to eliminate frametime hiccups from hacking Kernel32.dll
+            if (pApp->dwFrameTime / 1000.0f < 1000.0f)
+              last_ms = pApp->dwFrameTime / 1000.0f;
+
             std::wstring api_name = BMF_GetAPINameFromOSDFlags (pApp->dwFlags);
             OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms\n",
               api_name.c_str (),
                 // Cast to FP to avoid integer division by zero.
                 1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
-                  pApp->dwFrameTime / 1000.0f
+                  last_ms
                 //1000000.0f / pApp->dwFrameTime,
                   //pApp->dwFrameTime / 1000.0f
             OSD_END
+
+#ifdef DUMP_SWAPCHAIN_INFO
+            if (g_pSwapChain9 != nullptr) {
+              D3DDISPLAYMODE        dmode;
+              D3DPRESENT_PARAMETERS pparams;
+
+              g_pSwapChain9->GetDisplayMode       (&dmode);
+              g_pSwapChain9->GetPresentParameters (&pparams);
+
+              OSD_PRINTF "  SWAPCH :  %#3lu Hz (%#4lux%#4lu) - Flags: 0x%04X, Refresh: %#3lu Hz, Interval: %#2lu, Effect: %lu\n",
+                dmode.RefreshRate, dmode.Width, dmode.Height,
+                pparams.Flags, pparams.FullScreen_RefreshRateInHz, pparams.PresentationInterval, pparams.SwapEffect
+              OSD_END
+            }
+#endif
             break;
           }
         }
@@ -437,16 +476,24 @@ BMF_DrawOSD (void)
       afr_next = sli_state.nextFrameAFRIndex;
 
   for (int i = 0; i < gpu_stats.num_gpus; i++) {
-    OSD_G_PRINTF "  GPU%i     :            %#3lu%%",
+    OSD_G_PRINTF "  GPU%i   :            %#3lu%%",
       i, gpu_stats.gpus [i].loads_percent.gpu
     OSD_END
 
     if (nvapi_init && gpu_stats.gpus [i].loads_percent.vid > 0) {
-      OSD_G_PRINTF ",  VID%i %#3lu%%  ,",
+      // Vector 3D (subtract 1 space)
+      OSD_G_PRINTF ",  VID%i %#3lu%% ,",
+
+      // Raster 3D
+      //OSD_G_PRINTF ",  VID%i %#3lu%%  ,",
         i, gpu_stats.gpus [i].loads_percent.vid
       OSD_END
     } else {
-      OSD_G_PRINTF ",              " OSD_END
+      // Vector 3D (subtract 1 space)
+      OSD_G_PRINTF ",             " OSD_END
+
+      // Raster 3D
+      //OSD_G_PRINTF ",              " OSD_END
     }
 
     OSD_G_PRINTF " %#4lu MHz",
@@ -882,8 +929,11 @@ BMF_DrawOSD (void)
 }
 
 BOOL
-BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
+BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr, LPCSTR lpAppName)
 {
+  if (lpAppName == nullptr)
+    lpAppName = "Batman Tweak";
+
   //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   static DWORD dwProcID =
@@ -934,10 +984,10 @@ BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr)
         if (dwPass)
         {
           if (! strlen (pEntry->szOSDOwner))
-            strcpy (pEntry->szOSDOwner, "Batman Fix");
+            strcpy (pEntry->szOSDOwner, lpAppName);
         }
 
-        if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+        if (! strcmp (pEntry->szOSDOwner, lpAppName))
         {
           if (pMem->dwVersion >= 0x00020007)
             //Use extended text slot for v2.7 and higher shared memory,

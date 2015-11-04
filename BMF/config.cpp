@@ -15,6 +15,7 @@
 * along with Batman "Fix". If not, see <http://www.gnu.org/licenses/>.
 **/
 
+#define _CRT_SECURE_NO_WARNINGS
 #include "config.h"
 #include "parameter.h"
 #include "import.h"
@@ -22,7 +23,7 @@
 #include "log.h"
 #include "steam_api.h"
 
-std::wstring BMF_VER_STR = L"0.16";
+std::wstring BMF_VER_STR = L"0.17";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -120,6 +121,7 @@ bmf::ParameterInt*       init_delay;
 bmf::ParameterBool*      silent;
 bmf::ParameterStringW*   version;
 bmf::ParameterBool*      prefer_fahrenheit;
+bmf::ParameterInt*       target_fps;
 
 
 bool
@@ -318,6 +320,16 @@ BMF_LoadConfig (std::wstring name) {
       L"RSFN.System",
         L"Version" );
 
+
+  target_fps =
+    static_cast <bmf::ParameterInt *>
+      (g_ParameterFactory.create_parameter <int> (
+        L"Framerate Target")
+      );
+  target_fps->register_to_ini (
+    dll_ini,
+      L"RSFN.System",
+        L"TargetFPS" );
 
 
 
@@ -653,6 +665,8 @@ BMF_LoadConfig (std::wstring name) {
     config.system.silent = silent->get_value ();
   if (prefer_fahrenheit->load ())
     config.system.prefer_fahrenheit = prefer_fahrenheit->get_value ();
+  if (target_fps->load ())
+    config.system.target_fps = target_fps->get_value ();
   if (version->load ())
     config.system.version = version->get_value ();
 
@@ -719,6 +733,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   init_delay->set_value                      (config.system.init_delay);
   silent->set_value                          (config.system.silent);
   prefer_fahrenheit->set_value               (config.system.prefer_fahrenheit);
+  target_fps->set_value                      (config.system.target_fps);
 
   monitoring.memory.show->store          ();
   mem_reserve->store                     ();
@@ -767,6 +782,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   init_delay->store                      ();
   silent->store                          ();
   prefer_fahrenheit->store               ();
+  target_fps->store                      ();
 
   version->set_value                     (BMF_VER_STR);
   version->store                         ();
