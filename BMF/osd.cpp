@@ -404,7 +404,7 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Tales of Zestiria \"Fix\" v 0.3.7   %ws\n\n",
+    OSD_PRINTF "Tales of Zestiria \"Fix\" v 0.5.0   %ws\n\n",
       time
     OSD_END
   }

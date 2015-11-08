@@ -514,15 +514,18 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
 
   NVAPI_CALL (DRS_LoadSettings (hSession));
 
-  extern std::wstring executable;
-
   NVAPI_SILENT ();
 
   NvAPI_Status ret;
-  NVAPI_CALL2 (DRS_FindApplicationByName (hSession, (NvU16 *)wszAppName, &hProfile, &app), ret);
+  NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
+                                              (NvU16 *)wszAppName,
+                                                &hProfile,
+                                                  &app),
+                ret );
 
+  // If no executable exists anywhere by this name, create a profile for it
+  //   and then add the executable to it.
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
-    NVAPI_VERBOSE ();
     NVDRS_PROFILE custom_profile;
     memset (&custom_profile, 0, sizeof (NVDRS_PROFILE));
 
@@ -530,13 +533,25 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
     custom_profile.version = NVDRS_PROFILE_VER;
 
-    NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+    // It's not necessarily wrong if this does not return NVAPI_OK, so don't
+    //   raise a fuss if it happens.
+    NVAPI_SILENT ()
+    {
+      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+    }
+    NVAPI_VERBOSE ()
+
+    // Add the application name to the profile, if a profile already exists
+    if (ret == NVAPI_PROFILE_NAME_IN_USE)
+      NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
+                                              (NvU16 *)friendly_name.c_str (),
+                                                &hProfile),
+                      ret );
 
     if (ret == NVAPI_OK) {
       memset (&app, 0, sizeof (NVDRS_APPLICATION));
       app.version = NVDRS_APPLICATION_VER;
 
-      //lstrcpyW ((wchar_t *)app.fileInFolder,   L"Tales of Zestiria.exe");
       lstrcpyW ((wchar_t *)app.appName,          wszAppName);
       lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
       app.version      = NVDRS_APPLICATION_VER;
@@ -544,7 +559,7 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
       app.isMetro      = false;
 
       NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
-      NVAPI_CALL2 (DRS_SaveSettings (hSession), ret);
+      NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
     }
   }
 
@@ -557,6 +572,7 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
   NVDRS_SETTING prerendered_frames = { 0 };
   prerendered_frames.version = NVDRS_SETTING_VER;
 
+  // These settings may not exist, and getting back a value of 0 is okay...
   NVAPI_SILENT ();
   NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_ID,          &fps_limiter));
   NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, &gps_ctrl));
@@ -576,7 +592,11 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
     already_set = false;
   }
 
-  if (gps_ctrl.u32CurrentValue != PS_FRAMERATE_LIMITER_GPS_CTRL_OPTIMAL_SETTING) {
+  if (gps_ctrl.u32CurrentValue != PS_FRAMERATE_LIMITER_GPS_CTRL_DISABLED) {
+    already_set = false;
+  }
+
+  if (prerendered_frames.u32CurrentValue != 1) {
     already_set = false;
   }
 
@@ -587,7 +607,7 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
   NVAPI_SET_DWORD (fps_limiter, PS_FRAMERATE_LIMITER_ID, limit_mask);
   NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &fps_limiter));
 
-  NVAPI_SET_DWORD (gps_ctrl, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, PS_FRAMERATE_LIMITER_GPS_CTRL_OPTIMAL_SETTING);
+  NVAPI_SET_DWORD (gps_ctrl, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, PS_FRAMERATE_LIMITER_GPS_CTRL_DISABLED);
   NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &gps_ctrl));
 
   NVAPI_SET_DWORD (prerendered_frames, PRERENDERLIMIT_ID, 1);

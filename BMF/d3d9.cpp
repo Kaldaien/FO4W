@@ -28,6 +28,11 @@
 
 #include "log.h"
 
+#define D3DPRESENTFLAG_LOCKABLE_BACKBUFFER      0x00000001
+#define D3DPRESENTFLAG_DISCARD_DEPTHSTENCIL     0x00000002
+#define D3DPRESENTFLAG_DEVICECLIP               0x00000004
+#define D3DPRESENTFLAG_VIDEO                    0x00000010
+
 typedef IDirect3D9*
   (STDMETHODCALLTYPE *Direct3DCreate9PROC)(  UINT           SDKVersion);
 typedef HRESULT
@@ -170,7 +175,7 @@ __declspec (noinline)
 __declspec (dllexport)
 D3DPRESENT_PARAMETERS*
 __stdcall
-BMF_SetPresentParamsD3D9 (D3DPRESENT_PARAMETERS* pparams)
+BMF_SetPresentParamsD3D9 (IDirect3DDevice9* pDevice, D3DPRESENT_PARAMETERS* pparams)
 {
   // What a mess, but this helps with TZFIX
   Sleep (0);
@@ -575,7 +580,7 @@ extern "C" {
 
           pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
           pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-          pPresentationParameters->Windowed             = FALSE;
+          pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
 
         } else {
           dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
@@ -591,7 +596,7 @@ extern "C" {
       }
     }
 
-    BMF_SetPresentParamsD3D9 (pPresentationParameters);
+    BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
 
     HRESULT hr;
 
@@ -675,6 +680,25 @@ D3D9SetSamplerState_Override (IDirect3DDevice9*   This,
 }
 
 
+struct D3DVIEWPORT9;
+
+typedef HRESULT (STDMETHODCALLTYPE *SetViewport_t)
+  (      IDirect3DDevice9* This,
+   CONST D3DVIEWPORT9*     pViewport);
+
+SetViewport_t D3D9SetViewport_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetViewport_Override (IDirect3DDevice9* This,
+                    CONST D3DVIEWPORT9*     pViewport)
+{
+  return D3D9SetViewport_Original (This, pViewport);
+}
+
+
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShaderConstantF_t)
   (IDirect3DDevice9* This,
     UINT             StartRegister,
@@ -718,6 +742,25 @@ D3D9SetPixelShaderConstantF_Override (IDirect3DDevice9* This,
 
 
 
+struct IDirect3DPixelShader9;
+
+typedef HRESULT (STDMETHODCALLTYPE *SetPixelShader_t)
+  (IDirect3DDevice9*      This,
+   IDirect3DPixelShader9* pShader);
+
+SetPixelShader_t D3D9SetPixelShader_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetPixelShader_Override (IDirect3DDevice9* This,
+                        IDirect3DPixelShader9* pShader)
+{
+  return D3D9SetPixelShader_Original (This, pShader);
+}
+
+
 struct IDirect3DVertexShader9;
 
 typedef HRESULT (STDMETHODCALLTYPE *SetVertexShader_t)
@@ -735,6 +778,24 @@ D3D9SetVertexShader_Override (IDirect3DDevice9* This,
 {
   return D3D9SetVertexShader_Original (This, pShader);
 }
+
+
+typedef HRESULT (STDMETHODCALLTYPE *SetScissorRect_t)
+  (IDirect3DDevice9* This,
+   CONST RECT*       pRect);
+
+SetScissorRect_t D3D9SetScissorRect_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetScissorRect_Override (IDirect3DDevice9* This,
+                                   const RECT* pRect)
+{
+  return D3D9SetScissorRect_Original (This, pRect);
+}
+
 
 COM_DECLSPEC_NOTHROW
 HRESULT
@@ -776,6 +837,7 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
 
         pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
         pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
+        pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
 
       } else {
         dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
@@ -791,8 +853,6 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
     }
   }
 
-  BMF_SetPresentParamsD3D9 (pPresentationParameters);
-
   HRESULT ret;
 
   D3D9_CALL (ret, D3D9CreateDeviceEx_Original (This,
@@ -806,6 +866,9 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
 
   if (! SUCCEEDED (ret))
     return ret;
+
+  BMF_SetPresentParamsD3D9 ( (IDirect3DDevice9 *)*ppReturnedDeviceInterface,
+                               pPresentationParameters );
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
                          "IDirect3DDevice9Ex::Reset", D3D9Reset,
@@ -874,6 +937,191 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
   return ret;
 }
 
+typedef HRESULT (STDMETHODCALLTYPE *DXGIMakeWindowAssociation_t)
+  (IDXGIFactory *This,
+   HWND          WindowHandle,
+   UINT          Flags);
+DXGIMakeWindowAssociation_t DXGIMakeWindowAssociation_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+DXGIMakeWindowAssociation_Override (IDXGIFactory *This,
+                                    HWND          WindowHandle,
+                                    UINT          Flags)
+{
+  dll_log.Log (L" [!] IDXGIFactory::MakeWindowAssociation (%d, 0x%04X)",
+    WindowHandle, Flags);
+  return DXGIMakeWindowAssociation_Original (This, WindowHandle, Flags);
+}
+
+
+/* Pool types */
+typedef enum _D3DPOOL {
+  D3DPOOL_DEFAULT                 = 0,
+  D3DPOOL_MANAGED                 = 1,
+  D3DPOOL_SYSTEMMEM               = 2,
+  D3DPOOL_SCRATCH                 = 3,
+
+  D3DPOOL_FORCE_DWORD             = 0x7fffffff
+} D3DPOOL;
+
+struct IDirect3DTexture9;
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateTexture_t)
+  (IDirect3DDevice9   *This,
+   UINT                Width,
+   UINT                Height,
+   UINT                Levels,
+   DWORD               Usage,
+   D3DFORMAT           Format,
+   D3DPOOL             Pool,
+   IDirect3DTexture9 **ppTexture,
+   HANDLE             *pSharedHandle);
+
+CreateTexture_t D3D9CreateTexture_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateTexture_Override (IDirect3DDevice9   *This,
+                            UINT                Width,
+                            UINT                Height,
+                            UINT                Levels,
+                            DWORD               Usage,
+                            D3DFORMAT           Format,
+                            D3DPOOL             Pool,
+                            IDirect3DTexture9 **ppTexture,
+                            HANDLE             *pSharedHandle)
+{
+  return D3D9CreateTexture_Original (This, Width, Height, Levels, Usage,
+                                     Format, Pool, ppTexture, pSharedHandle);
+}
+
+struct IDirect3DSurface9;
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateRenderTarget_t)
+  (IDirect3DDevice9     *This,
+   UINT                  Width,
+   UINT                  Height,
+   D3DFORMAT             Format,
+   D3DMULTISAMPLE_TYPE   MultiSample,
+   DWORD                 MultisampleQuality,
+   BOOL                  Lockable,
+   IDirect3DSurface9   **ppSurface,
+   HANDLE               *pSharedHandle);
+
+CreateRenderTarget_t D3D9CreateRenderTarget_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateRenderTarget_Override (IDirect3DDevice9     *This,
+                                 UINT                  Width,
+                                 UINT                  Height,
+                                 D3DFORMAT             Format,
+                                 D3DMULTISAMPLE_TYPE   MultiSample,
+                                 DWORD                 MultisampleQuality,
+                                 BOOL                  Lockable,
+                                 IDirect3DSurface9   **ppSurface,
+                                 HANDLE               *pSharedHandle)
+{
+  return D3D9CreateRenderTarget_Original (This, Width, Height, Format,
+                                          MultiSample, MultisampleQuality,
+                                          Lockable, ppSurface, pSharedHandle);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *CreateDepthStencilSurface_t)
+  (IDirect3DDevice9     *This,
+   UINT                  Width,
+   UINT                  Height,
+   D3DFORMAT             Format,
+   D3DMULTISAMPLE_TYPE   MultiSample,
+   DWORD                 MultisampleQuality,
+   BOOL                  Discard,
+   IDirect3DSurface9   **ppSurface,
+   HANDLE               *pSharedHandle);
+
+CreateDepthStencilSurface_t D3D9CreateDepthStencilSurface_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9CreateDepthStencilSurface_Override (IDirect3DDevice9     *This,
+                                        UINT                  Width,
+                                        UINT                  Height,
+                                        D3DFORMAT             Format,
+                                        D3DMULTISAMPLE_TYPE   MultiSample,
+                                        DWORD                 MultisampleQuality,
+                                        BOOL                  Discard,
+                                        IDirect3DSurface9   **ppSurface,
+                                        HANDLE               *pSharedHandle)
+{
+  return D3D9CreateDepthStencilSurface_Original (This, Width, Height, Format,
+                                                 MultiSample, MultisampleQuality,
+                                                 Discard, ppSurface, pSharedHandle);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *SetRenderTarget_t)
+  (IDirect3DDevice9  *This,
+   DWORD              RenderTargetIndex,
+   IDirect3DSurface9 *pRenderTarget);
+
+SetRenderTarget_t D3D9SetRenderTarget_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetRenderTarget_Override (IDirect3DDevice9  *This,
+                              DWORD              RenderTargetIndex,
+                              IDirect3DSurface9 *pRenderTarget)
+{
+  return D3D9SetRenderTarget_Original (This, RenderTargetIndex, pRenderTarget);
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *SetDepthStencilSurface_t)
+  (IDirect3DDevice9  *This,
+   IDirect3DSurface9 *pNewZStencil);
+
+SetDepthStencilSurface_t D3D9SetDepthStencilSurface_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetDepthStencilSurface_Override (IDirect3DDevice9  *This,
+                                     IDirect3DSurface9 *pNewZStencil)
+{
+  return D3D9SetDepthStencilSurface_Original (This, pNewZStencil);
+}
+
+struct IDirect3DBaseTexture9;
+
+typedef HRESULT (STDMETHODCALLTYPE *UpdateTexture_t)
+  (IDirect3DDevice9      *This,
+   IDirect3DBaseTexture9 *pSourceTexture,
+   IDirect3DBaseTexture9 *pDestinationTexture);
+
+UpdateTexture_t D3D9UpdateTexture_Original = nullptr;
+
+__declspec (dllexport)
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+D3D9UpdateTexture_Override (IDirect3DDevice9      *This,
+                            IDirect3DBaseTexture9 *pSourceTexture,
+                            IDirect3DBaseTexture9 *pDestinationTexture)
+{
+  return D3D9UpdateTexture_Original ( This,
+                                        pSourceTexture,
+                                          pDestinationTexture );
+}
+
+
 COM_DECLSPEC_NOTHROW
 HRESULT
 STDMETHODCALLTYPE
@@ -905,9 +1153,9 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                           Refresh / TargetFPS,
                             Refresh );
 
-        pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_FLIP;//D3DSWAPEFFECT_DISCARD;
+        pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
         pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-        pPresentationParameters->Windowed             = FALSE;
+        pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
 
       } else {
         dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
@@ -922,8 +1170,6 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                         Refresh );
     }
   }
-
-  BMF_SetPresentParamsD3D9 (pPresentationParameters);
 
   HRESULT ret;
 
@@ -1089,6 +1335,9 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
     return ret;
   }
 
+  BMF_SetPresentParamsD3D9 ( *ppReturnedDeviceInterface,
+                               pPresentationParameters );
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
                          "IDirect3DDevice9::Reset", D3D9Reset,
                          D3D9Reset_Original, D3D9Reset_t);
@@ -1103,17 +1352,65 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                          D3D9CreateAdditionalSwapChain_Original,
                          CreateAdditionalSwapChain_t);
 
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 23,
+                         "IDirect3DDevice9::CreateTexture",
+                         D3D9CreateTexture_Override,
+                         D3D9CreateTexture_Original,
+                         CreateTexture_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 28,
+                         "IDirect3DDevice9::CreateRenderTarget",
+                         D3D9CreateRenderTarget_Override,
+                         D3D9CreateRenderTarget_Original,
+                         CreateRenderTarget_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 29,
+                         "IDirect3DDevice9::CreateDepthStencilSurface",
+                         D3D9CreateDepthStencilSurface_Override,
+                         D3D9CreateDepthStencilSurface_Original,
+                         CreateDepthStencilSurface_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 31,
+                         "IDirect3DDevice9::UpdateTexture",
+                         D3D9UpdateTexture_Override,
+                         D3D9UpdateTexture_Original,
+                         UpdateTexture_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 37,
+                         "IDirect3DDevice9::SetRenderTarget",
+                         D3D9SetRenderTarget_Override,
+                         D3D9SetRenderTarget_Original,
+                         SetRenderTarget_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 39,
+                         "IDirect3DDevice9::SetDepthStencilSurface",
+                         D3D9SetDepthStencilSurface_Override,
+                         D3D9SetDepthStencilSurface_Original,
+                         SetDepthStencilSurface_t);
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 42,
                          "IDirect3DDevice9::EndScene",
                          D3D9EndScene_Override,
                          D3D9EndScene_Original,
                          EndScene_t);
 
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 47,
+                         "IDirect3DDevice9::SetViewport",
+                         D3D9SetViewport_Override,
+                         D3D9SetViewport_Original,
+                         SetViewport_t);
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 69,
                          "IDirect3DDevice9::SetSamplerState",
                           D3D9SetSamplerState_Override,
                           D3D9SetSamplerState_Original,
                           SetSamplerState_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 75,
+                         "IDirect3DDevice9::SetScissorRect",
+                          D3D9SetScissorRect_Override,
+                          D3D9SetScissorRect_Original,
+                          SetScissorRect_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 92,
                          "IDirect3DDevice9::SetVertexShader",
@@ -1127,18 +1424,35 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                           D3D9SetVertexShaderConstantF_Original,
                           SetVertexShaderConstantF_t);
 
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 107,
+                        "IDirect3DDevice9::SetPixelShader",
+                         D3D9SetPixelShader_Override,
+                         D3D9SetPixelShader_Original,
+                         SetPixelShader_t);
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 109,
                         "IDirect3DDevice9::SetPixelShaderConstantF",
                          D3D9SetPixelShaderConstantF_Override,
                          D3D9SetPixelShaderConstantF_Original,
                          SetPixelShaderConstantF_t);
 
-
   static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
   static CreateDXGIFactory_t CreateDXGIFactory =
     (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
 
   IDXGIFactory* factory;
+
+#if 0
+  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory), &factory))) {
+    D3D9_VIRTUAL_OVERRIDE (&factory, 8,
+                           "IDXGIFactory::MakeWindowAssociation",
+                           DXGIMakeWindowAssociation_Override,
+                           DXGIMakeWindowAssociation_Original,
+                           DXGIMakeWindowAssociation_t);
+    factory->MakeWindowAssociation (pPresentationParameters->hDeviceWindow, 0);
+    factory->Release               ();
+  }
+#endif
 
   // Only spawn the DXGI 1.4 budget thread if ... DXGI 1.4 is implemented.
   if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory))) {
