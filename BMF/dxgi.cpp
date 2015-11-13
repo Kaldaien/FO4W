@@ -34,14 +34,12 @@
 
 #include "core.h"
 
-// Cannot run in Fullscreen if we do this
-#define WAITABLE
-
 #include <unordered_map>
 std::unordered_map <DWORD, DWORD>         thread_sleep;
 std::unordered_map <DWORD, LARGE_INTEGER> thread_perf;
 
 extern std::wstring host_app;
+
 extern BOOL __stdcall BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
                                                     uint32_t       limit );
 extern void __stdcall BMF_NvAPI_SetAppFriendlyName (const wchar_t* wszFriendlyName);
@@ -53,6 +51,9 @@ extern int                      gpu_prio;
 IDXGISwapChain2* g_pSwapChain2 = nullptr;
 ID3D11Device*    g_pDevice     = nullptr;
 bool             g_bFullscreen = false;
+
+typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
+QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
 
 extern "C" {
   typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory2_t) \
@@ -93,6 +94,14 @@ extern "C" {
                                          BOOL            Fullscreen,
                                          IDXGIOutput    *pTarget);
 
+  typedef HRESULT (STDMETHODCALLTYPE *ResizeBuffers_t)(
+                                         IDXGISwapChain *This,
+                              /* [in] */ UINT            BufferCount,
+                              /* [in] */ UINT            Width,
+                              /* [in] */ UINT            Height,
+                              /* [in] */ DXGI_FORMAT     NewFormat,
+                              /* [in] */ UINT            SwapChainFlags);
+
 
   typedef HRESULT (STDMETHODCALLTYPE *GetDesc1_t)(IDXGIAdapter1      *This,
                                            _Out_  DXGI_ADAPTER_DESC1 *pDesc);
@@ -118,6 +127,7 @@ extern "C" {
   PresentSwapChain_t   Present_Original            = nullptr;
   CreateSwapChain_t    CreateSwapChain_Original    = nullptr;
   SetFullscreenState_t SetFullscreenState_Original = nullptr;
+  ResizeBuffers_t      ResizeBuffers_Original      = nullptr;
 
   GetDesc_t            GetDesc_Original            = nullptr;
   GetDesc1_t           GetDesc1_Original           = nullptr;
@@ -465,9 +475,9 @@ extern "C" {
                                                                               \
     VirtualProtect (&vftable [_Index], __PTR_SIZE, __PAGE_PRIVS, &dwProtect); \
                                                                               \
-    dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",    \
-                 L##_Name, vftable [_Index],                                  \
-                 BMF_DescribeVirtualProtectFlags (dwProtect));                \
+    /*dll_log.Log (L" Old VFTable entry for %s: %08Xh  (Memory Policy: %s)",*/\
+                 /*L##_Name, vftable [_Index],                              */\
+                 /*BMF_DescribeVirtualProtectFlags (dwProtect));            */\
                                                                               \
     if (_Original == NULL)                                                    \
       _Original = (##_Type)vftable [_Index];                                  \
@@ -478,9 +488,9 @@ extern "C" {
                                                                               \
     VirtualProtect (&vftable [_Index], __PTR_SIZE, dwProtect, &dwProtect);    \
                                                                               \
-    dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",  \
-                  L##_Name, vftable [_Index],                                 \
-                  BMF_DescribeVirtualProtectFlags (dwProtect));               \
+    /*dll_log.Log (L" New VFTable entry for %s: %08Xh  (Memory Policy: %s)\n",*/\
+                  /*L##_Name, vftable [_Index],                               */\
+                  /*BMF_DescribeVirtualProtectFlags (dwProtect));             */\
   }                                                                           \
 }
 
@@ -499,29 +509,23 @@ extern "C" {
       int interval = config.render.framerate.present_interval;
       int flags;
 
-#ifdef WAITABLE
-        flags    = Flags | DXGI_PRESENT_DO_NOT_WAIT | DXGI_PRESENT_RESTART;
-#else
-        flags    = Flags;
-#endif
+      DXGI_SWAP_CHAIN_DESC desc;
+      This->GetDesc (&desc);
 
-      if (g_pSwapChain2 == nullptr) {
+      bool bFlipMode =
+        (host_app                == L"Fallout4.exe" &&
+         desc.BufferDesc.Scaling != DXGI_SCALING_ASPECT_RATIO_STRETCH);
+
+      if (bFlipMode)
+        flags    = Flags | DXGI_PRESENT_DO_NOT_WAIT | DXGI_PRESENT_RESTART;
+      else
+        flags    = Flags;
+
+      if (g_pSwapChain2 == nullptr || (! bFlipMode)) {
         hr =
           ((HRESULT (*)(IDXGISwapChain *, UINT, UINT))Present_Original)
                        (This, interval, flags);
       } else {
-#ifdef WAITABLE
-        // On the first buffer swap, align timing accordingly
-        static bool   aligned = false;
-        if (! aligned) {
-          static HANDLE hWait = g_pSwapChain2->GetFrameLatencyWaitableObject ();
-
-          WaitForSingleObjectEx ( hWait,
-                                    config.render.framerate.max_delta_time,
-                                      TRUE );
-          aligned = true;
-        }
-#endif
         if (config.osd.show) {
           hr =
             ((HRESULT (*)(IDXGISwapChain *, UINT, UINT))Present_Original)
@@ -535,17 +539,13 @@ extern "C" {
         pparams.pScrollRect     = nullptr;
 
         hr = g_pSwapChain2->Present1 (interval, flags, &pparams);
-      }
 
-#ifdef WAITABLE
-      if (g_pSwapChain2 != nullptr) {
         static HANDLE hWait = g_pSwapChain2->GetFrameLatencyWaitableObject ();
 
         WaitForSingleObjectEx ( hWait,
                                   config.render.framerate.max_delta_time,
                                     TRUE );
       }
-#endif
 
       if (SUCCEEDED (This->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
       {
@@ -582,6 +582,27 @@ extern "C" {
   }
 
   HRESULT
+  STDMETHODCALLTYPE ResizeBuffers_Override (IDXGISwapChain *This,
+                                 /* [in] */ UINT            BufferCount,
+                                 /* [in] */ UINT            Width,
+                                 /* [in] */ UINT            Height,
+                                 /* [in] */ DXGI_FORMAT     NewFormat,
+                                 /* [in] */ UINT            SwapChainFlags)
+  {
+#if 0
+    DXGI_LOG_CALL_I3 (L"IDXGISwapChain", L"ResizeBuffers", L"%lu,...,...,0x%08X,0x%08X",
+                        BufferCount, NewFormat, SwapChainFlags);
+
+    HRESULT ret;
+    DXGI_CALL (ret, ResizeBuffers_Original (This, BufferCount, Width, Height, NewFormat, SwapChainFlags));
+
+    return ret;
+#else
+    return ResizeBuffers_Original (This, BufferCount, Width, Height, NewFormat, SwapChainFlags);
+#endif
+  }
+
+  HRESULT
   STDMETHODCALLTYPE CreateSwapChain_Override (IDXGIFactory          *This,
                                         _In_  IUnknown              *pDevice,
                                         _In_  DXGI_SWAP_CHAIN_DESC  *pDesc,
@@ -592,13 +613,15 @@ extern "C" {
     DXGI_LOG_CALL_I3 (iname.c_str (), L"CreateSwapChain", L"%08Xh, %08Xh, %08Xh",
                       pDevice, pDesc, ppSwapChain);
 
+    bool bFlipMode = false;
+
     if (pDesc != nullptr) {
       pDesc->BufferDesc.RefreshRate.Numerator   = 60;
       pDesc->BufferDesc.RefreshRate.Denominator = 1;
 
       dll_log.LogEx ( true,
         L"  SwapChain: (%lux%lu @ %4.1f Hz - Scaling: %s) - {%s}"
-        L" [%lu Backbuffers] :: Flags=0x%04X, SwapEffect: %s\n",
+        L" [%lu Buffers] :: Flags=0x%04X, SwapEffect: %s\n",
         pDesc->BufferDesc.Width,
         pDesc->BufferDesc.Height,
         pDesc->BufferDesc.RefreshRate.Denominator > 0 ? 
@@ -625,35 +648,26 @@ extern "C" {
 
         g_bFullscreen = (! pDesc->Windowed);
 
-      //
-      // If Windows 10
-      //
-      {
-#ifdef WAITABLE
+        bFlipMode =
+          (host_app                == L"Fallout4.exe" &&
+            pDesc->BufferDesc.Scaling != DXGI_SCALING_ASPECT_RATIO_STRETCH);
+
+      if (bFlipMode) {
         if (config.render.framerate.flip_discard)
           pDesc->SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         else
           pDesc->SwapEffect  = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-#else
+      } else {
         pDesc->SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-#endif
-
-        pDesc->BufferCount = config.render.framerate.backbuffer_count;
       }
 
-      //
-      // If Windows 8.1
-      //
-      pDesc->BufferDesc.Scaling = DXGI_MODE_SCALING_CENTERED;
+        pDesc->BufferCount = config.render.framerate.buffer_count;
 
-#ifdef WAITABLE
+      // We cannot switch modes on a waitable swapchain
+      if (bFlipMode) {
         pDesc->Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-#endif
-
-      //
-      // Any Windows Version
-      //
-      //pDesc->Flags &= ~DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+        pDesc->Flags &= ~DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+      }
     }
 
     HRESULT ret;
@@ -667,12 +681,16 @@ extern "C" {
                              SetFullscreenState_Override, SetFullscreenState_Original,
                              SetFullscreenState_t);
 
+      DXGI_VIRTUAL_OVERRIDE (ppSwapChain, 13, "IDXGISwapChain::ResizeBuffers",
+                             ResizeBuffers_Override, ResizeBuffers_Original,
+                             ResizeBuffers_t);
+
       const uint32_t max_latency = config.render.framerate.pre_render_limit;
 
       if (SUCCEEDED ( (*ppSwapChain)->QueryInterface (
                          __uuidof (IDXGISwapChain2),
                            (void **)&g_pSwapChain2 )
-                    )
+                    ) && bFlipMode
          ) {
         dll_log.Log (L"Setting Swapchain Frame Latency: %lu", max_latency);
         g_pSwapChain2->SetMaximumFrameLatency (max_latency);
@@ -818,7 +836,7 @@ extern "C" {
     if (pSwapChainDesc != nullptr) {
       dll_log.LogEx ( true,
                         L"  SwapChain: (%lux%lu@%lu Hz - Scaling: %s) - "
-                        L"[%lu Backbuffers] :: Flags=0x%04X, SwapEffect: %s\n",
+                        L"[%lu Buffers] :: Flags=0x%04X, SwapEffect: %s\n",
                           pSwapChainDesc->BufferDesc.Width,
                           pSwapChainDesc->BufferDesc.Height,
                           pSwapChainDesc->BufferDesc.RefreshRate.Numerator / 
@@ -844,11 +862,17 @@ extern "C" {
     DXGI_SWAP_CHAIN_DESC swap_desc;
     memcpy (&swap_desc, pSwapChainDesc, sizeof (DXGI_SWAP_CHAIN_DESC));
 
-#ifdef WAITABLE
-    swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-#else
-    swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-#endif
+    bool bFlipMode =
+      (host_app                            == L"Fallout4.exe" &&
+        pSwapChainDesc->BufferDesc.Scaling != DXGI_SCALING_ASPECT_RATIO_STRETCH);
+
+    if (bFlipMode) {
+      swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+
+      // Flip Presentation Model requires 3 Buffers
+      config.render.framerate.buffer_count =
+        max (3, config.render.framerate.buffer_count);
+    }
 
     HRESULT res =
       D3D11CreateDeviceAndSwapChain_Import (pAdapter,
@@ -1348,9 +1372,6 @@ Sleep_Detour (DWORD dwMilliseconds)
     Sleep_Original (dwMilliseconds);
   }
 }
-
-typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
-QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
 
 BOOL
 WINAPI
@@ -2074,8 +2095,8 @@ dxgi_init_callback (void)
           new eTB_VarStub <int> (&config.render.framerate.present_interval));
   command.AddVariable ( "PreRenderLimit",
           new eTB_VarStub <int> (&config.render.framerate.pre_render_limit));
-  command.AddVariable ( "BackBufferCount",
-          new eTB_VarStub <int> (&config.render.framerate.backbuffer_count));
+  command.AddVariable ( "BufferCount",
+          new eTB_VarStub <int> (&config.render.framerate.buffer_count));
   command.AddVariable ( "UseFlipDiscard",
           new eTB_VarStub <bool> (&config.render.framerate.flip_discard));
   command.AddVariable ( "FudgeFactor",

@@ -548,7 +548,7 @@ public:
         if (pScreenshots != nullptr) {
           steam_log.LogEx (true, L"  >> Triggering Screenshot: ");
           pScreenshots->TriggerScreenshot ();
-          steam_log.LogEx (false, L"done!");
+          steam_log.LogEx (false, L"done!\n");
         }
       }
     }

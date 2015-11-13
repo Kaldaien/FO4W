@@ -356,6 +356,11 @@ BMF_DrawOSD (void)
   //if (! auto_cs.try_result ())
     //return false;
 
+  //
+  // Enough attempts to cover 15 Seconds at 240 Hz
+  //
+  const unsigned int MAX_RTSS_ATTEMPTS = 15 * 240;
+
   static unsigned int connect_attempts = 1;
 
   // Bail-out early when shutting down, or RTSS does not know about our process
@@ -363,6 +368,12 @@ BMF_DrawOSD (void)
 
   if (! pMemory) {
     ++connect_attempts;
+
+    if (connect_attempts >= MAX_RTSS_ATTEMPTS) {
+      dll_log.Log (L"[RTSS] Exhausted Connection Attempts... disabling OSD!");
+      DwmEnableMMCSS (TRUE);
+    }
+
     LeaveCriticalSection (&osd_cs);
     return false;
   }
@@ -450,19 +461,21 @@ BMF_DrawOSD (void)
 #if 0
             extern IDXGISwapChain2* g_pSwapChain2;
             if (g_pSwapChain2 != nullptr) {
+              LARGE_INTEGER freq;
+              QueryPerformanceFrequency (&freq);
+
+              freq.QuadPart /= 1000ULL;
+
               DXGI_FRAME_STATISTICS stats;
               g_pSwapChain2->GetFrameStatistics (&stats);
 
-              static uint32_t start_frame = stats.PresentRefreshCount;
+              static double last_SyncQPC = (double)stats.SyncQPCTime.QuadPart / (double)freq.QuadPart;
 
-              OSD_PRINTF ",  %lu Dropped Frames (%3.1f%%)",
-                         stats.PresentRefreshCount -
-                         stats.PresentCount        -,
-                 (float)(stats.PresentRefreshCount - stats.PresentCount -
-                        (stats.PresentRefreshCount - start_frame)) /
-                 (float)(stats.PresentRefreshCount -
-                        (stats.PresentRefreshCount - start_frame))
+              OSD_PRINTF ",  %04.1fms",
+                (double)stats.SyncQPCTime.QuadPart / (double)freq.QuadPart - last_SyncQPC
               OSD_END
+
+              last_SyncQPC = (double)stats.SyncQPCTime.QuadPart / (double)freq.QuadPart;
             }
 #endif
 
@@ -953,7 +966,7 @@ BOOL
 BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr, LPCSTR lpAppName)
 {
   if (lpAppName == nullptr)
-    lpAppName = "Batman Tweak";
+    lpAppName = "Batman Fix";
 
   //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
@@ -1048,8 +1061,11 @@ BMF_ReleaseOSD (void)
 
 
 void
-BMF_SetOSDPos (int x, int y)
+BMF_SetOSDPos (int x, int y, LPCSTR lpAppName)
 {
+  if (lpAppName == nullptr)
+    lpAppName = "Batman Fix";
+
   //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   // 0,0 means don't touch anything.
@@ -1071,7 +1087,7 @@ BMF_SetOSDPos (int x, int y)
         ((LPBYTE)pMem + pMem->dwOSDArrOffset +
           dwEntry * pMem->dwOSDEntrySize);
 
-      if (! strcmp (pEntry->szOSDOwner, "Batman Fix"))
+      if (! strcmp (pEntry->szOSDOwner, lpAppName))
       {
         for (DWORD dwApp = 0; dwApp < pMem->dwAppArrSize; dwApp++)
         {
@@ -1100,8 +1116,11 @@ BMF_SetOSDPos (int x, int y)
 }
 
 void
-BMF_SetOSDColor (int red, int green, int blue)
+BMF_SetOSDColor (int red, int green, int blue, LPCSTR lpAppName)
 {
+  if (lpAppName == nullptr)
+    lpAppName = "Batman Fix";
+
   //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   LPVOID pMapAddr =
@@ -1163,8 +1182,11 @@ BMF_SetOSDColor (int red, int green, int blue)
 }
 
 void
-BMF_SetOSDScale (DWORD dwScale, bool relative)
+BMF_SetOSDScale (DWORD dwScale, bool relative, LPCSTR lpAppName)
 {
+  if (lpAppName == nullptr)
+    lpAppName = "Batman Fix";
+
   //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   LPVOID pMapAddr =
@@ -1217,10 +1239,13 @@ BMF_SetOSDScale (DWORD dwScale, bool relative)
 }
 
 void
-BMF_ResizeOSD (int scale_incr)
+BMF_ResizeOSD (int scale_incr, LPCSTR lpAppName)
 {
+  if (lpAppName == nullptr)
+    lpAppName = "Batman Fix";
+
   //BMF_AutoCriticalSection auto_cs (&osd_cs);
 
-  BMF_SetOSDScale (scale_incr, true);
+  BMF_SetOSDScale (scale_incr, true, lpAppName);
 }
 

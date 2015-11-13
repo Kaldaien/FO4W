@@ -172,7 +172,7 @@ struct bmf_config_t
       int     target_fps       = 0;
       int     pre_render_limit = 3;
       int     present_interval = 1;
-      int     backbuffer_count = 1;
+      int     buffer_count     = 1;
       int     max_delta_time   = 33;
       bool    flip_discard     = false;
       float   fudge_factor     = 3.333333f;

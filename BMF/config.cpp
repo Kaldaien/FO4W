@@ -129,7 +129,7 @@ struct {
     bmf::ParameterInt*   target_fps;
     bmf::ParameterInt*   prerender_limit;
     bmf::ParameterInt*   present_interval;
-    bmf::ParameterInt*   backbuffer_count;
+    bmf::ParameterInt*   buffer_count;
     bmf::ParameterInt*   max_delta_time;
     bmf::ParameterBool*  flip_discard;
     bmf::ParameterFloat* fudge_factor;
@@ -367,15 +367,15 @@ BMF_LoadConfig (std::wstring name) {
         L"Render.DXGI",
           L"PreRenderLimit" );
 
-    render.framerate.backbuffer_count =
+    render.framerate.buffer_count =
       static_cast <bmf::ParameterInt *>
         (g_ParameterFactory.create_parameter <int> (
-          L"Number of Backbuffers")
+          L"Number of Buffers in the SwapChain")
         );
-    render.framerate.backbuffer_count->register_to_ini (
+    render.framerate.buffer_count->register_to_ini (
       dll_ini,
         L"Render.DXGI",
-          L"BackBufferCount" );
+          L"SwapChainBufferCount" );
 
     render.framerate.present_interval =
       static_cast <bmf::ParameterInt *>
@@ -744,9 +744,9 @@ BMF_LoadConfig (std::wstring name) {
   }
 
   if (dll_role == DXGI) {
-    if (render.framerate.backbuffer_count->load ())
-      config.render.framerate.backbuffer_count =
-        render.framerate.backbuffer_count->get_value ();
+    if (render.framerate.buffer_count->load ())
+      config.render.framerate.buffer_count =
+        render.framerate.buffer_count->get_value ();
     if (render.framerate.prerender_limit->load ())
       config.render.framerate.pre_render_limit =
         render.framerate.prerender_limit->get_value ();
@@ -762,10 +762,6 @@ BMF_LoadConfig (std::wstring name) {
     if (render.framerate.fudge_factor->load ())
       config.render.framerate.fudge_factor =
         render.framerate.fudge_factor->get_value ();
-
-    // Flip Presentation Model requires 2 Backbuffers
-    config.render.framerate.backbuffer_count =
-      max (2, config.render.framerate.backbuffer_count);
   }
 
   if (steam.achievements.nosound->load ())
@@ -849,7 +845,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
 
   if (dll_role == DXGI) {
     render.framerate.prerender_limit->set_value  (config.render.framerate.pre_render_limit);
-    render.framerate.backbuffer_count->set_value (config.render.framerate.backbuffer_count);
+    render.framerate.buffer_count->set_value     (config.render.framerate.buffer_count);
     render.framerate.present_interval->set_value (config.render.framerate.present_interval);
     render.framerate.max_delta_time->set_value   (config.render.framerate.max_delta_time);
     render.framerate.flip_discard->set_value     (config.render.framerate.flip_discard);
@@ -907,7 +903,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
     render.framerate.target_fps->store       ();
 
   if (dll_role == DXGI) {
-    render.framerate.backbuffer_count->store ();
+    render.framerate.buffer_count->store     ();
     render.framerate.prerender_limit->store  ();
     render.framerate.present_interval->store ();
     render.framerate.max_delta_time->store   ();
