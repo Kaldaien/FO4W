@@ -30,6 +30,8 @@ namespace BMF
     void Shutdown (void);
     void Pump     (void);
 
+    void SetOverlayState (bool active);
+
     uint32_t AppID (void);
   }
 }

@@ -36,6 +36,12 @@ static bool init = false;
 #define STEAM_API_NODLL
 #include "steam_api.h"
 
+
+// To spoof Overlay Activation (pause the game)
+#include <set>
+std::set <class CCallbackBase *> overlay_activation_callbacks;
+
+
 S_API typedef bool (S_CALLTYPE *SteamAPI_Init_t    )(void);
 S_API typedef bool (S_CALLTYPE *SteamAPI_InitSafe_t)(void);
 
@@ -70,6 +76,52 @@ S_API SteamAPI_GetHSteamUser_t      SteamAPI_GetHSteamUser      = nullptr;
 S_API SteamAPI_GetHSteamPipe_t      SteamAPI_GetHSteamPipe      = nullptr;
 
 S_API SteamClient_t                 SteamClient                 = nullptr;
+
+
+S_API SteamAPI_RegisterCallback_t   SteamAPI_RegisterCallback_Original   = nullptr;
+S_API SteamAPI_UnregisterCallback_t SteamAPI_UnregisterCallback_Original = nullptr;
+
+S_API
+void
+S_CALLTYPE
+SteamAPI_RegisterCallback_Detour (class CCallbackBase *pCallback, int iCallback)
+{
+  switch (iCallback)
+  {
+    case GameOverlayActivated_t::k_iCallback:
+      steam_log.Log (L" * Game Installed Overlay Activation Callback");
+      overlay_activation_callbacks.insert (pCallback);
+      break;
+    case ScreenshotRequested_t::k_iCallback:
+      steam_log.Log (L" * Game Installed Screenshot Callback");
+      break;
+    default:
+      steam_log.Log ( L" * Game Installed Unknown Callback (Class=%lu00, Id=%lu)",
+                        iCallback / 100, iCallback % 100 );
+      break;
+  }
+
+  SteamAPI_RegisterCallback_Original (pCallback, iCallback);
+}
+
+S_API
+void
+S_CALLTYPE
+SteamAPI_UnregisterCallback_Detour (class CCallbackBase *pCallback)
+{
+  switch (pCallback->GetICallback ())
+  {
+    case GameOverlayActivated_t::k_iCallback:
+      steam_log.Log (L" * Game Uninstalled Overlay Activation Callback");
+      overlay_activation_callbacks.erase (pCallback);
+      break;
+    case ScreenshotRequested_t::k_iCallback:
+      steam_log.Log (L" * Game Uninstalled Screenshot Callback");
+      break;
+  }
+
+  SteamAPI_UnregisterCallback_Original (pCallback);
+}
 
 
 class BMF_SteamAPIContext {
@@ -123,6 +175,12 @@ public:
           hSteamDLL,
             "SteamAPI_RegisterCallback"
         );
+
+      BMF_CreateFuncHook ( L"SteamAPI_RegisterCallback",
+                             SteamAPI_RegisterCallback,
+                               SteamAPI_RegisterCallback_Detour,
+                    (LPVOID *)&SteamAPI_RegisterCallback_Original );
+      BMF_EnableHook (SteamAPI_RegisterCallback);
     }
 
     if (SteamAPI_UnregisterCallback == nullptr) {
@@ -131,6 +189,12 @@ public:
           hSteamDLL,
             "SteamAPI_UnregisterCallback"
         );
+
+      BMF_CreateFuncHook ( L"SteamAPI_UnregisterCallback",
+                             SteamAPI_UnregisterCallback,
+                               SteamAPI_UnregisterCallback_Detour,
+                    (LPVOID *)&SteamAPI_UnregisterCallback_Original );
+      BMF_EnableHook (SteamAPI_UnregisterCallback);
     }
 
     if (SteamAPI_RunCallbacks == nullptr) {
@@ -754,9 +818,14 @@ BMF::SteamAPI::Init (bool pre_load)
 
   steam_log.Log (L" Creating Achievement Manager...");
 
-  steam_achievements = new BMF_Steam_AchievementManager (
-      config.steam.achievement_sound.c_str ()
-    );
+  // Don't report our own callbacks!
+  BMF_DisableHook (SteamAPI_RegisterCallback);
+  {
+    steam_achievements = new BMF_Steam_AchievementManager (
+        config.steam.achievement_sound.c_str ()
+      );
+  }
+  BMF_EnableHook (SteamAPI_RegisterCallback);
 
   steam_log.LogEx (false, L"\n");
 
@@ -802,4 +871,18 @@ BMF::SteamAPI::AppID (void)
   }
 
   return 0;
+}
+
+void
+BMF::SteamAPI::SetOverlayState (bool active)
+{
+  GameOverlayActivated_t state;
+  state.m_bActive = active;
+
+  std::set <CCallbackBase *>::iterator it =
+    overlay_activation_callbacks.begin ();
+
+  while (it != overlay_activation_callbacks.end ()) {
+    (*it++)->Run (&state);
+  }
 }

@@ -34,6 +34,7 @@
 
 #include "core.h"
 
+// Cannot run in Fullscreen if we do this
 #define WAITABLE
 
 #include <unordered_map>
@@ -499,7 +500,7 @@ extern "C" {
       int flags;
 
 #ifdef WAITABLE
-        flags    = Flags | DXGI_PRESENT_DO_NOT_WAIT;
+        flags    = Flags | DXGI_PRESENT_DO_NOT_WAIT | DXGI_PRESENT_RESTART;
 #else
         flags    = Flags;
 #endif
@@ -643,7 +644,7 @@ extern "C" {
       //
       // If Windows 8.1
       //
-      /////pDesc->BufferDesc.Scaling = DXGI_MODE_SCALING_CENTERED;
+      pDesc->BufferDesc.Scaling = DXGI_MODE_SCALING_CENTERED;
 
 #ifdef WAITABLE
         pDesc->Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
@@ -843,8 +844,11 @@ extern "C" {
     DXGI_SWAP_CHAIN_DESC swap_desc;
     memcpy (&swap_desc, pSwapChainDesc, sizeof (DXGI_SWAP_CHAIN_DESC));
 
-    swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+#ifdef WAITABLE
     swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+#else
+    swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+#endif
 
     HRESULT res =
       D3D11CreateDeviceAndSwapChain_Import (pAdapter,
@@ -1602,6 +1606,7 @@ eTB_CommandProcessor command;
 
 
 #include <string>
+#include "steam_api.h"
 
 //#include "log.h"
 //#include "config.h"
@@ -1934,7 +1939,8 @@ public:
             else if (commands.idx >= commands.history.size ())
               commands.idx = commands.history.size () - 1;
 
-            strcpy (&text [1], commands.history [commands.idx].c_str ());
+            if (commands.history.size ())
+              strcpy (&text [1], commands.history [commands.idx].c_str ());
             command_issued = false;
           }
         }
@@ -1975,6 +1981,9 @@ public:
 
           if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
             visible = ! visible;
+
+            // This will pause/unpause the game
+            BMF::SteamAPI::SetOverlayState (visible);
 
           if (visible) {
             char key_str [2];

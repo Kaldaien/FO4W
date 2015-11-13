@@ -866,6 +866,10 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   }
 
 
+  MH_STATUS WINAPI BMF_Init_MinHook (void);
+  BMF_Init_MinHook ();
+
+
   // Hard-code the AppID for ToZ
   if (! lstrcmpW (pwszShortName, L"Tales of Zestiria.exe"))
     config.steam.appid = 351970;
@@ -966,9 +970,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
 
     dll_log.LogEx (false, L"\n");
   }
-
-  MH_STATUS WINAPI BMF_Init_MinHook (void);
-  BMF_Init_MinHook ();
 
   typedef void (WINAPI *callback_t)(void);
   callback_t callback_fn = (callback_t)callback;
