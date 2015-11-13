@@ -103,6 +103,7 @@ struct {
   struct {
     bmf::ParameterStringW* sound_file;
     bmf::ParameterBool*    nosound;
+    bmf::ParameterBool*    screenshot;
     bmf::ParameterInt*     notify_corner;
     bmf::ParameterInt*     notify_insetX;
     bmf::ParameterInt*     notify_insetY;
@@ -541,6 +542,16 @@ BMF_LoadConfig (std::wstring name) {
       L"Steam.Achievements",
         L"NoSound" );
 
+  steam.achievements.screenshot =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Precious Memories")
+      );
+  steam.achievements.screenshot->register_to_ini(
+    dll_ini,
+      L"Steam.Achievements",
+        L"TakeScreenshot" );
+
   steam.achievements.notify_corner =
     static_cast <bmf::ParameterInt *>
       (g_ParameterFactory.create_parameter <int> (
@@ -762,6 +773,9 @@ BMF_LoadConfig (std::wstring name) {
   if (steam.achievements.sound_file->load ())
     config.steam.achievement_sound =
       steam.achievements.sound_file->get_value ();
+  if (steam.achievements.screenshot->load ())
+    config.steam.achievement_sshot =
+      steam.achievements.screenshot->get_value ();
   if (steam.achievements.notify_corner->load ())
     config.steam.notify_corner =
       steam.achievements.notify_corner->get_value ();
@@ -844,6 +858,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
 
   steam.achievements.sound_file->set_value    (config.steam.achievement_sound);
   steam.achievements.nosound->set_value       (config.steam.nosound);
+  steam.achievements.screenshot->set_value    (config.steam.achievement_sshot);
   steam.achievements.notify_corner->set_value (config.steam.notify_corner);
   steam.achievements.notify_insetX->set_value (config.steam.inset_x);
   steam.achievements.notify_insetY->set_value (config.steam.inset_y);
@@ -912,6 +927,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
 
   steam.achievements.sound_file->store    ();
   steam.achievements.nosound->store       ();
+  steam.achievements.screenshot->store    ();
   steam.achievements.notify_corner->store ();
   steam.achievements.notify_insetX->store ();
   steam.achievements.notify_insetY->store ();

@@ -252,15 +252,32 @@ public:
             STEAMUSERSTATS_INTERFACE_VERSION
       );
 
-    if (user_stats_ == nullptr)
+    if (user_stats_ == nullptr) {
+      steam_log.Log ( L" >> ISteamUserStats NOT FOUND for version %hs <<",
+                        STEAMUSERSTATS_INTERFACE_VERSION );
       return false;
+    }
 
     utils_ =
       client_->GetISteamUtils ( hSteamPipe,
                                   STEAMUTILS_INTERFACE_VERSION );
 
-    if (utils_ == nullptr)
+    if (utils_ == nullptr) {
+      steam_log.Log ( L" >> ISteamUtils NOT FOUND for version %hs <<",
+                        STEAMUTILS_INTERFACE_VERSION );
       return false;
+    }
+
+    screenshots_ =
+      client_->GetISteamScreenshots ( hSteamUser,
+                                        hSteamPipe,
+                                          STEAMSCREENSHOTS_INTERFACE_VERSION );
+
+    if (screenshots_ == nullptr) {
+      steam_log.Log ( L" >> ISteamScreenshots NOT FOUND for version %hs <<",
+                        STEAMSCREENSHOTS_INTERFACE_VERSION );
+      return false;
+    }
 
 #if 0
     extern "C" void __cdecl SteamAPIDebugTextHook (int nSeverity, const char *pchDebugText);
@@ -292,9 +309,10 @@ public:
       hSteamHeap = nullptr;
     }
 
-    client_     = nullptr;
-    user_stats_ = nullptr;
-    utils_      = nullptr;
+    client_      = nullptr;
+    user_stats_  = nullptr;
+    utils_       = nullptr;
+    screenshots_ = nullptr;
 
     if (SteamAPI_Shutdown != nullptr) {
       // We probably should not shutdown Steam API; the underlying
@@ -303,16 +321,18 @@ public:
     }
   }
 
-  ISteamUserStats* UserStats (void) { return user_stats_; }
-  ISteamUtils*     Utils     (void) { return utils_; }
+  ISteamUserStats*   UserStats   (void) { return user_stats_;  }
+  ISteamUtils*       Utils       (void) { return utils_;       }
+  ISteamScreenshots* Screenshots (void) { return screenshots_; }
 
 protected:
 private:
   // TODO: We have an obvious lack of thread-safety here...
 
-  ISteamClient*    client_     = nullptr;
-  ISteamUserStats* user_stats_ = nullptr;
-  ISteamUtils*     utils_      = nullptr;
+  ISteamClient*      client_      = nullptr;
+  ISteamUserStats*   user_stats_  = nullptr;
+  ISteamUtils*       utils_       = nullptr;
+  ISteamScreenshots* screenshots_ = nullptr;
 } static steam_ctx;
 
 #if 0
@@ -521,6 +541,16 @@ public:
 
       steam_log.Log (L" Achievement: '%hs' (%hs) - Unlocked!",
         achievement.name_, achievement.desc_);
+
+      if (config.steam.achievement_sshot) {
+        ISteamScreenshots* pScreenshots = steam_ctx.Screenshots ();
+
+        if (pScreenshots != nullptr) {
+          steam_log.LogEx (true, L"  >> Triggering Screenshot: ");
+          pScreenshots->TriggerScreenshot ();
+          steam_log.LogEx (false, L"done!");
+        }
+      }
     }
 
     else {

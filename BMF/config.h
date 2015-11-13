@@ -151,6 +151,7 @@ struct bmf_config_t
   struct {
     std::wstring
             achievement_sound = L"";
+    bool    achievement_sshot = true;
     int     notify_corner     = 4; // 0=Top-Left,
                                    // 1=Top-Right,
                                    // 2=Bottom-Left,
