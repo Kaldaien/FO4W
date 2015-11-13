@@ -501,8 +501,8 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
                               uint32_t       limit )
 {
   // Allow the end-user to override this using the INI file
-  if (config.system.target_fps != 0)
-    limit = config.system.target_fps;
+  if (config.render.framerate.target_fps != 0)
+    limit = config.render.framerate.target_fps;
 
   NvDRSSessionHandle hSession;
   NVAPI_CALL (DRS_CreateSession (&hSession));
@@ -586,6 +586,13 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
 
   limit_mask |= (limit & PS_FRAMERATE_LIMITER_FPSMASK);
 
+  // Default to application preference
+  uint32_t target_prerender = 0;
+
+  // ToZ needs 1
+  if (wcsstr (wszAppName, L"Tales of Zestiria"))
+    target_prerender = 1;
+
   bool already_set = true;
 
   if (fps_limiter.u32CurrentValue != limit_mask) {
@@ -596,7 +603,7 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
     already_set = false;
   }
 
-  if (prerendered_frames.u32CurrentValue != 1) {
+  if (prerendered_frames.u32CurrentValue != target_prerender) {
     already_set = false;
   }
 
@@ -610,7 +617,7 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
   NVAPI_SET_DWORD (gps_ctrl, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, PS_FRAMERATE_LIMITER_GPS_CTRL_DISABLED);
   NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &gps_ctrl));
 
-  NVAPI_SET_DWORD (prerendered_frames, PRERENDERLIMIT_ID, 1);
+  NVAPI_SET_DWORD (prerendered_frames, PRERENDERLIMIT_ID, target_prerender);
   NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &prerendered_frames));
 
   NVAPI_VERBOSE ();

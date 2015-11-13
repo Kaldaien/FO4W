@@ -167,11 +167,22 @@ struct bmf_config_t
 
 
   struct {
+    struct {
+      int     target_fps       = 0;
+      int     pre_render_limit = 3;
+      int     present_interval = 1;
+      int     backbuffer_count = 1;
+      int     max_delta_time   = 33;
+      bool    flip_discard     = false;
+      float   fudge_factor     = 3.333333f;
+    } framerate;
+  } render;
+
+  struct {
     int     init_delay        = 250;
     bool    silent            = false;
     bool    allow_dev_trans   = false;
     bool    prefer_fahrenheit = true;
-    int     target_fps        = 0;
     std::wstring
             version           = BMF_VER_STR;
   } system;

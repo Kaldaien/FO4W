@@ -179,21 +179,6 @@ BMF_LoadEarlyImports32 (void)
 
             if (imports [i].hLibrary != NULL) {
               dll_log.LogEx (false, L"success!\n");
-
-              // Install keyboard hook
-              HOOKPROC pfnKeyboardHookProc =
-             (HOOKPROC)GetProcAddress ( imports [i].hLibrary,
-                                          "BMF_KeyboardHook" );
-              if (pfnKeyboardHookProc != nullptr) {
-                dll_log.LogEx (true, L"  # Installing Keyboard Hook... ");
-                extern HHOOK   hKeyboardHook;
-                hKeyboardHook =
-                  SetWindowsHookEx ( WH_KEYBOARD_LL,
-                                       pfnKeyboardHookProc,
-                                         0,
-                                           0 );
-                dll_log.LogEx (false, L"done!\n");
-              }
               ++success;
             } else  {
               imports [i].hLibrary = (HMODULE)-2;

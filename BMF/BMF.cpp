@@ -18,17 +18,12 @@
 
 #include <Windows.h>
 
+#include "core.h"
 #include "dxgi_backend.h"
 #include "d3d9_backend.h"
 #include "opengl_backend.h"
 
-enum DLL_ROLE {
-  DXGI   = 0x01, // D3D 10-12
-  D3D9   = 0x02,
-  OpenGL = 0x04,
-  Vulkan = 0x08
-} dll_role;
-
+DLL_ROLE dll_role;
 
 bool
 BMF_EstablishDllRole (HMODULE hModule)
@@ -107,7 +102,6 @@ BMF_Detach (DLL_ROLE role)
 
 // We need this to load embedded resources correctly...
 HMODULE hModSelf;
-HHOOK   hKeyboardHook;
 
 BOOL
 APIENTRY DllMain ( HMODULE hModule,
@@ -142,8 +136,6 @@ APIENTRY DllMain ( HMODULE hModule,
       if (attached)
       {
         BMF_Detach (dll_role);
-
-        UnhookWindowsHookEx (hKeyboardHook);
 
         //  extern void BMF_ShutdownCOM (void);
         //BMF_ShutdownCOM ();

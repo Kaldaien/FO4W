@@ -404,7 +404,7 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Tales of Zestiria \"Fix\" v 0.5.0   %ws\n\n",
+    OSD_PRINTF "Fallout 4 \"Works\" v 0.0.3   %ws\n\n",
       time
     OSD_END
   }
@@ -438,7 +438,7 @@ BMF_DrawOSD (void)
               last_ms = pApp->dwFrameTime / 1000.0f;
 
             std::wstring api_name = BMF_GetAPINameFromOSDFlags (pApp->dwFlags);
-            OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms\n",
+            OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms",
               api_name.c_str (),
                 // Cast to FP to avoid integer division by zero.
                 1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
@@ -446,6 +446,27 @@ BMF_DrawOSD (void)
                 //1000000.0f / pApp->dwFrameTime,
                   //pApp->dwFrameTime / 1000.0f
             OSD_END
+
+#if 0
+            extern IDXGISwapChain2* g_pSwapChain2;
+            if (g_pSwapChain2 != nullptr) {
+              DXGI_FRAME_STATISTICS stats;
+              g_pSwapChain2->GetFrameStatistics (&stats);
+
+              static uint32_t start_frame = stats.PresentRefreshCount;
+
+              OSD_PRINTF ",  %lu Dropped Frames (%3.1f%%)",
+                         stats.PresentRefreshCount -
+                         stats.PresentCount        -,
+                 (float)(stats.PresentRefreshCount - stats.PresentCount -
+                        (stats.PresentRefreshCount - start_frame)) /
+                 (float)(stats.PresentRefreshCount -
+                        (stats.PresentRefreshCount - start_frame))
+              OSD_END
+            }
+#endif
+
+            OSD_PRINTF "\n" OSD_END
 
 #ifdef DUMP_SWAPCHAIN_INFO
             if (g_pSwapChain9 != nullptr) {

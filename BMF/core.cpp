@@ -56,6 +56,8 @@ struct budget_thread_params_t {
   volatile bool    ready;
 } *budget_thread = nullptr;
 
+std::wstring host_app;
+
 // Disable SLI memory in Batman Arkham Knight
 bool USE_SLI = true;
 
@@ -808,6 +810,8 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     *(pwszShortName - 1) != L'\\')
     --pwszShortName;
 
+  host_app = pwszShortName;
+
   dll_log.Log (L">> (%s) <<", pwszShortName);
 
   if (! lstrcmpW (pwszShortName, L"BatmanAK.exe"))
@@ -962,6 +966,9 @@ BMF_InitCore (const wchar_t* backend, void* callback)
 
     dll_log.LogEx (false, L"\n");
   }
+
+  MH_STATUS WINAPI BMF_Init_MinHook (void);
+  BMF_Init_MinHook ();
 
   typedef void (WINAPI *callback_t)(void);
   callback_t callback_fn = (callback_t)callback;
@@ -1159,7 +1166,8 @@ BMF_CreateFuncHook ( LPCWSTR pwszFuncName,
 MH_STATUS
 WINAPI
 BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
-                    LPVOID  pDetour,    LPVOID *ppOriginal )
+                    LPVOID  pDetour,    LPVOID *ppOriginal,
+                    LPVOID *ppFuncAddr )
 {
 #if 1
   HMODULE hMod = GetModuleHandle (pwszModule);
@@ -1197,6 +1205,8 @@ BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
                       pwszModule,
                         MH_StatusToString (status) );
   }
+  else if (ppFuncAddr != nullptr)
+    *ppFuncAddr = pFuncAddr;
 
   return status;
 }
@@ -1541,7 +1551,9 @@ BMF_ShutdownCore (const wchar_t* backend)
 
 
 
+COM_DECLSPEC_NOTHROW
 void
+STDMETHODCALLTYPE
 BMF_BeginBufferSwap (void)
 {
   static int import_tries = 0;
@@ -1576,7 +1588,9 @@ BMF_BeginBufferSwap (void)
 
 extern void BMF_UnlockSteamAchievement (int idx);
 
+COM_DECLSPEC_NOTHROW
 HRESULT
+STDMETHODCALLTYPE
 BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
 {
   // Draw after present, this may make stuff 1 frame late, but... it

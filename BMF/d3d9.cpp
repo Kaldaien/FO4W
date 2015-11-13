@@ -203,6 +203,7 @@ __stdcall D3D9PresentCallback (IDirect3DDevice9 *This,
   GetSwapChain_t GetSwapChain = (GetSwapChain_t)vtable [14];
 
   GetSwapChain (This, 0, &g_pSwapChain9);
+  ((IUnknown *)g_pSwapChain9)->Release ();
 
   typedef HRESULT (STDMETHODCALLTYPE *Present_t)
     ( IDirect3DSwapChain9*      This,
@@ -251,6 +252,8 @@ __stdcall D3D9PresentCallbackEx (IDirect3DDevice9Ex *This,
   GetSwapChain_t GetSwapChain = (GetSwapChain_t)vtable [14];
 
   GetSwapChain (This, 0, &g_pSwapChain9);
+
+  ((IUnknown *)g_pSwapChain9)->Release ();
 
   HRESULT hr = D3D9PresentEx_Original (This,
                                        pSourceRect,
@@ -564,7 +567,7 @@ extern "C" {
                                   GetCurrentThreadId ()
     );
 
-    int TargetFPS = config.system.target_fps;
+    int TargetFPS = config.render.framerate.target_fps;
     int Refresh   = pPresentationParameters != nullptr ? 
                       pPresentationParameters->FullScreen_RefreshRateInHz :
                       0;
@@ -595,6 +598,8 @@ extern "C" {
                           Refresh );
       }
     }
+
+    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
     BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
 
@@ -815,7 +820,7 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
     hFocusWindow, BehaviorFlags, pPresentationParameters,
     pFullscreenDisplayMode, ppReturnedDeviceInterface, GetCurrentThreadId ());
 
-  int TargetFPS = config.system.target_fps;
+  int TargetFPS = config.render.framerate.target_fps;
   int Refresh   = pFullscreenDisplayMode != nullptr ? 
                     pFullscreenDisplayMode->RefreshRate :
                     0;
@@ -838,7 +843,6 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
         pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
         pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
         pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
-
       } else {
         dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
                       L" (refresh = %li Hz)\n",
@@ -852,6 +856,8 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
                         Refresh );
     }
   }
+
+  pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
   HRESULT ret;
 
@@ -1139,7 +1145,7 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
     hFocusWindow, BehaviorFlags, pPresentationParameters,
     ppReturnedDeviceInterface, GetCurrentThreadId ());
 
-  int TargetFPS = config.system.target_fps;
+  int TargetFPS = config.render.framerate.target_fps;
   int Refresh   = pPresentationParameters != nullptr ? 
                     pPresentationParameters->FullScreen_RefreshRateInHz :
                     0;
@@ -1170,6 +1176,8 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
                         Refresh );
     }
   }
+
+  pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
   HRESULT ret;
 

@@ -25,6 +25,8 @@
 
 #include "core.h"
 
+#if 0
+
 // TODO: reference additional headers your program requires here
 
 /* verify that the <rpcndr.h> version is high enough to compile this file*/
@@ -258,10 +260,11 @@ public:
 typedef
 enum DXGI_SWAP_EFFECT
 {
-  DXGI_SWAP_EFFECT_DISCARD = 0,
-  DXGI_SWAP_EFFECT_SEQUENTIAL = 1,
-  DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL = 3
-} 	DXGI_SWAP_EFFECT;
+  DXGI_SWAP_EFFECT_DISCARD         = 0,
+  DXGI_SWAP_EFFECT_SEQUENTIAL      = 1,
+  DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL = 3,
+  DXGI_SWAP_EFFECT_FLIP_DISCARD    = 4
+} DXGI_SWAP_EFFECT;
 
 typedef
 enum DXGI_SWAP_CHAIN_FLAG
@@ -288,7 +291,7 @@ typedef struct DXGI_SWAP_CHAIN_DESC
   BOOL Windowed;
   DXGI_SWAP_EFFECT SwapEffect;
   UINT Flags;
-} 	DXGI_SWAP_CHAIN_DESC;
+} DXGI_SWAP_CHAIN_DESC;
 
 EXTERN_C const IID IID_IDXGISwapChain;
 
@@ -2086,3 +2089,42 @@ enum DXGI_RESIDENCY
             _Out_  INT *pPriority) = 0;
         
     };
+
+#if 0
+    EXTERN_C const IID IID_IDXGISwapChain2;
+
+    MIDL_INTERFACE("a8be2ac4-199f-4946-b331-79599fb98de7")
+      IDXGISwapChain2 : public IDXGISwapChain1
+    {
+    public:
+      virtual HRESULT STDMETHODCALLTYPE SetSourceSize( 
+        UINT Width,
+        UINT Height) = 0;
+
+      virtual HRESULT STDMETHODCALLTYPE GetSourceSize( 
+        /* [annotation][out] */ 
+        _Out_  UINT *pWidth,
+        /* [annotation][out] */ 
+        _Out_  UINT *pHeight) = 0;
+
+      virtual HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency( 
+        UINT MaxLatency) = 0;
+
+      virtual HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency( 
+        /* [annotation][out] */ 
+        _Out_  UINT *pMaxLatency) = 0;
+
+      virtual HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject( void) = 0;
+
+      virtual HRESULT STDMETHODCALLTYPE SetMatrixTransform( 
+        const DXGI_MATRIX_3X2_F *pMatrix) = 0;
+
+      virtual HRESULT STDMETHODCALLTYPE GetMatrixTransform( 
+        /* [annotation][out] */ 
+        _Out_  DXGI_MATRIX_3X2_F *pMatrix) = 0;
+
+    };
+#endif
+#else
+# include "dxgi_interfaces.h"
+#endif

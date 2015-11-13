@@ -17,6 +17,7 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "config.h"
+#include "core.h"
 #include "parameter.h"
 #include "import.h"
 #include "ini.h"
@@ -121,7 +122,18 @@ bmf::ParameterInt*       init_delay;
 bmf::ParameterBool*      silent;
 bmf::ParameterStringW*   version;
 bmf::ParameterBool*      prefer_fahrenheit;
-bmf::ParameterInt*       target_fps;
+
+struct {
+  struct {
+    bmf::ParameterInt*   target_fps;
+    bmf::ParameterInt*   prerender_limit;
+    bmf::ParameterInt*   present_interval;
+    bmf::ParameterInt*   backbuffer_count;
+    bmf::ParameterInt*   max_delta_time;
+    bmf::ParameterBool*  flip_discard;
+    bmf::ParameterFloat* fudge_factor;
+  } framerate;
+} render;
 
 
 bool
@@ -321,15 +333,89 @@ BMF_LoadConfig (std::wstring name) {
         L"Version" );
 
 
-  target_fps =
-    static_cast <bmf::ParameterInt *>
-      (g_ParameterFactory.create_parameter <int> (
-        L"Framerate Target")
-      );
-  target_fps->register_to_ini (
-    dll_ini,
-      L"RSFN.System",
-        L"TargetFPS" );
+  if (dll_role == D3D9) {
+    render.framerate.target_fps =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Framerate Target")
+        );
+    render.framerate.target_fps->register_to_ini (
+      dll_ini,
+        L"Render.D3D9",
+          L"TargetFPS" );
+  }
+
+  if (dll_role == DXGI) {
+    render.framerate.target_fps =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Framerate Target")
+        );
+    render.framerate.target_fps->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"TargetFPS" );
+
+    render.framerate.prerender_limit =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Maximum Frames to Render-Ahead")
+        );
+    render.framerate.prerender_limit->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"PreRenderLimit" );
+
+    render.framerate.backbuffer_count =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Number of Backbuffers")
+        );
+    render.framerate.backbuffer_count->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"BackBufferCount" );
+
+    render.framerate.present_interval =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Presentation Interval")
+        );
+    render.framerate.present_interval->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"PresentationInterval" );
+
+    render.framerate.max_delta_time =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Maximum Frame Delta Time")
+        );
+    render.framerate.max_delta_time->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"MaxDeltaTime" );
+
+    render.framerate.flip_discard =
+      static_cast <bmf::ParameterBool *>
+        (g_ParameterFactory.create_parameter <bool> (
+          L"Use Flip Discard - Windows 10+")
+        );
+    render.framerate.flip_discard->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"UseFlipDiscard" );
+
+    render.framerate.fudge_factor =
+      static_cast <bmf::ParameterFloat *>
+        (g_ParameterFactory.create_parameter <float> (
+          L"Framerate Limiter Fudge Factor")
+        );
+    render.framerate.fudge_factor->register_to_ini (
+      dll_ini,
+        L"Render.DXGI",
+          L"FudgeFactor" );
+  }
 
 
 
@@ -440,7 +526,7 @@ BMF_LoadConfig (std::wstring name) {
       (g_ParameterFactory.create_parameter <std::wstring> (
         L"Achievement Sound File")
       );
-  steam.achievements.sound_file->register_to_ini(
+  steam.achievements.sound_file->register_to_ini (
     dll_ini,
       L"Steam.Achievements",
         L"SoundFile" );
@@ -640,6 +726,37 @@ BMF_LoadConfig (std::wstring name) {
   if (monitoring.SLI.show->load ())
     config.sli.show = monitoring.SLI.show->get_value ();
 
+  if (dll_role == D3D9 || dll_role == DXGI) {
+    if (render.framerate.target_fps->load ())
+      config.render.framerate.target_fps =
+        render.framerate.target_fps->get_value ();
+  }
+
+  if (dll_role == DXGI) {
+    if (render.framerate.backbuffer_count->load ())
+      config.render.framerate.backbuffer_count =
+        render.framerate.backbuffer_count->get_value ();
+    if (render.framerate.prerender_limit->load ())
+      config.render.framerate.pre_render_limit =
+        render.framerate.prerender_limit->get_value ();
+    if (render.framerate.present_interval->load ())
+      config.render.framerate.present_interval =
+        render.framerate.present_interval->get_value ();
+    if (render.framerate.max_delta_time->load ())
+      config.render.framerate.max_delta_time =
+        render.framerate.max_delta_time->get_value ();
+    if (render.framerate.flip_discard->load ())
+      config.render.framerate.flip_discard =
+        render.framerate.flip_discard->get_value ();
+    if (render.framerate.fudge_factor->load ())
+      config.render.framerate.fudge_factor =
+        render.framerate.fudge_factor->get_value ();
+
+    // Flip Presentation Model requires 2 Backbuffers
+    config.render.framerate.backbuffer_count =
+      max (2, config.render.framerate.backbuffer_count);
+  }
+
   if (steam.achievements.nosound->load ())
     config.steam.nosound = steam.achievements.nosound->get_value ();
   if (steam.achievements.sound_file->load ())
@@ -665,8 +782,6 @@ BMF_LoadConfig (std::wstring name) {
     config.system.silent = silent->get_value ();
   if (prefer_fahrenheit->load ())
     config.system.prefer_fahrenheit = prefer_fahrenheit->get_value ();
-  if (target_fps->load ())
-    config.system.target_fps = target_fps->get_value ();
   if (version->load ())
     config.system.version = version->get_value ();
 
@@ -714,6 +829,19 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.SLI.show->set_value             (config.sli.show);
   monitoring.time.show->set_value            (config.time.show);
 
+  if (dll_role == D3D9 || dll_role == DXGI) {
+    render.framerate.target_fps->set_value       (config.render.framerate.target_fps);
+  }
+
+  if (dll_role == DXGI) {
+    render.framerate.prerender_limit->set_value  (config.render.framerate.pre_render_limit);
+    render.framerate.backbuffer_count->set_value (config.render.framerate.backbuffer_count);
+    render.framerate.present_interval->set_value (config.render.framerate.present_interval);
+    render.framerate.max_delta_time->set_value   (config.render.framerate.max_delta_time);
+    render.framerate.flip_discard->set_value     (config.render.framerate.flip_discard);
+    render.framerate.fudge_factor->set_value     (config.render.framerate.fudge_factor);
+  }
+
   steam.achievements.sound_file->set_value    (config.steam.achievement_sound);
   steam.achievements.nosound->set_value       (config.steam.nosound);
   steam.achievements.notify_corner->set_value (config.steam.notify_corner);
@@ -733,7 +861,6 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   init_delay->set_value                      (config.system.init_delay);
   silent->set_value                          (config.system.silent);
   prefer_fahrenheit->set_value               (config.system.prefer_fahrenheit);
-  target_fps->set_value                      (config.system.target_fps);
 
   monitoring.memory.show->store          ();
   mem_reserve->store                     ();
@@ -761,6 +888,18 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.pagefile.show->store        ();
   monitoring.pagefile.interval->store    ();
 
+  if (dll_role == D3D9 || dll_role == DXGI)
+    render.framerate.target_fps->store       ();
+
+  if (dll_role == DXGI) {
+    render.framerate.backbuffer_count->store ();
+    render.framerate.prerender_limit->store  ();
+    render.framerate.present_interval->store ();
+    render.framerate.max_delta_time->store   ();
+    render.framerate.flip_discard->store     ();
+    render.framerate.fudge_factor->store     ();
+  }
+
   osd.show->store                        ();
   osd.update_method.pump->store          ();
   osd.update_method.pump_interval->store ();
@@ -782,7 +921,6 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   init_delay->store                      ();
   silent->store                          ();
   prefer_fahrenheit->store               ();
-  target_fps->store                      ();
 
   version->set_value                     (BMF_VER_STR);
   version->store                         ();

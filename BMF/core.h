@@ -59,6 +59,9 @@ enum buffer_t {
   NumBuffers
 };
 
+#include "dxgi_interfaces.h"
+
+#if 0
 typedef  enum DXGI_MEMORY_SEGMENT_GROUP
 {
   DXGI_MEMORY_SEGMENT_GROUP_LOCAL     = 0,
@@ -72,6 +75,7 @@ typedef struct DXGI_QUERY_VIDEO_MEMORY_INFO
   UINT64 AvailableForReservation;
   UINT64 CurrentReservation;
 } DXGI_QUERY_VIDEO_MEMORY_INFO;
+#endif
 
 struct mem_info_t {
   DXGI_QUERY_VIDEO_MEMORY_INFO local    [MAX_GPU_NODES];
@@ -113,7 +117,8 @@ extern "C" {
 
   MH_STATUS WINAPI
       BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
-                          LPVOID  pDetour,    LPVOID *ppOriginal );
+                          LPVOID  pDetour,    LPVOID *ppOriginal,
+                          LPVOID *ppFuncAddr = nullptr );
 
   MH_STATUS WINAPI
        BMF_EnableHook   (LPVOID pTarget);
@@ -126,13 +131,27 @@ extern "C" {
 
   struct IDXGISwapChain;
 
-  void    BMF_BeginBufferSwap (void);
-  HRESULT BMF_EndBufferSwap   (HRESULT hr, IUnknown* device = nullptr);
+  void    STDMETHODCALLTYPE BMF_BeginBufferSwap (void);
+  HRESULT STDMETHODCALLTYPE BMF_EndBufferSwap   (HRESULT hr, IUnknown* device = nullptr);
 
   struct IDXGIAdapter;
   void BMF_StartDXGI_1_4_BudgetThread (IDXGIAdapter** ppAdapter);
 
   const wchar_t* BMF_DescribeHRESULT (HRESULT result);
 }
+
+enum DLL_ROLE {
+  // Graphics APIs
+  DXGI       = 0x01, // D3D 10-12
+  D3D9       = 0x02,
+  OpenGL     = 0x04,
+  Vulkan     = 0x08,
+
+  // Other DLLs
+  PlugIn     = 0x00010000, // Stuff like Tales of Zestiria "Fix"
+  ThirdParty = 0x80000000
+};
+
+extern DLL_ROLE dll_role;
 
 #endif /* __BMF__CORE_H__ */
