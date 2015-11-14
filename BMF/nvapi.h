@@ -23,6 +23,7 @@
 
 #include <string>
 
+enum   DLL_ROLE;
 struct DXGI_ADAPTER_DESC;
 
 // Reverse Engineered NDA portions of NvAPI (hush, hush -- *wink*)
@@ -76,7 +77,7 @@ namespace NVAPI {
 // r353_23
 #define MINIMUM_DRIVER_VERSION 35582
 
-  BOOL InitializeLibrary (void);
+  BOOL InitializeLibrary (const wchar_t* wszAppName);
   BOOL UnloadLibrary     (void);
 
   int  CountSLIGPUs      (void);
@@ -94,8 +95,12 @@ namespace NVAPI {
 
   void SetAppFriendlyName(const wchar_t* wszFriendlyName);
 
-  BOOL SetFramerateLimit (const wchar_t* wszAppName,
-                          uint32_t       limit);
+  BOOL SetFramerateLimit (uint32_t       limit);
+
+  BOOL SetSLIOverride    (      DLL_ROLE role,
+                          const wchar_t* wszModeName,
+                          const wchar_t* wszGPUCount,
+                          const wchar_t* wszCompatBits);
 
   std::wstring
        GetDriverVersion  (NvU32* pVer = NULL);
@@ -115,6 +120,7 @@ namespace NVAPI {
                           const char*   function_name,
                           const char*   file_name);
 
+  extern std::wstring app_name;
   extern std::wstring friendly_name;
 
   // Guilty until proven innocent

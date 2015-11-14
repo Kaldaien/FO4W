@@ -464,6 +464,7 @@
     <ClCompile Include="opengl.cpp" />
     <ClCompile Include="osd.cpp" />
     <ClCompile Include="parameter.cpp" />
+    <ClCompile Include="plugin_fo4.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="steam_api.cpp" />
     <ClCompile Include="utility.cpp" />

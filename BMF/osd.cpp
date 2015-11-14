@@ -415,7 +415,20 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Fallout 4 \"Works\" v 0.1.1   %ws\n\n",
+          std::string  title_fmt;
+   extern std::wstring host_app;
+
+   // XXX: This is totally stupid, please come up with a better solution!
+   if (host_app == L"Fallout4.exe")
+     title_fmt = "Fallout 4 \"Works\" v 0.1.2   %ws\n\n";
+   else if (host_app == L"Tales Of Zestiria.exe")
+     title_fmt = "Tales of Zestiria \"Fix\" v 0.5.3   %ws\n\n";
+   else if (host_app == L"BatmanAK.exe")
+     title_fmt = "Batman \"Fix\" v 0.17   %ws\n\n";
+   else
+     title_fmt = "Render Stats For Nerds v 0.17   %ws\n\n";
+
+    OSD_PRINTF title_fmt.c_str (),
       time
     OSD_END
   }

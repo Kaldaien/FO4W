@@ -180,6 +180,18 @@ struct bmf_config_t
   } render;
 
   struct {
+    struct {
+      std::wstring
+              compatibility   = L"0x00000000";
+      std::wstring
+              mode            = L"Auto";
+      std::wstring
+              num_gpus        = L"Auto";
+      bool    override        = false;
+    } sli;
+  } nvidia;
+
+  struct {
     int     init_delay        = 250;
     bool    silent            = false;
     bool    allow_dev_trans   = false;

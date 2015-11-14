@@ -527,6 +527,30 @@ extern "C" {
     HRESULT hr = E_FAIL;
 
     if (This != NULL) {
+#if 0
+      static bool first_frame = true;
+
+      if (first_frame) {
+        if (bFlipMode) {
+          DEVMODE devmode = { 0 };
+          devmode.dmSize = sizeof DEVMODE;
+          EnumDisplaySettings (nullptr, ENUM_CURRENT_SETTINGS, &devmode);
+
+          DXGI_SWAP_CHAIN_DESC desc;
+          This->GetDesc (&desc);
+
+          devmode.dmPelsWidth  = desc.BufferDesc.Width;
+          devmode.dmPelsHeight = desc.BufferDesc.Height;
+
+          ChangeDisplaySettings (&devmode, CDS_FULLSCREEN);
+
+          //This->ResizeTarget  (&desc);
+          This->ResizeBuffers (0, devmode.dmPelsWidth, devmode.dmPelsHeight, desc.BufferDesc.Format, Flags);
+        }
+        first_frame = false;
+      }
+#endif
+
       IUnknown* pDev = nullptr;
 
       int interval = config.render.framerate.present_interval;
@@ -566,15 +590,16 @@ extern "C" {
 
         if (bWait) {
           IDXGISwapChain2* pSwapChain2;
-          This->QueryInterface (__uuidof(IDXGISwapChain2),(void **)&pSwapChain2);
+          if (SUCCEEDED (This->QueryInterface (__uuidof(IDXGISwapChain2),(void **)&pSwapChain2)))
+          {
+            HANDLE hWait = pSwapChain2->GetFrameLatencyWaitableObject ();
 
-          HANDLE hWait = pSwapChain2->GetFrameLatencyWaitableObject ();
+            pSwapChain2->Release ();
 
-          pSwapChain2->Release ();
-
-          WaitForSingleObjectEx ( hWait,
-                                    config.render.framerate.max_delta_time,
-                                      TRUE );
+            WaitForSingleObjectEx ( hWait,
+                                      config.render.framerate.max_delta_time,
+                                        TRUE );
+          }
         }
       }
 
@@ -633,6 +658,8 @@ extern "C" {
 #endif
   }
 
+  extern "C++" bool BMF_FO4_IsFullscreen (void);
+
   HRESULT
   STDMETHODCALLTYPE CreateSwapChain_Override (IDXGIFactory          *This,
                                         _In_  IUnknown              *pDevice,
@@ -644,10 +671,9 @@ extern "C" {
     DXGI_LOG_CALL_I3 (iname.c_str (), L"CreateSwapChain", L"%08Xh, %08Xh, %08Xh",
                       pDevice, pDesc, ppSwapChain);
 
-    if (pDesc != nullptr) {
-      pDesc->BufferDesc.RefreshRate.Numerator   = 60;
-      pDesc->BufferDesc.RefreshRate.Denominator = 1;
+    HRESULT ret;
 
+    if (pDesc != nullptr) {
       dll_log.LogEx ( true,
         L"  SwapChain: (%lux%lu @ %4.1f Hz - Scaling: %s) - {%s}"
         L" [%lu Buffers] :: Flags=0x%04X, SwapEffect: %s\n",
@@ -675,7 +701,35 @@ extern "C" {
         pDesc->SwapEffect == 4 ?
         L"Flip Discard" : L"<Unknown>");
 
+      bFlipMode =
+        (dxgi_caps.present.flip_sequential && host_app == L"Fallout4.exe");
+
       if (bFlipMode) {
+        bFlipMode = (! BMF_FO4_IsFullscreen ());
+      }
+
+#if 0
+      DEVMODE devmode = { 0 };
+      devmode.dmSize  = sizeof DEVMODE;
+
+      EnumDisplaySettings (nullptr, ENUM_CURRENT_SETTINGS, &devmode);
+
+      if (pDesc->BufferDesc.Width  > devmode.dmPelsWidth ||
+          pDesc->BufferDesc.Height > devmode.dmPelsHeight)
+        bFlipMode = false;
+#endif
+
+      bFlipMode = bFlipMode && pDesc->BufferDesc.Scaling == 0;
+      bWait     = bFlipMode && dxgi_caps.present.waitable;
+
+      if (bFlipMode) {
+        if (bWait)
+          pDesc->Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+
+        // Flip Presentation Model requires 3 Buffers
+        config.render.framerate.buffer_count =
+          max (3, config.render.framerate.buffer_count);
+
         if (config.render.framerate.flip_discard &&
             dxgi_caps.present.flip_discard)
           pDesc->SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
@@ -693,13 +747,15 @@ extern "C" {
         pDesc->Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         //pDesc->Flags &= ~DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
       }
-    }
 
-    HRESULT ret;
+      dll_log.Log ( L" >> Using %s Presentation Model  [Waitable: %s]",
+                     bFlipMode ? L"Flip" : L"Traditional",
+                       bWait ? L"Yes" : L"No" );
+    }
 
     IDXGIFactory2* pFactory = nullptr;
 
-    if (SUCCEEDED (This->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pFactory)))
+    if (bFlipMode && SUCCEEDED (This->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pFactory)))
     {
       DXGI_SWAP_CHAIN_DESC1 desc1;
       desc1.Width              = pDesc->BufferDesc.Width;
@@ -710,9 +766,9 @@ extern "C" {
       desc1.SampleDesc.Quality = pDesc->SampleDesc.Quality;
       desc1.BufferUsage        = pDesc->BufferUsage;
       desc1.BufferCount        = pDesc->BufferCount;
-      desc1.Scaling            = DXGI_SCALING_STRETCH;//pDesc->BufferDesc.Scaling;
+      desc1.Scaling            = DXGI_SCALING_STRETCH;
       desc1.SwapEffect         = pDesc->SwapEffect;
-      desc1.AlphaMode          = DXGI_ALPHA_MODE_UNSPECIFIED ;
+      desc1.AlphaMode          = DXGI_ALPHA_MODE_UNSPECIFIED;
       desc1.Flags              = pDesc->Flags;
 
       IDXGISwapChain1* pSwapChain1 = nullptr;
@@ -744,24 +800,23 @@ extern "C" {
       const uint32_t max_latency = config.render.framerate.pre_render_limit;
 
       IDXGISwapChain2* pSwapChain2 = nullptr;
-      if (SUCCEEDED ( (*ppSwapChain)->QueryInterface (
+      if (bFlipMode && bWait &&
+          SUCCEEDED ( (*ppSwapChain)->QueryInterface (
                          __uuidof (IDXGISwapChain2),
                            (void **)&pSwapChain2 )
                     )
          )
       {
-        if (bFlipMode && bWait) {
-          dll_log.Log (L"Setting Swapchain Frame Latency: %lu", max_latency);
-          pSwapChain2->SetMaximumFrameLatency (max_latency);
+        dll_log.Log (L"Setting Swapchain Frame Latency: %lu", max_latency);
+        pSwapChain2->SetMaximumFrameLatency (max_latency);
 
-          HANDLE hWait = pSwapChain2->GetFrameLatencyWaitableObject ();
-
-          WaitForSingleObjectEx ( hWait,
-                                    config.render.framerate.max_delta_time,
-                                      TRUE );
-        }
+        HANDLE hWait = pSwapChain2->GetFrameLatencyWaitableObject ();
 
         pSwapChain2->Release ();
+
+        WaitForSingleObjectEx ( hWait,
+                                  config.render.framerate.max_delta_time,
+                                    TRUE );
       }
       else
       {
@@ -779,8 +834,10 @@ extern "C" {
 
       ID3D11Device *pDev;
 
-      if (SUCCEEDED (pDevice->QueryInterface (__uuidof (ID3D11Device),
-        (void **)&pDev)))
+      if (SUCCEEDED ( pDevice->QueryInterface ( __uuidof (ID3D11Device),
+                                                  (void **)&pDev )
+                    )
+         )
       {
         g_pDevice = pDev;
 
@@ -810,24 +867,6 @@ extern "C" {
    _Out_opt_                            D3D_FEATURE_LEVEL     *pFeatureLevel,
    _Out_opt_                            ID3D11DeviceContext  **ppImmediateContext)
   {
-    //
-    // Setup a framerate limiter and (if necessary) restart
-    //
-    if (bmf::NVAPI::nv_hardware) {
-                        BMF_NvAPI_SetAppFriendlyName (host_app.c_str ());
-      bool restart = (! BMF_NvAPI_SetFramerateLimit  (host_app.c_str (), 0));
-
-      if (restart) {
-        ShellExecute ( GetDesktopWindow (),
-                         L"OPEN",
-                           host_app.c_str (),
-                             NULL,
-                               NULL,
-                                 SW_SHOWDEFAULT );
-        exit (0);
-      }
-    }
-
     DXGI_LOG_CALL_0 (L"D3D11CreateDeviceAndSwapChain");
 
     dll_log.LogEx (true, L" Preferred Feature Level(s): <%u> - ", FeatureLevels);
@@ -867,15 +906,7 @@ extern "C" {
 
     dll_log.LogEx (false, L"\n");
 
-    bFlipMode =
-      (dxgi_caps.present.flip_sequential          &&
-        host_app                == L"Fallout4.exe");
-
     if (pSwapChainDesc != nullptr) {
-      bFlipMode = bFlipMode && (pSwapChainDesc->BufferDesc.RefreshRate.Numerator /
-                                pSwapChainDesc->BufferDesc.RefreshRate.Denominator) != 59;
-      bWait = bFlipMode && dxgi_caps.present.waitable;
-
       dll_log.LogEx ( true,
                         L"  SwapChain: (%lux%lu@%lu Hz - Scaling: %s) - "
                         L"[%lu Buffers] :: Flags=0x%04X, SwapEffect: %s\n",
@@ -901,22 +932,6 @@ extern "C" {
                             L"Flip Discard" : L"<Unknown>");
     }
 
-    dll_log.Log ( L" >> Using %s Presentation Model [Can%sWait]",
-                   bFlipMode ? L"Flip" : L"Traditional",
-                     bWait ? L" " : L"not " );
-
-    DXGI_SWAP_CHAIN_DESC swap_desc;
-    memcpy (&swap_desc, pSwapChainDesc, sizeof (DXGI_SWAP_CHAIN_DESC));
-
-    if (bFlipMode) {
-      if (bWait)
-        swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-
-      // Flip Presentation Model requires 3 Buffers
-      config.render.framerate.buffer_count =
-        min (3, config.render.framerate.buffer_count);
-    }
-
     HRESULT res =
       D3D11CreateDeviceAndSwapChain_Import (pAdapter,
                                             DriverType,
@@ -925,7 +940,7 @@ extern "C" {
                                             pFeatureLevels,
                                             FeatureLevels,
                                             SDKVersion,
-                                            &swap_desc,
+                                            pSwapChainDesc,
                                             ppSwapChain,
                                             ppDevice,
                                             pFeatureLevel,
@@ -934,9 +949,6 @@ extern "C" {
     if (res == S_OK && (ppDevice != NULL))
     {
       dll_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
-
-      if (ppSwapChain != nullptr) {
-      }
     }
 
     return res;

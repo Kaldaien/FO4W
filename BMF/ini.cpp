@@ -61,7 +61,7 @@ ErrorMessage (errno_t        err,
 //BMF_MessageBox (ErrorMessage ((z), #x, (y), __LINE__, __FUNCTION__, __FILE__),\
 //L"File I/O Error", MB_OK | MB_ICONSTOP ); }
 
-bmf::INI::File::File (wchar_t* filename)
+bmf::INI::File::File (const wchar_t* filename)
 {
   sections.clear ();
 

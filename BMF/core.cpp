@@ -910,7 +910,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
 
   dll_log.LogEx (true, L"Initializing NvAPI: ");
 
-  nvapi_init = bmf::NVAPI::InitializeLibrary ();
+  nvapi_init = bmf::NVAPI::InitializeLibrary (pwszShortName);
 
   dll_log.LogEx (false, L" %s\n\n", nvapi_init ? L"Success" : L"Failed");
 
@@ -940,6 +940,38 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     }
 
     dll_log.LogEx (false, L"\n");
+
+    //
+    // Setup a framerate limiter and (if necessary) restart
+    //
+    bool restart = (! bmf::NVAPI::SetFramerateLimit (0));
+
+    //
+    // Install SLI Override Settings
+    //
+    if (bmf::NVAPI::CountSLIGPUs () && config.nvidia.sli.override) {
+      if (! bmf::NVAPI::SetSLIOverride
+              ( dll_role,
+                  config.nvidia.sli.mode.c_str (),
+                    config.nvidia.sli.num_gpus.c_str (),
+                      config.nvidia.sli.compatibility.c_str ()
+              )
+         ) {
+        restart = true;
+      }
+    }
+
+    if (restart) {
+      dll_log.Log (L" >> Restarting to apply NVIDIA driver settings <<");
+
+      ShellExecute ( GetDesktopWindow (),
+                       L"OPEN",
+                         pwszShortName,
+                           NULL,
+                             NULL,
+                               SW_SHOWDEFAULT );
+      exit (0);
+    }
   }
 
   HMODULE hMod = GetModuleHandle (pwszShortName);

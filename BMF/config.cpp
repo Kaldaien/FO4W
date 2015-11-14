@@ -110,13 +110,22 @@ struct {
   } achievements;
 
   struct {
-    bmf::ParameterInt* appid;
+    bmf::ParameterInt*     appid;
   } system;
 
   struct {
     bmf::ParameterBool*    silent;
   } log;
 } steam;
+
+struct {
+  struct {
+    bmf::ParameterBool*    override;
+    bmf::ParameterStringW* compatibility;
+    bmf::ParameterStringW* num_gpus;
+    bmf::ParameterStringW* mode;
+  } sli;
+} nvidia;
 
 bmf::ParameterFloat*     mem_reserve;
 bmf::ParameterInt*       init_delay;
@@ -418,6 +427,46 @@ BMF_LoadConfig (std::wstring name) {
           L"FudgeFactor" );
   }
 
+
+  nvidia.sli.compatibility =
+    static_cast <bmf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"SLI Compatibility Bits")
+      );
+  nvidia.sli.compatibility->register_to_ini (
+    dll_ini,
+      L"NVIDIA.SLI",
+        L"CompatibilityBits" );
+
+  nvidia.sli.num_gpus =
+    static_cast <bmf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"SLI GPU Count")
+      );
+  nvidia.sli.num_gpus->register_to_ini (
+    dll_ini,
+      L"NVIDIA.SLI",
+        L"NumberOfGPUs" );
+
+  nvidia.sli.mode =
+    static_cast <bmf::ParameterStringW *>
+      (g_ParameterFactory.create_parameter <std::wstring> (
+        L"SLI Mode")
+      );
+  nvidia.sli.mode->register_to_ini (
+    dll_ini,
+      L"NVIDIA.SLI",
+        L"Mode" );
+
+  nvidia.sli.override =
+    static_cast <bmf::ParameterBool *>
+      (g_ParameterFactory.create_parameter <bool> (
+        L"Override Driver Defaults")
+      );
+  nvidia.sli.override->register_to_ini (
+    dll_ini,
+      L"NVIDIA.SLI",
+        L"Override" );
 
 
   osd.show =
@@ -741,6 +790,20 @@ BMF_LoadConfig (std::wstring name) {
     if (render.framerate.target_fps->load ())
       config.render.framerate.target_fps =
         render.framerate.target_fps->get_value ();
+
+    // SLI only works in Direct3D
+    if (nvidia.sli.compatibility->load ())
+      config.nvidia.sli.compatibility =
+        nvidia.sli.compatibility->get_value ();
+    if (nvidia.sli.mode->load ())
+      config.nvidia.sli.mode =
+        nvidia.sli.mode->get_value ();
+    if (nvidia.sli.num_gpus->load ())
+      config.nvidia.sli.num_gpus =
+        nvidia.sli.num_gpus->get_value ();
+    if (nvidia.sli.override->load ())
+      config.nvidia.sli.override =
+        nvidia.sli.override->get_value ();
   }
 
   if (dll_role == DXGI) {
@@ -840,7 +903,13 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.time.show->set_value            (config.time.show);
 
   if (dll_role == D3D9 || dll_role == DXGI) {
-    render.framerate.target_fps->set_value       (config.render.framerate.target_fps);
+    render.framerate.target_fps->set_value   (config.render.framerate.target_fps);
+
+    // SLI only works in Direct3D
+    nvidia.sli.compatibility->set_value      (config.nvidia.sli.compatibility);
+    nvidia.sli.mode->set_value               (config.nvidia.sli.mode);
+    nvidia.sli.num_gpus->set_value           (config.nvidia.sli.num_gpus);
+    nvidia.sli.override->set_value           (config.nvidia.sli.override);
   }
 
   if (dll_role == DXGI) {
@@ -862,7 +931,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   if (config.steam.appid == 0) {
     if (BMF::SteamAPI::AppID () != 0 &&
         BMF::SteamAPI::AppID () != 1)
-    config.steam.appid = BMF::SteamAPI::AppID ();
+      config.steam.appid = BMF::SteamAPI::AppID ();
   }
 
   steam.system.appid->set_value              (config.steam.appid);
@@ -899,8 +968,16 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.pagefile.show->store        ();
   monitoring.pagefile.interval->store    ();
 
-  if (dll_role == D3D9 || dll_role == DXGI)
-    render.framerate.target_fps->store       ();
+  if (dll_role == D3D9 || dll_role == DXGI) {
+    render.framerate.target_fps->store   ();
+
+    if (bmf::NVAPI::nv_hardware) {
+      nvidia.sli.compatibility->store    ();
+      nvidia.sli.mode->store             ();
+      nvidia.sli.num_gpus->store         ();
+      nvidia.sli.override->store         ();
+    }
+  }
 
   if (dll_role == DXGI) {
     render.framerate.buffer_count->store     ();

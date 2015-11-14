@@ -24,6 +24,8 @@
 #include "nvapi/NvApiDriverSettings.h"
 #include "nvapi/nvapi_lite_sli.h"
 
+#include "core.h"
+
 #include <Windows.h>
 #include <dxgi.h>
 #include <string>
@@ -68,12 +70,13 @@ static bool nvapi_silent = false;
 #define NVAPI_CALL(x) { NvAPI_Status ret = NvAPI_##x; if (nvapi_silent !=    \
  true && ret != NVAPI_OK) MessageBox (NULL, ErrorMessage (ret, #x, __LINE__, \
 __FUNCTION__, __FILE__).c_str (), L"Error Calling NVAPI Function", MB_OK     \
- | MB_ICONASTERISK ); }
+ | MB_ICONASTERISK | MB_SETFOREGROUND | MB_TOPMOST ); }
 
 #define NVAPI_CALL2(x,y) { ##y = NvAPI_##x; if (nvapi_silent != true &&     \
 ##y != NVAPI_OK) MessageBox (                                               \
   NULL, ErrorMessage (##y, #x, __LINE__, __FUNCTION__, __FILE__).c_str (),  \
-L"Error Calling NVAPI Function", MB_OK | MB_ICONASTERISK); }
+L"Error Calling NVAPI Function", MB_OK | MB_ICONASTERISK | MB_SETFOREGROUND \
+ | MB_TOPMOST ); }
 
 #endif
 
@@ -369,7 +372,7 @@ NVAPI::UnloadLibrary (void)
 #include "log.h"
 
 BOOL
-NVAPI::InitializeLibrary (void)
+NVAPI::InitializeLibrary (const wchar_t* wszAppName)
 {
   // It's silly to call this more than once, but not necessarily
   //  an error... just ignore repeated calls.
@@ -381,6 +384,9 @@ NVAPI::InitializeLibrary (void)
   //     again.
   if (bLibInit != FALSE)
     return FALSE;
+
+  app_name      = wszAppName;
+  friendly_name = wszAppName; // Not so friendly, but whatever...
 
   NvAPI_Status ret;
 
@@ -494,40 +500,27 @@ NVAPI::GetSLIState (IUnknown* pDev)
 
 #include "config.h"
 
-// Easier to DLL export this way
 BOOL
 __stdcall
-BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
-                              uint32_t       limit )
+BMF_NvAPI_GetAppProfile ( NvDRSSessionHandle  hSession,
+                          NvDRSProfileHandle* phProfile,
+                          NVDRS_APPLICATION*  pApp )
 {
-  // Allow the end-user to override this using the INI file
-  if (config.render.framerate.target_fps != 0)
-    limit = config.render.framerate.target_fps;
-
-  NvDRSSessionHandle hSession;
-  NVAPI_CALL (DRS_CreateSession (&hSession));
-
-  NvDRSProfileHandle hProfile;
-
-  NVDRS_APPLICATION app;
-  app.version = NVDRS_APPLICATION_VER;
-
-  NVAPI_CALL (DRS_LoadSettings (hSession));
-
   NVAPI_SILENT ();
+
+  pApp->version = NVDRS_APPLICATION_VER;
 
   NvAPI_Status ret;
   NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
-                                              (NvU16 *)wszAppName,
-                                                &hProfile,
-                                                  &app),
+                                              (NvU16 *)app_name.c_str (),
+                                                phProfile,
+                                                  pApp ),
                 ret );
 
   // If no executable exists anywhere by this name, create a profile for it
   //   and then add the executable to it.
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
-    NVDRS_PROFILE custom_profile;
-    memset (&custom_profile, 0, sizeof (NVDRS_PROFILE));
+    NVDRS_PROFILE custom_profile = { 0 };
 
     custom_profile.isPredefined = false;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
@@ -537,7 +530,7 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
     //   raise a fuss if it happens.
     NVAPI_SILENT ()
     {
-      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, phProfile), ret);
     }
     NVAPI_VERBOSE ()
 
@@ -545,23 +538,43 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
     if (ret == NVAPI_PROFILE_NAME_IN_USE)
       NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
                                               (NvU16 *)friendly_name.c_str (),
-                                                &hProfile),
+                                                phProfile),
                       ret );
 
     if (ret == NVAPI_OK) {
-      memset (&app, 0, sizeof (NVDRS_APPLICATION));
-      app.version = NVDRS_APPLICATION_VER;
+      memset (pApp, 0, sizeof (NVDRS_APPLICATION));
 
-      lstrcpyW ((wchar_t *)app.appName,          wszAppName);
-      lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
-      app.version      = NVDRS_APPLICATION_VER;
-      app.isPredefined = false;
-      app.isMetro      = false;
+      lstrcpyW ((wchar_t *)pApp->appName,          app_name.c_str      ());
+      lstrcpyW ((wchar_t *)pApp->userFriendlyName, friendly_name.c_str ());
+      pApp->version      = NVDRS_APPLICATION_VER;
+      pApp->isPredefined = false;
+      pApp->isMetro      = false;
 
-      NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+      NVAPI_CALL2 (DRS_CreateApplication (hSession, *phProfile, pApp), ret);
       NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
     }
   }
+
+  return TRUE;
+}
+
+// Easier to DLL export this way
+BOOL
+__stdcall
+BMF_NvAPI_SetFramerateLimit (uint32_t limit)
+{
+  // Allow the end-user to override this using the INI file
+  if (config.render.framerate.target_fps != 0)
+    limit = config.render.framerate.target_fps;
+
+  NvDRSSessionHandle hSession;
+  NVAPI_CALL (DRS_CreateSession (&hSession));
+  NVAPI_CALL (DRS_LoadSettings  (hSession));
+
+  NvDRSProfileHandle hProfile;
+  NVDRS_APPLICATION  app = { 0 };
+
+  BMF_NvAPI_GetAppProfile (hSession, &hProfile, &app);
 
   NVDRS_SETTING fps_limiter = { 0 };
   fps_limiter.version = NVDRS_SETTING_VER;
@@ -590,21 +603,21 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
   uint32_t target_prerender = 0;
 
   // ToZ needs 1
-  if (wcsstr (wszAppName, L"Tales of Zestiria"))
+  if (wcsstr (app_name.c_str (), L"Tales of Zestiria"))
     target_prerender = 1;
 
-  bool already_set = true;
+  BOOL already_set = TRUE;
 
   if (fps_limiter.u32CurrentValue != limit_mask) {
-    already_set = false;
+    already_set = FALSE;
   }
 
   if (gps_ctrl.u32CurrentValue != PS_FRAMERATE_LIMITER_GPS_CTRL_DISABLED) {
-    already_set = false;
+    already_set = FALSE;
   }
 
   if (prerendered_frames.u32CurrentValue != target_prerender) {
-    already_set = false;
+    already_set = FALSE;
   }
 
   ZeroMemory (&fps_limiter,        sizeof NVDRS_SETTING); fps_limiter.version        = NVDRS_SETTING_VER;
@@ -629,10 +642,174 @@ BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
 }
 
 BOOL
-bmf::NVAPI::SetFramerateLimit ( const wchar_t* wszAppName,
-                                uint32_t       limit )
+bmf::NVAPI::SetFramerateLimit (uint32_t limit)
 {
-  return BMF_NvAPI_SetFramerateLimit (wszAppName, limit);
+  return BMF_NvAPI_SetFramerateLimit (limit);
+}
+
+// From the NDA version of NvAPI
+#define SLI_COMPAT_BITS_DXGI_ID 0x00A06946
+#define SLI_COMPAT_BITS_DX9_ID  0x1095DEF8
+
+BOOL
+bmf::NVAPI::SetSLIOverride    (       DLL_ROLE role,
+                                const wchar_t* wszModeName,
+                                const wchar_t* wszGPUCount,
+                                const wchar_t* wszCompatBits )
+{
+  // SLI only works in DirectX.
+  if (role != DXGI && role != D3D9)
+    return TRUE;
+
+  NvDRSSessionHandle hSession;
+  NVAPI_CALL (DRS_CreateSession (&hSession));
+  NVAPI_CALL (DRS_LoadSettings  (hSession));
+
+  NvDRSProfileHandle hProfile;
+  NVDRS_APPLICATION  app = { 0 };
+
+  NvU32 compat_bits_enum = 
+    (role == DXGI ? SLI_COMPAT_BITS_DXGI_ID :
+                    SLI_COMPAT_BITS_DX9_ID);
+
+  NvU32 gpu_count_enum =
+    SLI_GPU_COUNT_ID;
+
+  NvU32 render_mode_enum =
+    SLI_RENDERING_MODE_ID;
+
+  NvU32 render_mode = SLI_RENDERING_MODE_DEFAULT; //0x00000007;
+  NvU32 gpu_count   = SLI_GPU_COUNT_DEFAULT;
+  NvU32 compat_bits = 0x00000000;
+
+  wchar_t* wszModeNameLower = _wcsdup (wszModeName);
+  std::wstring mode_str (_wcslwr (wszModeNameLower));
+  free (wszModeNameLower);
+
+  if (mode_str == L"default")
+    render_mode = SLI_RENDERING_MODE_DEFAULT;
+  else if (mode_str == L"auto")
+    render_mode = SLI_RENDERING_MODE_AUTOSELECT;
+  else if (mode_str == L"single")
+    render_mode = SLI_RENDERING_MODE_FORCE_SINGLE;
+  else if (mode_str == L"afr")
+    render_mode = SLI_RENDERING_MODE_FORCE_AFR;
+  else if (mode_str == L"afr2")
+    render_mode = SLI_RENDERING_MODE_FORCE_AFR2;
+  else if (mode_str == L"sfr")
+    render_mode = SLI_RENDERING_MODE_FORCE_SFR;
+  else if (mode_str == L"3afr"       ||
+           mode_str == L"afr of sfr" ||
+           mode_str == L"afr3"       ||
+           mode_str == L"afr of sfr  fallback 3afr")
+    render_mode = SLI_RENDERING_MODE_FORCE_AFR_OF_SFR__FALLBACK_3AFR;
+  else
+    dll_log.Log ( L" >> Unknown SLI Mode: '%s', falling back to 'Auto'",
+                    wszModeName );
+
+  wchar_t* wszGPUCountLower = _wcsdup (wszGPUCount);
+  std::wstring gpu_count_str (_wcslwr (wszGPUCountLower));
+  free (wszGPUCountLower);
+
+  if (gpu_count_str == L"default")
+    gpu_count = SLI_GPU_COUNT_DEFAULT;
+  else if (gpu_count_str == L"auto")
+    gpu_count = SLI_GPU_COUNT_AUTOSELECT;
+  else if (gpu_count_str == L"one"   || gpu_count_str == L"1")
+    gpu_count = SLI_GPU_COUNT_ONE;
+  else if (gpu_count_str == L"two"   || gpu_count_str == L"2")
+    gpu_count = SLI_GPU_COUNT_TWO;
+  else if (gpu_count_str == L"three" || gpu_count_str == L"3")
+    gpu_count = SLI_GPU_COUNT_THREE;
+  else if (gpu_count_str == L"four"  || gpu_count_str == L"4")
+    gpu_count = SLI_GPU_COUNT_FOUR;
+  else
+    dll_log.Log ( L" >> Unknown SLI GPU Count: '%s', falling back to 'Auto'",
+                    wszGPUCount );
+
+  compat_bits = wcstoul (wszCompatBits, nullptr, 16);
+
+  BMF_NvAPI_GetAppProfile (hSession, &hProfile, &app);
+
+  NVDRS_SETTING mode_val = { 0 };
+  mode_val.version = NVDRS_SETTING_VER;
+
+  NVDRS_SETTING gpu_count_val = { 0 };
+  gpu_count_val.version = NVDRS_SETTING_VER;
+
+  NVDRS_SETTING compat_bits_val = { 0 };
+  compat_bits_val.version = NVDRS_SETTING_VER;
+
+  // These settings may not exist, and getting back a value of 0 is okay...
+  NVAPI_SILENT ();
+  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, render_mode_enum, &mode_val));
+  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, gpu_count_enum,   &gpu_count_val));
+  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, compat_bits_enum, &compat_bits_val));
+  NVAPI_VERBOSE ();
+
+  BOOL already_set = TRUE;
+
+  // Do this first so we don't touch other settings if this fails
+  if (compat_bits_val.u32CurrentValue != compat_bits) {
+    ZeroMemory (&compat_bits_val, sizeof NVDRS_SETTING);
+    compat_bits_val.version = NVDRS_SETTING_VER;
+
+    NvAPI_Status ret;
+
+    // This requires admin privs, and we will handle that gracefully...
+    NVAPI_SILENT ();
+    NVAPI_SET_DWORD (compat_bits_val, compat_bits_enum, compat_bits);
+    NVAPI_CALL2     (DRS_SetSetting (hSession, hProfile, &compat_bits_val), ret);
+    NVAPI_VERBOSE ();
+
+    // Not running as admin, don't do the override!
+    if (ret == NVAPI_INVALID_USER_PRIVILEGE) {
+      int result = 
+        MessageBox ( NULL,
+                       L"Please run this game as Administrator to install SLI "
+                       L"compatibility bits\r\n\r\n"
+                       L"\t>> Pressing Cancel will disable SLI Override",
+                         L"Insufficient User Privileges",
+                           MB_OKCANCEL | MB_ICONASTERISK | MB_SETFOREGROUND |
+                           MB_TOPMOST );
+
+      if (result == IDCANCEL) {
+        config.nvidia.sli.override = false;
+        NVAPI_CALL (DRS_DestroySession (hSession));
+        return FALSE;
+      }
+      exit (0);
+    }
+
+    already_set = FALSE;
+  }
+
+  if (mode_val.u32CurrentValue != render_mode) {
+    ZeroMemory (&mode_val, sizeof NVDRS_SETTING);
+    mode_val.version = NVDRS_SETTING_VER;
+
+    NVAPI_SET_DWORD (mode_val, render_mode_enum, render_mode);
+    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &mode_val));
+
+    already_set = FALSE;
+  }
+
+  if (gpu_count_val.u32CurrentValue != gpu_count) {
+    ZeroMemory (&gpu_count_val, sizeof NVDRS_SETTING);
+    gpu_count_val.version = NVDRS_SETTING_VER;
+
+    NVAPI_SET_DWORD (gpu_count_val, gpu_count_enum, gpu_count);
+    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &gpu_count_val));
+
+    already_set = FALSE;
+  }
+
+  if (! already_set)
+    NVAPI_CALL (DRS_SaveSettings (hSession));
+
+  NVAPI_CALL (DRS_DestroySession (hSession));
+
+  return already_set;
 }
 
 void
@@ -645,7 +822,7 @@ BMF_NvAPI_SetAppFriendlyName (const wchar_t* wszFriendlyName)
 void
 bmf::NVAPI::SetAppFriendlyName (const wchar_t* wszFriendlyName)
 {
-  friendly_name = wszFriendlyName;
+  BMF_NvAPI_SetAppFriendlyName (wszFriendlyName);
 }
 
 BOOL
@@ -655,5 +832,6 @@ BMF_NvAPI_IsInit (void)
   return NVAPI::nv_hardware;
 }
 
-bool         NVAPI::nv_hardware        = false;
-std::wstring bmf::NVAPI::friendly_name = L"Tales of Zestiria";
+bool         NVAPI::nv_hardware   = false;
+std::wstring NVAPI::friendly_name = L"Tales of Zestiria";
+std::wstring NVAPI::app_name      = L"TalesOfZestiria.exe";
