@@ -16,8 +16,6 @@
 **/
 #define _CRT_SECURE_NO_WARNINGS
 
-//#include "dxgi_interfaces.h"
-
 #include "dxgi_backend.h"
 
 #include "dxgi_interfaces.h"
@@ -44,13 +42,25 @@ extern BOOL __stdcall BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
                                                     uint32_t       limit );
 extern void __stdcall BMF_NvAPI_SetAppFriendlyName (const wchar_t* wszFriendlyName);
 
-static CRITICAL_SECTION d3dhook_mutex = { 0 };
-
 extern int                      gpu_prio;
 
-IDXGISwapChain2* g_pSwapChain2 = nullptr;
 ID3D11Device*    g_pDevice     = nullptr;
-bool             g_bFullscreen = false;
+
+bool bFlipMode = false;
+bool bWait     = false;
+
+struct dxgi_caps_t {
+  struct {
+    bool latency_control = false;
+    bool enqueue_event   = false;
+  } device;
+
+  struct {
+    bool flip_sequential = false;
+    bool flip_discard    = false;
+    bool waitable        = false;
+  } present;
+} dxgi_caps;
 
 typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
 QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
@@ -306,12 +316,21 @@ extern "C" {
       if (SUCCEEDED (
         pFactory->QueryInterface (__uuidof (IDXGIFactory4), (void **)&pTemp)))
       {
+        dxgi_caps.device.enqueue_event    = true;
+        dxgi_caps.device.latency_control  = true;
+        dxgi_caps.present.flip_sequential = true;
+        dxgi_caps.present.waitable        = true;
+        dxgi_caps.present.flip_discard    = true;
         pTemp->Release ();
         return 4;
       }
       if (SUCCEEDED (
         pFactory->QueryInterface (__uuidof (IDXGIFactory3), (void **)&pTemp)))
       {
+        dxgi_caps.device.enqueue_event    = true;
+        dxgi_caps.device.latency_control  = true;
+        dxgi_caps.present.flip_sequential = true;
+        dxgi_caps.present.waitable        = true;
         pTemp->Release ();
         return 3;
       }
@@ -319,6 +338,9 @@ extern "C" {
       if (SUCCEEDED (
         pFactory->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pTemp)))
       {
+        dxgi_caps.device.enqueue_event    = true;
+        dxgi_caps.device.latency_control  = true;
+        dxgi_caps.present.flip_sequential = true;
         pTemp->Release ();
         return 2;
       }
@@ -326,6 +348,7 @@ extern "C" {
       if (SUCCEEDED (
         pFactory->QueryInterface (__uuidof (IDXGIFactory1), (void **)&pTemp)))
       {
+        dxgi_caps.device.latency_control  = true;
         pTemp->Release ();
         return 1;
       }
@@ -507,30 +530,26 @@ extern "C" {
       IUnknown* pDev = nullptr;
 
       int interval = config.render.framerate.present_interval;
-      int flags;
+      int flags    = Flags;
 
-      DXGI_SWAP_CHAIN_DESC desc;
-      This->GetDesc (&desc);
+      if (bFlipMode) {
+        flags = Flags | DXGI_PRESENT_RESTART;
 
-      bool bFlipMode =
-        (host_app                == L"Fallout4.exe" &&
-         desc.BufferDesc.Scaling != DXGI_SCALING_ASPECT_RATIO_STRETCH);
+        if (bWait)
+          flags |= DXGI_PRESENT_DO_NOT_WAIT;
+      }
 
-      if (bFlipMode)
-        flags    = Flags | DXGI_PRESENT_DO_NOT_WAIT | DXGI_PRESENT_RESTART;
-      else
-        flags    = Flags;
-
-      if (g_pSwapChain2 == nullptr || (! bFlipMode)) {
+      if (! bFlipMode) {
         hr =
           ((HRESULT (*)(IDXGISwapChain *, UINT, UINT))Present_Original)
                        (This, interval, flags);
       } else {
-        if (config.osd.show) {
+        // No overlays will work if we don't do this...
+        /////if (config.osd.show) {
           hr =
             ((HRESULT (*)(IDXGISwapChain *, UINT, UINT))Present_Original)
-            (This, 0, flags | DXGI_PRESENT_DO_NOT_SEQUENCE);
-        }
+            (This, 0, flags | DXGI_PRESENT_DO_NOT_SEQUENCE | DXGI_PRESENT_DO_NOT_WAIT);
+        /////}
 
         DXGI_PRESENT_PARAMETERS pparams;
         pparams.DirtyRectsCount = 0;
@@ -538,16 +557,28 @@ extern "C" {
         pparams.pScrollOffset   = nullptr;
         pparams.pScrollRect     = nullptr;
 
-        hr = g_pSwapChain2->Present1 (interval, flags, &pparams);
+        IDXGISwapChain1* pSwapChain1 = nullptr;
+        This->QueryInterface (__uuidof(IDXGISwapChain1),(void **)&pSwapChain1);
 
-        static HANDLE hWait = g_pSwapChain2->GetFrameLatencyWaitableObject ();
+        hr = pSwapChain1->Present1 (interval, flags, &pparams);
 
-        WaitForSingleObjectEx ( hWait,
-                                  config.render.framerate.max_delta_time,
-                                    TRUE );
+        pSwapChain1->Release ();
+
+        if (bWait) {
+          IDXGISwapChain2* pSwapChain2;
+          This->QueryInterface (__uuidof(IDXGISwapChain2),(void **)&pSwapChain2);
+
+          HANDLE hWait = pSwapChain2->GetFrameLatencyWaitableObject ();
+
+          pSwapChain2->Release ();
+
+          WaitForSingleObjectEx ( hWait,
+                                    config.render.framerate.max_delta_time,
+                                      TRUE );
+        }
       }
 
-      if (SUCCEEDED (This->GetDevice(__uuidof (ID3D11Device), (void **)&pDev)))
+      if (SUCCEEDED (This->GetDevice (__uuidof (ID3D11Device), (void **)&pDev)))
       {
         HRESULT ret = BMF_EndBufferSwap (hr, pDev);
         pDev->Release ();
@@ -613,8 +644,6 @@ extern "C" {
     DXGI_LOG_CALL_I3 (iname.c_str (), L"CreateSwapChain", L"%08Xh, %08Xh, %08Xh",
                       pDevice, pDesc, ppSwapChain);
 
-    bool bFlipMode = false;
-
     if (pDesc != nullptr) {
       pDesc->BufferDesc.RefreshRate.Numerator   = 60;
       pDesc->BufferDesc.RefreshRate.Denominator = 1;
@@ -646,32 +675,59 @@ extern "C" {
         pDesc->SwapEffect == 4 ?
         L"Flip Discard" : L"<Unknown>");
 
-        g_bFullscreen = (! pDesc->Windowed);
-
-        bFlipMode =
-          (host_app                == L"Fallout4.exe" &&
-            pDesc->BufferDesc.Scaling != DXGI_SCALING_ASPECT_RATIO_STRETCH);
-
       if (bFlipMode) {
-        if (config.render.framerate.flip_discard)
+        if (config.render.framerate.flip_discard &&
+            dxgi_caps.present.flip_discard)
           pDesc->SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         else
           pDesc->SwapEffect  = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-      } else {
-        pDesc->SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
       }
 
-        pDesc->BufferCount = config.render.framerate.buffer_count;
+      else
+        pDesc->SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+      pDesc->BufferCount = config.render.framerate.buffer_count;
 
       // We cannot switch modes on a waitable swapchain
-      if (bFlipMode) {
+      if (bFlipMode && bWait) {
         pDesc->Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-        pDesc->Flags &= ~DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+        //pDesc->Flags &= ~DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
       }
     }
 
     HRESULT ret;
-    DXGI_CALL(ret, CreateSwapChain_Original (This, pDevice, pDesc, ppSwapChain));
+
+    IDXGIFactory2* pFactory = nullptr;
+
+    if (SUCCEEDED (This->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pFactory)))
+    {
+      DXGI_SWAP_CHAIN_DESC1 desc1;
+      desc1.Width              = pDesc->BufferDesc.Width;
+      desc1.Height             = pDesc->BufferDesc.Height;
+      desc1.Format             = pDesc->BufferDesc.Format;
+      desc1.Stereo             = FALSE;
+      desc1.SampleDesc.Count   = pDesc->SampleDesc.Count;
+      desc1.SampleDesc.Quality = pDesc->SampleDesc.Quality;
+      desc1.BufferUsage        = pDesc->BufferUsage;
+      desc1.BufferCount        = pDesc->BufferCount;
+      desc1.Scaling            = DXGI_SCALING_STRETCH;//pDesc->BufferDesc.Scaling;
+      desc1.SwapEffect         = pDesc->SwapEffect;
+      desc1.AlphaMode          = DXGI_ALPHA_MODE_UNSPECIFIED ;
+      desc1.Flags              = pDesc->Flags;
+
+      IDXGISwapChain1* pSwapChain1 = nullptr;
+
+      DXGI_CALL (ret, pFactory->CreateSwapChainForHwnd (pDevice, pDesc->OutputWindow, &desc1, nullptr, nullptr, &pSwapChain1));
+
+      if (SUCCEEDED (ret)) {
+        pSwapChain1->QueryInterface (__uuidof (IDXGISwapChain), (void **)ppSwapChain);
+        pSwapChain1->Release ();
+      }
+
+      pFactory->Release ();
+    } else {
+      DXGI_CALL(ret, CreateSwapChain_Original (This, pDevice, pDesc, ppSwapChain));
+    }
 
     if ( SUCCEEDED (ret)      &&
          ppSwapChain  != NULL &&
@@ -687,23 +743,28 @@ extern "C" {
 
       const uint32_t max_latency = config.render.framerate.pre_render_limit;
 
+      IDXGISwapChain2* pSwapChain2 = nullptr;
       if (SUCCEEDED ( (*ppSwapChain)->QueryInterface (
                          __uuidof (IDXGISwapChain2),
-                           (void **)&g_pSwapChain2 )
-                    ) && bFlipMode
-         ) {
-        dll_log.Log (L"Setting Swapchain Frame Latency: %lu", max_latency);
-        g_pSwapChain2->SetMaximumFrameLatency (max_latency);
+                           (void **)&pSwapChain2 )
+                    )
+         )
+      {
+        if (bFlipMode && bWait) {
+          dll_log.Log (L"Setting Swapchain Frame Latency: %lu", max_latency);
+          pSwapChain2->SetMaximumFrameLatency (max_latency);
 
-        static HANDLE hWait = g_pSwapChain2->GetFrameLatencyWaitableObject ();
+          HANDLE hWait = pSwapChain2->GetFrameLatencyWaitableObject ();
 
-        WaitForSingleObjectEx ( hWait,
-                                  config.render.framerate.max_delta_time,
-                                    TRUE );
+          WaitForSingleObjectEx ( hWait,
+                                    config.render.framerate.max_delta_time,
+                                      TRUE );
+        }
 
-        g_pSwapChain2->Release ();
+        pSwapChain2->Release ();
       }
-      else {
+      else
+      {
         IDXGIDevice1* pDevice1 = nullptr;
         if (SUCCEEDED ( (*ppSwapChain)->GetDevice (
                            __uuidof (IDXGIDevice1),
@@ -722,37 +783,10 @@ extern "C" {
         (void **)&pDev)))
       {
         g_pDevice = pDev;
-        //budget_log.silent = false;
 
-        //budget_log.LogEx (true, L"Hooking IDXGISwapChain::Present... ");
-
-#if 0
-        void** vftable = *(void***)*ppSwapChain;
-
-        MH_STATUS stat =
-          MH_CreateHook (vftable [8], PresentCallback, (void **)&Present_Original);
-
-        if (stat != MH_ERROR_ALREADY_CREATED &&
-          stat != MH_OK) {
-          budget_log.LogEx (false, L" failed\n");
-        }
-        else {
-          budget_log.LogEx (false, L" %p\n", Present_Original);
-        }
-
-        MH_ApplyQueued ();
-        MH_EnableHook  (MH_ALL_HOOKS);
-#else
         DXGI_VIRTUAL_OVERRIDE (ppSwapChain, 8, "IDXGISwapChain::Present",
                                PresentCallback, Present_Original,
                                PresentSwapChain_t);
-
-        //SetHook ((*(void***)*ppSwapChain) [8], PresentCallback, pContext);
-
-        //budget_log.LogEx (false, L"Done\n");
-#endif
-
-        //budget_log.silent = true;
 
         pDev->Release ();
       }
@@ -833,7 +867,15 @@ extern "C" {
 
     dll_log.LogEx (false, L"\n");
 
+    bFlipMode =
+      (dxgi_caps.present.flip_sequential          &&
+        host_app                == L"Fallout4.exe");
+
     if (pSwapChainDesc != nullptr) {
+      bFlipMode = bFlipMode && (pSwapChainDesc->BufferDesc.RefreshRate.Numerator /
+                                pSwapChainDesc->BufferDesc.RefreshRate.Denominator) != 59;
+      bWait = bFlipMode && dxgi_caps.present.waitable;
+
       dll_log.LogEx ( true,
                         L"  SwapChain: (%lux%lu@%lu Hz - Scaling: %s) - "
                         L"[%lu Buffers] :: Flags=0x%04X, SwapEffect: %s\n",
@@ -859,19 +901,20 @@ extern "C" {
                             L"Flip Discard" : L"<Unknown>");
     }
 
+    dll_log.Log ( L" >> Using %s Presentation Model [Can%sWait]",
+                   bFlipMode ? L"Flip" : L"Traditional",
+                     bWait ? L" " : L"not " );
+
     DXGI_SWAP_CHAIN_DESC swap_desc;
     memcpy (&swap_desc, pSwapChainDesc, sizeof (DXGI_SWAP_CHAIN_DESC));
 
-    bool bFlipMode =
-      (host_app                            == L"Fallout4.exe" &&
-        pSwapChainDesc->BufferDesc.Scaling != DXGI_SCALING_ASPECT_RATIO_STRETCH);
-
     if (bFlipMode) {
-      swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+      if (bWait)
+        swap_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
       // Flip Presentation Model requires 3 Buffers
       config.render.framerate.buffer_count =
-        max (3, config.render.framerate.buffer_count);
+        min (3, config.render.framerate.buffer_count);
     }
 
     HRESULT res =
@@ -1055,7 +1098,11 @@ extern "C" {
       if (! lstrlenW (desc.Description))
         dll_log.LogEx (false, L" >> Assertion filed: Zero-length adapter name!\n");
 
+#ifdef SKIP_INTEL
       if ((desc.VendorId == Microsoft || desc.VendorId == Intel) && Adapter == 0) {
+#else
+      if (false) {
+#endif
         // We need to release the reference we were just handed before
         //   skipping it.
         (*ppAdapter)->Release ();

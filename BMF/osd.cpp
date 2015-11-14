@@ -415,7 +415,7 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Fallout 4 \"Works\" v 0.0.5   %ws\n\n",
+    OSD_PRINTF "Fallout 4 \"Works\" v 0.1.1   %ws\n\n",
       time
     OSD_END
   }
