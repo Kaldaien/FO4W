@@ -419,3 +419,13 @@ BMF_SetPresentParamsD3D9 = BMF_SetPresentParamsD3D9 @403
 BMF_NvAPI_IsInit             = BMF_NvAPI_IsInit             @404
 BMF_NvAPI_SetFramerateLimit  = BMF_NvAPI_SetFramerateLimit  @405
 BMF_NvAPI_SetAppFriendlyName = BMF_NvAPI_SetAppFriendlyName @406
+
+
+;
+; Exposing stuff in the 400 range is so-so design wise, but the
+;   ordinals below are all reserved for stuff that needs a proper
+;     redesign.  TRY NOT TO USE THESE!
+;
+
+BMF_Config_GetTargetFPS      = BMF_Config_GetTargetFPS      @1000
+BMF_SteamAPI_SetOverlayState = BMF_SteamAPI_SetOverlayState @1001

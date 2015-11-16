@@ -500,21 +500,32 @@ NVAPI::GetSLIState (IUnknown* pDev)
 
 #include "config.h"
 
+// Easier to DLL export this way
 BOOL
 __stdcall
-BMF_NvAPI_GetAppProfile ( NvDRSSessionHandle  hSession,
-                          NvDRSProfileHandle* phProfile,
-                          NVDRS_APPLICATION*  pApp )
+BMF_NvAPI_SetFramerateLimit (uint32_t limit)
 {
+  // Allow the end-user to override this using the INI file
+  if (config.render.framerate.target_fps != 0)
+    limit = config.render.framerate.target_fps;
+
+  NvDRSSessionHandle hSession;
+  NVAPI_CALL (DRS_CreateSession (&hSession));
+  NVAPI_CALL (DRS_LoadSettings  (hSession));
+
+  NvDRSProfileHandle hProfile;
+  static NVDRS_APPLICATION app = { 0 };
+
+  //BMF_NvAPI_GetAppProfile (hSession, &hProfile, &app);
   NVAPI_SILENT ();
 
-  pApp->version = NVDRS_APPLICATION_VER;
+  app.version = NVDRS_APPLICATION_VER;
 
   NvAPI_Status ret;
   NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
                                               (NvU16 *)app_name.c_str (),
-                                                phProfile,
-                                                  pApp ),
+                                                &hProfile,
+                                                  &app ),
                 ret );
 
   // If no executable exists anywhere by this name, create a profile for it
@@ -530,7 +541,7 @@ BMF_NvAPI_GetAppProfile ( NvDRSSessionHandle  hSession,
     //   raise a fuss if it happens.
     NVAPI_SILENT ()
     {
-      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, phProfile), ret);
+      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
     }
     NVAPI_VERBOSE ()
 
@@ -538,58 +549,33 @@ BMF_NvAPI_GetAppProfile ( NvDRSSessionHandle  hSession,
     if (ret == NVAPI_PROFILE_NAME_IN_USE)
       NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
                                               (NvU16 *)friendly_name.c_str (),
-                                                phProfile),
+                                                &hProfile),
                       ret );
 
     if (ret == NVAPI_OK) {
-      memset (pApp, 0, sizeof (NVDRS_APPLICATION));
+      memset (&app, 0, sizeof (NVDRS_APPLICATION));
 
-      lstrcpyW ((wchar_t *)pApp->appName,          app_name.c_str      ());
-      lstrcpyW ((wchar_t *)pApp->userFriendlyName, friendly_name.c_str ());
-      pApp->version      = NVDRS_APPLICATION_VER;
-      pApp->isPredefined = false;
-      pApp->isMetro      = false;
+      lstrcpyW ((wchar_t *)app.appName,          app_name.c_str      ());
+      lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+      app.version      = NVDRS_APPLICATION_VER;
+      app.isPredefined = false;
+      app.isMetro      = false;
 
-      NVAPI_CALL2 (DRS_CreateApplication (hSession, *phProfile, pApp), ret);
+      NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
       NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
     }
   }
 
-  return TRUE;
-}
-
-// Easier to DLL export this way
-BOOL
-__stdcall
-BMF_NvAPI_SetFramerateLimit (uint32_t limit)
-{
-  // Allow the end-user to override this using the INI file
-  if (config.render.framerate.target_fps != 0)
-    limit = config.render.framerate.target_fps;
-
-  NvDRSSessionHandle hSession;
-  NVAPI_CALL (DRS_CreateSession (&hSession));
-  NVAPI_CALL (DRS_LoadSettings  (hSession));
-
-  NvDRSProfileHandle hProfile;
-  NVDRS_APPLICATION  app = { 0 };
-
-  BMF_NvAPI_GetAppProfile (hSession, &hProfile, &app);
-
   NVDRS_SETTING fps_limiter = { 0 };
   fps_limiter.version = NVDRS_SETTING_VER;
-
-  NVDRS_SETTING gps_ctrl = { 0 };
-  gps_ctrl.version = NVDRS_SETTING_VER;
 
   NVDRS_SETTING prerendered_frames = { 0 };
   prerendered_frames.version = NVDRS_SETTING_VER;
 
   // These settings may not exist, and getting back a value of 0 is okay...
-  NVAPI_SILENT ();
-  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_ID,          &fps_limiter));
-  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, &gps_ctrl));
-  NVAPI_CALL (DRS_GetSetting (hSession, hProfile, PRERENDERLIMIT_ID,                &prerendered_frames));
+  NVAPI_SILENT  ();
+  NVAPI_CALL    (DRS_GetSetting (hSession, hProfile, PS_FRAMERATE_LIMITER_ID, &fps_limiter));
+  NVAPI_CALL    (DRS_GetSetting (hSession, hProfile, PRERENDERLIMIT_ID,       &prerendered_frames));
   NVAPI_VERBOSE ();
 
   NvU32 limit_mask = ( PS_FRAMERATE_LIMITER_ENABLED        |
@@ -600,38 +586,30 @@ BMF_NvAPI_SetFramerateLimit (uint32_t limit)
   limit_mask |= (limit & PS_FRAMERATE_LIMITER_FPSMASK);
 
   // Default to application preference
-  uint32_t target_prerender = 0;
-
-  // ToZ needs 1
-  if (wcsstr (app_name.c_str (), L"Tales of Zestiria"))
-    target_prerender = 1;
+  uint32_t target_prerender = config.render.framerate.pre_render_limit;
 
   BOOL already_set = TRUE;
 
   if (fps_limiter.u32CurrentValue != limit_mask) {
+    ZeroMemory (&fps_limiter, sizeof NVDRS_SETTING);
+    fps_limiter.version = NVDRS_SETTING_VER;
+
     already_set = FALSE;
+
+    NVAPI_SET_DWORD (fps_limiter, PS_FRAMERATE_LIMITER_ID, limit_mask);
+    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &fps_limiter));
   }
 
-  if (gps_ctrl.u32CurrentValue != PS_FRAMERATE_LIMITER_GPS_CTRL_DISABLED) {
+  // If this == -1, then don't make any changes...
+  if (target_prerender != -1 && prerendered_frames.u32CurrentValue != target_prerender) {
+    ZeroMemory (&prerendered_frames, sizeof NVDRS_SETTING);
+    prerendered_frames.version = NVDRS_SETTING_VER;
+
     already_set = FALSE;
+
+    NVAPI_SET_DWORD (prerendered_frames, PRERENDERLIMIT_ID, target_prerender);
+    NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &prerendered_frames));
   }
-
-  if (prerendered_frames.u32CurrentValue != target_prerender) {
-    already_set = FALSE;
-  }
-
-  ZeroMemory (&fps_limiter,        sizeof NVDRS_SETTING); fps_limiter.version        = NVDRS_SETTING_VER;
-  ZeroMemory (&gps_ctrl,           sizeof NVDRS_SETTING); gps_ctrl.version           = NVDRS_SETTING_VER;
-  ZeroMemory (&prerendered_frames, sizeof NVDRS_SETTING); prerendered_frames.version = NVDRS_SETTING_VER;
-
-  NVAPI_SET_DWORD (fps_limiter, PS_FRAMERATE_LIMITER_ID, limit_mask);
-  NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &fps_limiter));
-
-  NVAPI_SET_DWORD (gps_ctrl, PS_FRAMERATE_LIMITER_GPS_CTRL_ID, PS_FRAMERATE_LIMITER_GPS_CTRL_DISABLED);
-  NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &gps_ctrl));
-
-  NVAPI_SET_DWORD (prerendered_frames, PRERENDERLIMIT_ID, target_prerender);
-  NVAPI_CALL      (DRS_SetSetting (hSession, hProfile, &prerendered_frames));
 
   NVAPI_VERBOSE ();
 
@@ -666,7 +644,7 @@ bmf::NVAPI::SetSLIOverride    (       DLL_ROLE role,
   NVAPI_CALL (DRS_LoadSettings  (hSession));
 
   NvDRSProfileHandle hProfile;
-  NVDRS_APPLICATION  app = { 0 };
+  static NVDRS_APPLICATION  app = { 0 };
 
   NvU32 compat_bits_enum = 
     (role == DXGI ? SLI_COMPAT_BITS_DXGI_ID :
@@ -729,7 +707,54 @@ bmf::NVAPI::SetSLIOverride    (       DLL_ROLE role,
 
   compat_bits = wcstoul (wszCompatBits, nullptr, 16);
 
-  BMF_NvAPI_GetAppProfile (hSession, &hProfile, &app);
+  NVAPI_SILENT ();
+
+  app.version = NVDRS_APPLICATION_VER;
+
+  NvAPI_Status ret;
+  NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
+                                              (NvU16 *)app_name.c_str (),
+                                                &hProfile,
+                                                  &app ),
+                ret );
+
+  // If no executable exists anywhere by this name, create a profile for it
+  //   and then add the executable to it.
+  if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
+    NVDRS_PROFILE custom_profile = { 0 };
+
+    custom_profile.isPredefined = false;
+    lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
+    custom_profile.version = NVDRS_PROFILE_VER;
+
+    // It's not necessarily wrong if this does not return NVAPI_OK, so don't
+    //   raise a fuss if it happens.
+    NVAPI_SILENT ()
+    {
+      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+    }
+    NVAPI_VERBOSE ()
+
+    // Add the application name to the profile, if a profile already exists
+    if (ret == NVAPI_PROFILE_NAME_IN_USE)
+      NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
+                                              (NvU16 *)friendly_name.c_str (),
+                                                &hProfile),
+                      ret );
+
+    if (ret == NVAPI_OK) {
+      memset (&app, 0, sizeof (NVDRS_APPLICATION));
+
+      lstrcpyW ((wchar_t *)app.appName,          app_name.c_str      ());
+      lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+      app.version      = NVDRS_APPLICATION_VER;
+      app.isPredefined = false;
+      app.isMetro      = false;
+
+      NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+      NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
+    }
+  }
 
   NVDRS_SETTING mode_val = { 0 };
   mode_val.version = NVDRS_SETTING_VER;

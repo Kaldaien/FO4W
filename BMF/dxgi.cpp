@@ -42,6 +42,9 @@ extern BOOL __stdcall BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
                                                     uint32_t       limit );
 extern void __stdcall BMF_NvAPI_SetAppFriendlyName (const wchar_t* wszFriendlyName);
 
+extern "C++" bool BMF_FO4_IsFullscreen       (void);
+extern "C++" bool BMF_FO4_IsBorderlessWindow (void);
+
 extern int                      gpu_prio;
 
 ID3D11Device*    g_pDevice     = nullptr;
@@ -527,11 +530,12 @@ extern "C" {
     HRESULT hr = E_FAIL;
 
     if (This != NULL) {
-#if 0
       static bool first_frame = true;
 
-      if (first_frame) {
-        if (bFlipMode) {
+      if (first_frame && bmf::NVAPI::app_name == L"Fallout4.exe") {
+        // Fix the broken borderless window system that doesn't scale the swapchain
+        //   properly.
+        if (BMF_FO4_IsBorderlessWindow ()) {
           DEVMODE devmode = { 0 };
           devmode.dmSize = sizeof DEVMODE;
           EnumDisplaySettings (nullptr, ENUM_CURRENT_SETTINGS, &devmode);
@@ -539,17 +543,16 @@ extern "C" {
           DXGI_SWAP_CHAIN_DESC desc;
           This->GetDesc (&desc);
 
-          devmode.dmPelsWidth  = desc.BufferDesc.Width;
-          devmode.dmPelsHeight = desc.BufferDesc.Height;
-
-          ChangeDisplaySettings (&devmode, CDS_FULLSCREEN);
-
-          //This->ResizeTarget  (&desc);
-          This->ResizeBuffers (0, devmode.dmPelsWidth, devmode.dmPelsHeight, desc.BufferDesc.Format, Flags);
+          if (devmode.dmPelsHeight != desc.BufferDesc.Height ||
+              devmode.dmPelsWidth  != desc.BufferDesc.Width) {
+            devmode.dmPelsWidth  = desc.BufferDesc.Width;
+            devmode.dmPelsHeight = desc.BufferDesc.Height;
+            ChangeDisplaySettings (&devmode, CDS_FULLSCREEN);
+          }
         }
-        first_frame = false;
       }
-#endif
+
+      first_frame = false;
 
       IUnknown* pDev = nullptr;
 
@@ -582,11 +585,10 @@ extern "C" {
         pparams.pScrollRect     = nullptr;
 
         IDXGISwapChain1* pSwapChain1 = nullptr;
-        This->QueryInterface (__uuidof(IDXGISwapChain1),(void **)&pSwapChain1);
-
-        hr = pSwapChain1->Present1 (interval, flags, &pparams);
-
-        pSwapChain1->Release ();
+        if (SUCCEEDED (This->QueryInterface (__uuidof(IDXGISwapChain1),(void **)&pSwapChain1))) {
+          hr = pSwapChain1->Present1 (interval, flags, &pparams);
+          pSwapChain1->Release ();
+        }
 
         if (bWait) {
           IDXGISwapChain2* pSwapChain2;
@@ -658,8 +660,6 @@ extern "C" {
 #endif
   }
 
-  extern "C++" bool BMF_FO4_IsFullscreen (void);
-
   HRESULT
   STDMETHODCALLTYPE CreateSwapChain_Override (IDXGIFactory          *This,
                                         _In_  IUnknown              *pDevice,
@@ -706,18 +706,10 @@ extern "C" {
 
       if (bFlipMode) {
         bFlipMode = (! BMF_FO4_IsFullscreen ());
+        if (bFlipMode) {
+          bFlipMode = (! config.nvidia.sli.override);
+        }
       }
-
-#if 0
-      DEVMODE devmode = { 0 };
-      devmode.dmSize  = sizeof DEVMODE;
-
-      EnumDisplaySettings (nullptr, ENUM_CURRENT_SETTINGS, &devmode);
-
-      if (pDesc->BufferDesc.Width  > devmode.dmPelsWidth ||
-          pDesc->BufferDesc.Height > devmode.dmPelsHeight)
-        bFlipMode = false;
-#endif
 
       bFlipMode = bFlipMode && pDesc->BufferDesc.Scaling == 0;
       bWait     = bFlipMode && dxgi_caps.present.waitable;
@@ -753,6 +745,7 @@ extern "C" {
                        bWait ? L"Yes" : L"No" );
     }
 
+#if 0
     IDXGIFactory2* pFactory = nullptr;
 
     if (bFlipMode && SUCCEEDED (This->QueryInterface (__uuidof (IDXGIFactory2), (void **)&pFactory)))
@@ -782,13 +775,15 @@ extern "C" {
 
       pFactory->Release ();
     } else {
+#endif
       DXGI_CALL(ret, CreateSwapChain_Original (This, pDevice, pDesc, ppSwapChain));
-    }
+//    }
 
     if ( SUCCEEDED (ret)      &&
          ppSwapChain  != NULL &&
        (*ppSwapChain) != NULL )
     {
+#if 0
       DXGI_VIRTUAL_OVERRIDE (ppSwapChain, 10, "IDXGISwapChain::SetFullscreenState",
                              SetFullscreenState_Override, SetFullscreenState_Original,
                              SetFullscreenState_t);
@@ -796,6 +791,7 @@ extern "C" {
       DXGI_VIRTUAL_OVERRIDE (ppSwapChain, 13, "IDXGISwapChain::ResizeBuffers",
                              ResizeBuffers_Override, ResizeBuffers_Original,
                              ResizeBuffers_t);
+#endif
 
       const uint32_t max_latency = config.render.framerate.pre_render_limit;
 
@@ -827,7 +823,7 @@ extern "C" {
                       )
            ) {
           dll_log.Log (L"Setting Device Frame Latency: %lu", max_latency);
-          pDevice1->SetMaximumFrameLatency (config.render.framerate.pre_render_limit);
+          pDevice1->SetMaximumFrameLatency (max_latency);
           pDevice1->Release ();
         }
       }
@@ -1420,12 +1416,12 @@ void
 WINAPI
 Sleep_Detour (DWORD dwMilliseconds)
 {
-  thread_sleep [GetCurrentThreadId ()] = dwMilliseconds;
-  //last_sleep = dwMilliseconds;
+  //thread_sleep [GetCurrentThreadId ()] = dwMilliseconds;
+  last_sleep = dwMilliseconds;
 
   //if (config.framerate.yield_processor && dwMilliseconds == 0)
-  //if (dwMilliseconds == 0)
-    //YieldProcessor ();
+  if (dwMilliseconds == 0)
+    YieldProcessor ();
 
   if (dwMilliseconds != 0) {// || config.framerate.allow_fake_sleep) {
     Sleep_Original (dwMilliseconds);
@@ -1444,28 +1440,29 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 
   BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
 
-  if (thread_sleep [GetCurrentThreadId ()] > 0 /*|| (! (tzf::FrameRateFix::fullscreen ||
+  if (last_sleep > 0 /*thread_sleep [GetCurrentThreadId ()] > 0 *//*|| (! (tzf::FrameRateFix::fullscreen ||
     tzf::FrameRateFix::driver_limit_setup ||
     config.framerate.allow_windowed_mode))*/) {
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
-    thread_perf [GetCurrentThreadId ()] = last_perfCount;
+    //thread_perf [GetCurrentThreadId ()] = last_perfCount;
     return ret;
   } else {
     static LARGE_INTEGER freq = { 0 };
     if (freq.QuadPart == 0ULL)
       QueryPerformanceFrequency (&freq);
 
-    const float fudge_factor = config.render.framerate.fudge_factor * freq.QuadPart;
+    const float fudge_factor = config.render.framerate.fudge_factor;// * freq.QuadPart;
 
-    thread_sleep [GetCurrentThreadId ()] = 1;
+    last_sleep = 1;
+    //thread_sleep [GetCurrentThreadId ()] = 1;
 
-    last_perfCount = thread_perf [GetCurrentThreadId ()];
+    //last_perfCount = thread_perf [GetCurrentThreadId ()];
 
     // Mess with the numbers slightly to prevent hiccups
     lpPerformanceCount->QuadPart += (lpPerformanceCount->QuadPart - last_perfCount.QuadPart) * 
       fudge_factor/* * freq.QuadPart*/;
     memcpy (&last_perfCount, lpPerformanceCount, sizeof (LARGE_INTEGER) );
-    thread_perf [GetCurrentThreadId ()] = last_perfCount;
+    //thread_perf [GetCurrentThreadId ()] = last_perfCount;
 
     return ret;
   }
@@ -1973,14 +1970,14 @@ public:
   {
     if (nCode >= 0) {
       if (true) {
-        DWORD   vkCode   = LOWORD (wParam);
+        DWORD   vkCode   = LOWORD (wParam) & 0xff;
         DWORD   scanCode = HIWORD (lParam) & 0x7F;
         bool    repeated = LOWORD (lParam);
         bool    keyDown  = ! (lParam & 0x80000000);
 
         if (visible && vkCode == VK_BACK) {
           if (keyDown) {
-            int len = strlen (text);
+            size_t len = strlen (text);
             len--;
             if (len < 1)
               len = 1;
@@ -2026,7 +2023,7 @@ public:
         }
         else if (visible && vkCode == VK_RETURN) {
           if (keyDown && LOWORD (lParam) < 2) {
-            int len = strlen (text+1);
+            size_t len = strlen (text+1);
             // Don't process empty or pure whitespace command lines
             if (len > 0 && strspn (text+1, " ") != len) {
               eTB_CommandResult result = command.ProcessCommandLine (text+1);

@@ -599,7 +599,8 @@ extern "C" {
       }
     }
 
-    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
+    if (pPresentationParameters != nullptr)
+      pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
     BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
 
@@ -857,7 +858,8 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
     }
   }
 
-  pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
+  if (pPresentationParameters != nullptr)
+    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
   HRESULT ret;
 
@@ -1161,7 +1163,6 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
 
         pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
         pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-        pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
 
       } else {
         dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
@@ -1177,7 +1178,22 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
     }
   }
 
-  pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
+  if (pPresentationParameters != nullptr) {
+    // So we can wait on this if need be
+    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
+
+    if (config.render.framerate.buffer_count != -1) {
+      dll_log.Log ( L"  >> Backbuffer Override: (Requested=%lu, Override=%lu)",
+                      pPresentationParameters->BackBufferCount,
+                        config.render.framerate.buffer_count );
+    }
+
+    if (config.render.framerate.present_interval != -1) {
+      dll_log.Log ( L"  >> VSYNC Override: (Requested=1:%lu, Override=1:%lu)",
+                      pPresentationParameters->PresentationInterval,
+                        config.render.framerate.present_interval );
+    }
+  }
 
   HRESULT ret;
 

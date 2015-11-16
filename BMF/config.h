@@ -169,10 +169,10 @@ struct bmf_config_t
 
   struct {
     struct {
-      int     target_fps       = 0;
-      int     pre_render_limit = 3;
-      int     present_interval = 1;
-      int     buffer_count     = 1;
+      int     target_fps       =  0;
+      int     pre_render_limit = -1;
+      int     present_interval = -1;
+      int     buffer_count     = -1;
       int     max_delta_time   = 33;
       bool    flip_discard     = false;
       float   fudge_factor     = 3.333333f;
@@ -206,5 +206,14 @@ extern bmf_config_t config;
 bool BMF_LoadConfig (std::wstring name         = L"dxgi");
 void BMF_SaveConfig (std::wstring name         = L"dxgi",
                      bool         close_config = false);
+
+//
+// Sort of a nasty hack until I come up with a way for plug-ins to
+//   formally read the parent DLL's configuration.
+//
+__declspec (dllexport)
+uint32_t
+__stdcall
+BMF_Config_GetTargetFPS (void);
 
 #endif __BMF__CONFIG_H__

@@ -904,6 +904,7 @@ BMF::SteamAPI::AppID (void)
 }
 
 void
+__stdcall
 BMF::SteamAPI::SetOverlayState (bool active)
 {
   GameOverlayActivated_t state;
@@ -915,4 +916,27 @@ BMF::SteamAPI::SetOverlayState (bool active)
   while (it != overlay_activation_callbacks.end ()) {
     (*it++)->Run (&state);
   }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+//
+// Hacks that break what little planning this project had to begin with ;)
+//
+
+__declspec (dllexport)
+void
+__stdcall
+BMF_SteamAPI_SetOverlayState (bool active)
+{
+  BMF::SteamAPI::SetOverlayState (active);
 }

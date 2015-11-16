@@ -353,6 +353,36 @@ BMF_LoadConfig (std::wstring name) {
       dll_ini,
         L"Render.D3D9",
           L"TargetFPS" );
+
+    render.framerate.buffer_count =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Number of BackBuffers in the SwapChain")
+        );
+    render.framerate.buffer_count->register_to_ini (
+      dll_ini,
+        L"Render.D3D9",
+          L"BackBufferCount" );
+
+    render.framerate.present_interval =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Presentation Interval")
+        );
+    render.framerate.present_interval->register_to_ini (
+      dll_ini,
+        L"Render.D3D9",
+          L"PresentationInterval" );
+
+    render.framerate.prerender_limit =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Maximum Frames to Render-Ahead")
+        );
+    render.framerate.prerender_limit->register_to_ini (
+      dll_ini,
+        L"Render.D3D9",
+          L"PreRenderLimit" );
   }
 
   if (dll_role == DXGI) {
@@ -790,6 +820,15 @@ BMF_LoadConfig (std::wstring name) {
     if (render.framerate.target_fps->load ())
       config.render.framerate.target_fps =
         render.framerate.target_fps->get_value ();
+    if (render.framerate.buffer_count->load ())
+      config.render.framerate.buffer_count =
+        render.framerate.buffer_count->get_value ();
+    if (render.framerate.prerender_limit->load ())
+      config.render.framerate.pre_render_limit =
+        render.framerate.prerender_limit->get_value ();
+    if (render.framerate.present_interval->load ())
+      config.render.framerate.present_interval =
+        render.framerate.present_interval->get_value ();
 
     // SLI only works in Direct3D
     if (nvidia.sli.compatibility->load ())
@@ -804,27 +843,18 @@ BMF_LoadConfig (std::wstring name) {
     if (nvidia.sli.override->load ())
       config.nvidia.sli.override =
         nvidia.sli.override->get_value ();
-  }
 
-  if (dll_role == DXGI) {
-    if (render.framerate.buffer_count->load ())
-      config.render.framerate.buffer_count =
-        render.framerate.buffer_count->get_value ();
-    if (render.framerate.prerender_limit->load ())
-      config.render.framerate.pre_render_limit =
-        render.framerate.prerender_limit->get_value ();
-    if (render.framerate.present_interval->load ())
-      config.render.framerate.present_interval =
-        render.framerate.present_interval->get_value ();
-    if (render.framerate.max_delta_time->load ())
-      config.render.framerate.max_delta_time =
-        render.framerate.max_delta_time->get_value ();
-    if (render.framerate.flip_discard->load ())
-      config.render.framerate.flip_discard =
-        render.framerate.flip_discard->get_value ();
-    if (render.framerate.fudge_factor->load ())
-      config.render.framerate.fudge_factor =
-        render.framerate.fudge_factor->get_value ();
+    if (dll_role == DXGI) {
+      if (render.framerate.max_delta_time->load ())
+        config.render.framerate.max_delta_time =
+          render.framerate.max_delta_time->get_value ();
+      if (render.framerate.flip_discard->load ())
+        config.render.framerate.flip_discard =
+          render.framerate.flip_discard->get_value ();
+      if (render.framerate.fudge_factor->load ())
+        config.render.framerate.fudge_factor =
+          render.framerate.fudge_factor->get_value ();
+    }
   }
 
   if (steam.achievements.nosound->load ())
@@ -903,22 +933,22 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.time.show->set_value            (config.time.show);
 
   if (dll_role == D3D9 || dll_role == DXGI) {
-    render.framerate.target_fps->set_value   (config.render.framerate.target_fps);
-
-    // SLI only works in Direct3D
-    nvidia.sli.compatibility->set_value      (config.nvidia.sli.compatibility);
-    nvidia.sli.mode->set_value               (config.nvidia.sli.mode);
-    nvidia.sli.num_gpus->set_value           (config.nvidia.sli.num_gpus);
-    nvidia.sli.override->set_value           (config.nvidia.sli.override);
-  }
-
-  if (dll_role == DXGI) {
+    render.framerate.target_fps->set_value       (config.render.framerate.target_fps);
     render.framerate.prerender_limit->set_value  (config.render.framerate.pre_render_limit);
     render.framerate.buffer_count->set_value     (config.render.framerate.buffer_count);
     render.framerate.present_interval->set_value (config.render.framerate.present_interval);
-    render.framerate.max_delta_time->set_value   (config.render.framerate.max_delta_time);
-    render.framerate.flip_discard->set_value     (config.render.framerate.flip_discard);
-    render.framerate.fudge_factor->set_value     (config.render.framerate.fudge_factor);
+
+    // SLI only works in Direct3D
+    nvidia.sli.compatibility->set_value          (config.nvidia.sli.compatibility);
+    nvidia.sli.mode->set_value                   (config.nvidia.sli.mode);
+    nvidia.sli.num_gpus->set_value               (config.nvidia.sli.num_gpus);
+    nvidia.sli.override->set_value               (config.nvidia.sli.override);
+
+    if (dll_role == DXGI) {
+      render.framerate.max_delta_time->set_value (config.render.framerate.max_delta_time);
+      render.framerate.flip_discard->set_value   (config.render.framerate.flip_discard);
+      render.framerate.fudge_factor->set_value   (config.render.framerate.fudge_factor);
+    }
   }
 
   steam.achievements.sound_file->set_value    (config.steam.achievement_sound);
@@ -969,23 +999,23 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
   monitoring.pagefile.interval->store    ();
 
   if (dll_role == D3D9 || dll_role == DXGI) {
-    render.framerate.target_fps->store   ();
-
-    if (bmf::NVAPI::nv_hardware) {
-      nvidia.sli.compatibility->store    ();
-      nvidia.sli.mode->store             ();
-      nvidia.sli.num_gpus->store         ();
-      nvidia.sli.override->store         ();
-    }
-  }
-
-  if (dll_role == DXGI) {
+    render.framerate.target_fps->store       ();
     render.framerate.buffer_count->store     ();
     render.framerate.prerender_limit->store  ();
     render.framerate.present_interval->store ();
-    render.framerate.max_delta_time->store   ();
-    render.framerate.flip_discard->store     ();
-    render.framerate.fudge_factor->store     ();
+
+    if (bmf::NVAPI::nv_hardware) {
+      nvidia.sli.compatibility->store        ();
+      nvidia.sli.mode->store                 ();
+      nvidia.sli.num_gpus->store             ();
+      nvidia.sli.override->store             ();
+    }
+
+    if (dll_role == DXGI) {
+      render.framerate.max_delta_time->store ();
+      render.framerate.flip_discard->store   ();
+      render.framerate.fudge_factor->store   ();
+    }
   }
 
   osd.show->store                        ();
@@ -1022,4 +1052,20 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
       dll_ini = nullptr;
     }
   }
+}
+
+
+
+
+
+//
+// Hacks that break what little planning this project had to begin with ;)
+//
+
+__declspec (dllexport)
+uint32_t
+__stdcall
+BMF_Config_GetTargetFPS (void)
+{
+  return config.render.framerate.target_fps;
 }
