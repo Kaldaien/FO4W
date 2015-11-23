@@ -509,6 +509,10 @@ BMF_NvAPI_SetFramerateLimit (uint32_t limit)
   if (config.render.framerate.target_fps != 0)
     limit = config.render.framerate.target_fps;
 
+  // Don't set anything up.
+  if (limit == 0)
+    return true;
+
   NvDRSSessionHandle hSession;
   NVAPI_CALL (DRS_CreateSession (&hSession));
   NVAPI_CALL (DRS_LoadSettings  (hSession));
@@ -859,4 +863,4 @@ BMF_NvAPI_IsInit (void)
 
 bool         NVAPI::nv_hardware   = false;
 std::wstring NVAPI::friendly_name = L"Tales of Zestiria";
-std::wstring NVAPI::app_name      = L"TalesOfZestiria.exe";
+std::wstring NVAPI::app_name      = L"Tales Of Zestiria.exe";

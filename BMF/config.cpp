@@ -1062,9 +1062,8 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
 // Hacks that break what little planning this project had to begin with ;)
 //
 
-__declspec (dllexport)
 uint32_t
-__stdcall
+__cdecl
 BMF_Config_GetTargetFPS (void)
 {
   return config.render.framerate.target_fps;

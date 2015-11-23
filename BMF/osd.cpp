@@ -124,7 +124,7 @@ private:
 BOOL
 BMF_ReleaseSharedMemory (LPVOID lpMemory)
 {
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   if (lpMemory != nullptr) {
     return UnmapViewOfFile (lpMemory);
@@ -136,7 +136,7 @@ BMF_ReleaseSharedMemory (LPVOID lpMemory)
 LPVOID
 BMF_GetSharedMemory (DWORD dwProcID)
 {
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   if (osd_shutting_down && osd_init == false)
     return nullptr;
@@ -190,7 +190,7 @@ BMF_GetSharedMemory (DWORD dwProcID)
 LPVOID
 BMF_GetSharedMemory (void)
 {
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   return BMF_GetSharedMemory (GetCurrentProcessId ());
 }
@@ -209,7 +209,6 @@ BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
   if (dwFlags & APPFLAG_OGL)
     return L"OpenGL";
 
-  // Plan to expand this to D3D9 eventually
   if (dwFlags & APPFLAG_D3D9EX)
     return L"D3D9EX";
   if (dwFlags & APPFLAG_D3D9)
@@ -334,7 +333,7 @@ __stdcall
 BMF_DrawExternalOSD (std::string app_name, std::string text)
 {
   if (! cs_init) {
-    InitializeCriticalSectionAndSpinCount (&osd_cs, 123UL);
+    InitializeCriticalSectionAndSpinCount (&osd_cs, (1UL << 31));
     cs_init = true;
   }
 
@@ -347,14 +346,14 @@ BOOL
 BMF_DrawOSD (void)
 {
   if (! cs_init) {
-    InitializeCriticalSectionAndSpinCount (&osd_cs, 123UL);
+    InitializeCriticalSectionAndSpinCount (&osd_cs, (1UL << 31));
     cs_init = true;
   }
 
-  //BMF_AutoCriticalSection auto_cs (&osd_cs, true);
+  BMF_AutoCriticalSection auto_cs (&osd_cs, true);
 
-  //if (! auto_cs.try_result ())
-    //return false;
+  if (! auto_cs.try_result ())
+    return false;
 
   //
   // Enough attempts to cover 15 Seconds at 240 Hz
@@ -369,12 +368,12 @@ BMF_DrawOSD (void)
   if (! pMemory) {
     ++connect_attempts;
 
-    if (connect_attempts >= MAX_RTSS_ATTEMPTS) {
+    // Test for _equality_, because we only want to print this once!
+    if (connect_attempts == MAX_RTSS_ATTEMPTS) {
       dll_log.Log (L"[RTSS] Exhausted Connection Attempts... disabling OSD!");
       DwmEnableMMCSS (TRUE);
     }
 
-    LeaveCriticalSection (&osd_cs);
     return false;
   }
 
@@ -382,8 +381,6 @@ BMF_DrawOSD (void)
     DwmEnableMMCSS (TRUE);
 
     osd_init = true;
-
-    extern bmf_logger_t dll_log;
 
     dll_log.LogEx ( true,
       L"[RTSS] Opening Connection to RivaTuner Statistics Server... " );
@@ -415,7 +412,11 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-    OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.0.0   %ws\n\n",
+#if 0
+    OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.0.4   %ws\n\n",
+#else
+    OSD_PRINTF "Fallout 4 \"Works\" v 0.2.1   %ws\n\n",
+#endif
       time
     OSD_END
   }
@@ -968,7 +969,7 @@ BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr, LPCSTR lpAppName)
   if (lpAppName == nullptr)
     lpAppName = "Batman Fix";
 
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   static DWORD dwProcID =
     GetCurrentProcessId ();
@@ -1053,7 +1054,7 @@ BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr, LPCSTR lpAppName)
 void
 BMF_ReleaseOSD (void)
 {
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   osd_shutting_down = true;
   BMF_UpdateOSD ("");
@@ -1066,7 +1067,7 @@ BMF_SetOSDPos (int x, int y, LPCSTR lpAppName)
   if (lpAppName == nullptr)
     lpAppName = "Batman Fix";
 
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   // 0,0 means don't touch anything.
   if (x == 0 && y == 0)
@@ -1121,7 +1122,7 @@ BMF_SetOSDColor (int red, int green, int blue, LPCSTR lpAppName)
   if (lpAppName == nullptr)
     lpAppName = "Batman Fix";
 
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
@@ -1187,7 +1188,7 @@ BMF_SetOSDScale (DWORD dwScale, bool relative, LPCSTR lpAppName)
   if (lpAppName == nullptr)
     lpAppName = "Batman Fix";
 
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   LPVOID pMapAddr =
     BMF_GetSharedMemory ();
@@ -1244,7 +1245,7 @@ BMF_ResizeOSD (int scale_incr, LPCSTR lpAppName)
   if (lpAppName == nullptr)
     lpAppName = "Batman Fix";
 
-  //BMF_AutoCriticalSection auto_cs (&osd_cs);
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
 
   BMF_SetOSDScale (scale_incr, true, lpAppName);
 }

@@ -168,8 +168,6 @@ extern "C" const wchar_t* BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
   dll_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret));\
 }
 
-IDirect3DSwapChain9*  g_pSwapChain9    = nullptr;
-
 extern "C" {
 __declspec (noinline)
 __declspec (dllexport)
@@ -195,36 +193,11 @@ __stdcall D3D9PresentCallback (IDirect3DDevice9 *This,
 {
   BMF_BeginBufferSwap ();
 
-  typedef HRESULT (STDMETHODCALLTYPE *GetSwapChain_t)
-              ( IDirect3DDevice9*     This,
-                UINT                  iSwapChain,
-                IDirect3DSwapChain9** ppSwapChain );
-  void** vtable = *(void ***)This;
-  GetSwapChain_t GetSwapChain = (GetSwapChain_t)vtable [14];
-
-  GetSwapChain (This, 0, &g_pSwapChain9);
-  ((IUnknown *)g_pSwapChain9)->Release ();
-
-  typedef HRESULT (STDMETHODCALLTYPE *Present_t)
-    ( IDirect3DSwapChain9*      This,
-      UINT                      iSwapChain,
-      CONST RECT*               pSourceRect,
-      CONST RECT*               pDestRect,
-      HWND                      hDestWindowOverride, 
-      CONST RGNDATA*            pDirtyRegion,
-      DWORD                     dwFlags );
-  vtable = *(void ***)g_pSwapChain9;
-  Present_t Present = (Present_t)vtable [3];
-
-#ifndef SPOOF_STEAM_FPS
   HRESULT hr = D3D9Present_Original (This,
                                      pSourceRect,
                                      pDestRect,
                                      hDestWindowOverride,
                                      pDirtyRegion);
-#else
-  HRESULT hr = Present (g_pSwapChain9, 0, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, 2);
-#endif
 
   if (! config.osd.pump)
     return BMF_EndBufferSwap ( hr,
@@ -243,17 +216,6 @@ __stdcall D3D9PresentCallbackEx (IDirect3DDevice9Ex *This,
                       _In_       DWORD               dwFlags)
 {
   BMF_BeginBufferSwap ();
-
-  typedef HRESULT (STDMETHODCALLTYPE *GetSwapChain_t)
-              ( IDirect3DDevice9Ex*   This,
-                UINT                  iSwapChain,
-                IDirect3DSwapChain9** ppSwapChain );
-  void** vtable = *(void ***)This;
-  GetSwapChain_t GetSwapChain = (GetSwapChain_t)vtable [14];
-
-  GetSwapChain (This, 0, &g_pSwapChain9);
-
-  ((IUnknown *)g_pSwapChain9)->Release ();
 
   HRESULT hr = D3D9PresentEx_Original (This,
                                        pSourceRect,
@@ -454,11 +416,6 @@ extern "C" {
   {
     BMF_BeginBufferSwap ();
 
-    g_pSwapChain9 = This;
-
-    //if (config.system.target_fps != 0)
-      //dwFlags &= ~D3DPRESENT_DONOTWAIT;
-
     HRESULT hr = D3D9PresentSwap_Original (This,
                                            pSourceRect,
                                            pDestRect,
@@ -546,9 +503,16 @@ D3D9EndScene_Override (IDirect3DDevice9* This)
 
   //D3D9_CALL (hr, D3D9EndScene_Original (This));
 
-#ifdef ENDSCENE_ENDS_FRAME
+#if 0
+  // Some games call this multiple times, if the last time this was called was over
+  //   1 ms ago, let's assume this means the frame is done.
   if (SUCCEEDED (hr) && (! config.osd.pump)) {
-    BMF_EndBufferSwap (hr);
+    static DWORD dwTime = timeGetTime ();
+    if (timeGetTime () - dwTime > 1) {
+      BMF_BeginBufferSwap ();
+      BMF_EndBufferSwap   (hr);
+    }
+    dwTime = timeGetTime ();
   }
 #endif
 
@@ -583,7 +547,6 @@ extern "C" {
 
           pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
           pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-          pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
 
         } else {
           dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
@@ -599,8 +562,22 @@ extern "C" {
       }
     }
 
-    if (pPresentationParameters != nullptr)
+    if (pPresentationParameters != nullptr) {
+      // So we can wait on this if need be
       pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
+
+      if (config.render.framerate.buffer_count != -1) {
+        dll_log.Log ( L"  >> Backbuffer Override: (Requested=%lu, Override=%lu)",
+                        pPresentationParameters->BackBufferCount,
+                          config.render.framerate.buffer_count );
+      }
+
+      if (config.render.framerate.present_interval != -1) {
+        dll_log.Log ( L"  >> VSYNC Override: (Requested=1:%lu, Override=1:%lu)",
+                        pPresentationParameters->PresentationInterval,
+                          config.render.framerate.present_interval );
+      }
+    }
 
     BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
 
@@ -843,7 +820,6 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
 
         pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
         pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-        pPresentationParameters->BackBufferCount      = 1; // No Triple Buffering Please!
       } else {
         dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
                       L" (refresh = %li Hz)\n",
@@ -1464,7 +1440,7 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
   static CreateDXGIFactory_t CreateDXGIFactory =
     (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
 
-  IDXGIFactory* factory;
+  IDXGIFactory* factory = nullptr;
 
 #if 0
   if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory), &factory))) {
@@ -1489,6 +1465,7 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
     factory->Release ();
   }
 
+#if 0
   void** vftbl                      = *(void***)*ppReturnedDeviceInterface;
   GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vftbl [14];
   IDirect3DSwapChain9* SwapChain    = nullptr;
@@ -1503,11 +1480,10 @@ D3D9CreateDevice_Override (IDirect3D9             *This,
       ((IUnknown *)SwapChain)->Release ();
     }
   }
+#endif
 
   return ret;
 }
-
-IDirect3D9* g_pD3D9 = nullptr;
 
 IDirect3D9*
 STDMETHODCALLTYPE
@@ -1524,19 +1500,12 @@ Direct3DCreate9 (UINT SDKVersion)
   if (Direct3DCreate9_Import)
     d3d9 = Direct3DCreate9_Import (SDKVersion);
 
-#if 0
-  // This helps with Tales of Zestiria, but should probably be made optional
-  if (g_pD3D9 != nullptr) {
-#endif
-    if (d3d9 != nullptr)
-      D3D9_VIRTUAL_OVERRIDE (&d3d9, 16, "d3d9->CreateDevice",
-                             D3D9CreateDevice_Override,
-                             D3D9CreateDevice_Original, D3D9CreateDevice_t);
-#if 0
-  }
-#endif
+  if (d3d9 != nullptr)
+    D3D9_VIRTUAL_OVERRIDE (&d3d9, 16, "d3d9->CreateDevice",
+                           D3D9CreateDevice_Override,
+                           D3D9CreateDevice_Original, D3D9CreateDevice_t);
 
-  return (g_pD3D9 = d3d9);
+  return d3d9;
 }
 
 HRESULT
@@ -1550,6 +1519,8 @@ Direct3DCreate9Ex (__in UINT SDKVersion, __out IDirect3D9Ex **ppD3D)
     L"Direct3DCreate9Ex", SDKVersion, ppD3D, GetCurrentThreadId ());
 
   HRESULT hr = E_FAIL;
+
+  dll_log.Log (L" * Third-Party Library Detected, Ignoring!");
 
   if (Direct3DCreate9Ex_Import)
     D3D9_CALL (hr, Direct3DCreate9Ex_Import (SDKVersion, ppD3D));

@@ -38,9 +38,10 @@ std::unordered_map <DWORD, LARGE_INTEGER> thread_perf;
 
 extern std::wstring host_app;
 
-extern BOOL __stdcall BMF_NvAPI_SetFramerateLimit ( const wchar_t* wszAppName,
-                                                    uint32_t       limit );
+extern BOOL __stdcall BMF_NvAPI_SetFramerateLimit (uint32_t limit);
 extern void __stdcall BMF_NvAPI_SetAppFriendlyName (const wchar_t* wszFriendlyName);
+
+extern "C" void DXGI_DrawConsole (void);
 
 extern "C++" bool BMF_FO4_IsFullscreen       (void);
 extern "C++" bool BMF_FO4_IsBorderlessWindow (void);
@@ -526,6 +527,8 @@ extern "C" {
                                        UINT            Flags)
   {
     BMF_BeginBufferSwap ();
+
+    DXGI_DrawConsole ();
 
     HRESULT hr = E_FAIL;
 
@@ -1768,15 +1771,48 @@ public:
     return pInputHook;
   }
 
+  void Draw (void)
+  {
+    static bool carret    = false;
+    static int  last_time = 0;
+
+    std::string output;
+
+    if (visible) {
+      output += text;
+
+      // Blink the Carret
+      if (timeGetTime () - last_time > 333) {
+        carret = ! carret;
+
+        last_time = timeGetTime ();
+      }
+
+      if (carret)
+        output += "-";
+
+      // Show Command Results
+        if (command_issued) {
+        output += "\n";
+        output += result_str;
+      }
+    }
+
+    extern BOOL
+    __stdcall
+    BMF_DrawExternalOSD (std::string app_name, std::string text);
+    BMF_DrawExternalOSD ("BMF Console", output);
+  }
+
   void Start (void)
   {
     hMsgPump =
       CreateThread ( NULL,
-        NULL,
-        BMF_InputHooker::MessagePump,
-        &hooks,
-        NULL,
-        NULL );
+                       NULL,
+                         BMF_InputHooker::MessagePump,
+                           &hooks,
+                             NULL,
+                               NULL );
   }
 
   void End (void)
@@ -1831,16 +1867,16 @@ public:
     }
 
     dll_log.Log ( L"  # Found window in %03.01f seconds, "
-      L"installing keyboard hook...",
-      (float)(timeGetTime () - dwTime) / 1000.0f );
+                  L"installing keyboard hook...",
+                    (float)(timeGetTime () - dwTime) / 1000.0f );
 
     dwTime = timeGetTime ();
     hits   = 1;
 
     while (! (pHooks->keyboard = SetWindowsHookEx ( WH_KEYBOARD,
-      KeyboardProc,
-      hModSelf,
-      dwThreadId ))) {
+                KeyboardProc,
+                  hModSelf,
+                    dwThreadId ))) {
       _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
       dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
@@ -1859,9 +1895,9 @@ public:
     }
 
     while (! (pHooks->mouse = SetWindowsHookEx ( WH_MOUSE,
-      MouseProc,
-      hModSelf,
-      dwThreadId ))) {
+                MouseProc,
+                  hModSelf,
+                    dwThreadId ))) {
       _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
       dll_log.Log ( L"  @ SetWindowsHookEx failed: 0x%04X (%s)",
@@ -1880,45 +1916,18 @@ public:
     }
 
     dll_log.Log ( L"  * Installed keyboard hook for command console... "
-      L"%lu %s (%lu ms!)",
-      hits,
-      hits > 1 ? L"tries" : L"try",
-      timeGetTime () - dwTime );
+                  L"%lu %s (%lu ms!)",
+                    hits,
+                      hits > 1 ? L"tries" : L"try",
+                        timeGetTime () - dwTime );
 
     DWORD last_time = timeGetTime ();
     bool  carret    = true;
 
     //193 - 199
 
-    while (true)
-    {
-      std::string output;
-
-      if (visible) {
-        output += text;
-
-        // Blink the Carret
-        if (timeGetTime () - last_time > 333) {
-          carret = ! carret;
-
-          last_time = timeGetTime ();
-        }
-
-        if (carret)
-          output += "-";
-
-        // Show Command Results
-        if (command_issued) {
-          output += "\n";
-          output += result_str;
-        }
-      }
-
-      extern BOOL BMF_UpdateOSD (LPCSTR lpText, LPVOID pMapAddr, LPCSTR lpAppName);
-      BMF_UpdateOSD (output.c_str (), nullptr, "BMF Console");
-
-      Sleep (16);
-    }
+    // Pump the sucker
+    while (true) Sleep (10);
 
     return 0;
   }
@@ -1970,8 +1979,8 @@ public:
   {
     if (nCode >= 0) {
       if (true) {
-        DWORD   vkCode   = LOWORD (wParam) & 0xff;
-        DWORD   scanCode = HIWORD (lParam) & 0x7F;
+        BYTE    vkCode   = LOWORD (wParam) & 0xFF;
+        BYTE    scanCode = HIWORD (lParam) & 0x7F;
         bool    repeated = LOWORD (lParam);
         bool    keyDown  = ! (lParam & 0x80000000);
 
@@ -2056,11 +2065,11 @@ public:
 
           keys_ [vkCode] = 0x81;
 
-          if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press)
+          if (keys_ [VK_CONTROL] && keys_ [VK_SHIFT] && keys_ [VK_TAB] && new_press) {
             visible = ! visible;
-
             // This will pause/unpause the game
             BMF::SteamAPI::SetOverlayState (visible);
+          }
 
           if (visible) {
             char key_str [2];
@@ -2099,6 +2108,20 @@ bool BMF_InputHooker::command_issued = false;
 std::string BMF_InputHooker::result_str;
 
 BMF_InputHooker::command_history_t BMF_InputHooker::commands;
+
+extern "C"
+void
+DXGI_DrawConsole (void)
+{
+  static int frames = 0;
+
+  // Drop the first frame so that the console shows up below
+  //   the main OSD.
+  if (frames++ > 0) {
+    BMF_InputHooker* pHooker = BMF_InputHooker::getInstance ();
+    pHooker->Draw ();
+  }
+}
 
 
 

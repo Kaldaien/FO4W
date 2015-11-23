@@ -27,7 +27,7 @@
 #pragma comment (lib, "winmm.lib")
 
 bmf_logger_t steam_log;
-HANDLE       hSteamHeap = { 0 };
+HANDLE       hSteamHeap = NULL;
 
 static bool init = false;
 
@@ -40,6 +40,7 @@ static bool init = false;
 // To spoof Overlay Activation (pause the game)
 #include <set>
 std::set <class CCallbackBase *> overlay_activation_callbacks;
+CRITICAL_SECTION callback_cs = { 0 };
 
 
 S_API typedef bool (S_CALLTYPE *SteamAPI_Init_t    )(void);
@@ -56,8 +57,8 @@ S_API typedef void (S_CALLTYPE *SteamAPI_UnregisterCallback_t)
           (class CCallbackBase *pCallback);
 S_API typedef void (S_CALLTYPE *SteamAPI_RunCallbacks_t)(void);
 
-S_API typedef HSteamUser (S_CALLTYPE *SteamAPI_GetHSteamUser_t)(void);
-S_API typedef HSteamPipe (S_CALLTYPE *SteamAPI_GetHSteamPipe_t)(void);
+S_API typedef HSteamUser (*SteamAPI_GetHSteamUser_t)(void);
+S_API typedef HSteamPipe (*SteamAPI_GetHSteamPipe_t)(void);
 
 S_API typedef ISteamClient*    (S_CALLTYPE *SteamClient_t   )(void);
 
@@ -86,6 +87,8 @@ void
 S_CALLTYPE
 SteamAPI_RegisterCallback_Detour (class CCallbackBase *pCallback, int iCallback)
 {
+  EnterCriticalSection (&callback_cs);
+
   switch (iCallback)
   {
     case GameOverlayActivated_t::k_iCallback:
@@ -102,6 +105,8 @@ SteamAPI_RegisterCallback_Detour (class CCallbackBase *pCallback, int iCallback)
   }
 
   SteamAPI_RegisterCallback_Original (pCallback, iCallback);
+
+  LeaveCriticalSection (&callback_cs);
 }
 
 S_API
@@ -109,6 +114,8 @@ void
 S_CALLTYPE
 SteamAPI_UnregisterCallback_Detour (class CCallbackBase *pCallback)
 {
+  EnterCriticalSection (&callback_cs);
+
   switch (pCallback->GetICallback ())
   {
     case GameOverlayActivated_t::k_iCallback:
@@ -121,13 +128,20 @@ SteamAPI_UnregisterCallback_Detour (class CCallbackBase *pCallback)
   }
 
   SteamAPI_UnregisterCallback_Original (pCallback);
+
+  LeaveCriticalSection (&callback_cs);
 }
 
+
+extern "C" void __cdecl SteamAPIDebugTextHook (int nSeverity, const char *pchDebugText);
 
 class BMF_SteamAPIContext {
 public:
   bool Init (HMODULE hSteamDLL)
   {
+    wchar_t wszSteamDLLName [MAX_PATH];
+    GetModuleFileNameW (hSteamDLL, wszSteamDLLName, MAX_PATH);
+
     if (hSteamHeap == nullptr)
       hSteamHeap = HeapCreate (HEAP_CREATE_ENABLE_EXECUTE, 0, 0);
 
@@ -170,31 +184,35 @@ public:
     }
 
     if (SteamAPI_RegisterCallback == nullptr) {
+#if 0
       SteamAPI_RegisterCallback =
         (SteamAPI_RegisterCallback_t)GetProcAddress (
           hSteamDLL,
             "SteamAPI_RegisterCallback"
         );
-
-      BMF_CreateFuncHook ( L"SteamAPI_RegisterCallback",
-                             SteamAPI_RegisterCallback,
-                               SteamAPI_RegisterCallback_Detour,
-                    (LPVOID *)&SteamAPI_RegisterCallback_Original );
+#else
+      BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_RegisterCallback",
+                           SteamAPI_RegisterCallback_Detour,
+                (LPVOID *)&SteamAPI_RegisterCallback_Original,
+                (LPVOID *)&SteamAPI_RegisterCallback);
       BMF_EnableHook (SteamAPI_RegisterCallback);
+#endif
     }
 
     if (SteamAPI_UnregisterCallback == nullptr) {
+#if 0
       SteamAPI_UnregisterCallback =
         (SteamAPI_UnregisterCallback_t)GetProcAddress (
           hSteamDLL,
             "SteamAPI_UnregisterCallback"
         );
-
-      BMF_CreateFuncHook ( L"SteamAPI_UnregisterCallback",
-                             SteamAPI_UnregisterCallback,
-                               SteamAPI_UnregisterCallback_Detour,
-                    (LPVOID *)&SteamAPI_UnregisterCallback_Original );
+#else
+      BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_UnregisterCallback",
+                           SteamAPI_UnregisterCallback_Detour,
+                (LPVOID *)&SteamAPI_UnregisterCallback_Original,
+                (LPVOID *)&SteamAPI_UnregisterCallback);
       BMF_EnableHook (SteamAPI_UnregisterCallback);
+#endif
     }
 
     if (SteamAPI_RunCallbacks == nullptr) {
@@ -279,12 +297,9 @@ public:
       return false;
     }
 
-#if 0
-    extern "C" void __cdecl SteamAPIDebugTextHook (int nSeverity, const char *pchDebugText);
     steam_log.LogEx (true, L" # Installing Steam API Debug Text Callback... ");
     SteamClient ()->SetWarningMessageHook (&SteamAPIDebugTextHook);
     steam_log.LogEx (false, L"SteamAPIDebugTextHook\n\n");
-#endif
 
     // 4 == Don't Care
     if (config.steam.notify_corner != 4)
@@ -333,7 +348,7 @@ private:
   ISteamUserStats*   user_stats_  = nullptr;
   ISteamUtils*       utils_       = nullptr;
   ISteamScreenshots* screenshots_ = nullptr;
-} static steam_ctx;
+} steam_ctx;
 
 #if 0
 struct BaseStats_t
@@ -696,7 +711,7 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
         "SteamAPI_RestartAppIfNecessary"
     );
 
-  if (SteamAPI_Init != nullptr) {
+  if (SteamAPI_InitSafe != nullptr) {
     int appid;
 
     FILE* steam_appid = fopen ("steam_appid.txt", "r+");
@@ -718,7 +733,7 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
       //if (pre_load)
         //return false;
     } else {
-      fscanf (steam_appid, "%d\n", &appid);
+      fscanf (steam_appid, "%d", &appid);
       fclose (steam_appid);
 
       config.steam.appid = appid;
@@ -741,11 +756,11 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
       }
     }
 
-    steam_log.LogEx (true, L" [!] SteamAPI_Init ()...");
+    steam_log.LogEx (true, L" [!] SteamAPI_InitSafe ()...");
 
-    STEAMAPI_CALL1 (ret, Init, ());
+    STEAMAPI_CALL1 (ret, InitSafe, ());
 
-    steam_log.LogEx (false, L"%s! (Status: %i) [%d-bit]\n\n",
+    steam_log.LogEx (false, L"%s! (Status: %lu) [%d-bit]\n\n",
       ret ? L"done" : L"failed",
       (unsigned)ret,
 #ifdef _WIN64
@@ -755,16 +770,7 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
 #endif
       );
 
-    if (! ret)
-      return false;
-
-    //STEAMAPI_CALL1 (ret, InitSafe, ());
-
-    //if (! ret)
-      //return false;
-
-    if (SteamAPI_InitSafe != nullptr)
-      return true;
+    return ret;
   }
 
   return false;
@@ -781,6 +787,8 @@ BMF::SteamAPI::Init (bool pre_load)
 
   if (init)
     return;
+
+  InitializeCriticalSectionAndSpinCount (&callback_cs, 1024UL);
 
   // We want to give the init a second-chance because it's not quite
   //  up to snuff yet, but some games would just continue to try and
@@ -800,10 +808,8 @@ BMF::SteamAPI::Init (bool pre_load)
 
 #ifdef _WIN64
   const wchar_t* steam_dll_str    = L"steam_api64.dll";
-  const wchar_t* steamXXX_dll_str = L"steam_api64.dll";
 #else
   const wchar_t* steam_dll_str    = L"steam_api.dll";
-  const wchar_t* steamXXX_dll_str = L"steam_apiXXX.dll";
 #endif
 
   HMODULE hSteamAPI = nullptr;
@@ -814,16 +820,10 @@ BMF::SteamAPI::Init (bool pre_load)
       steam_log.Log (L" @ %s was already loaded...\n", steam_dll_str);
     }
 
-    hSteamAPI = GetModuleHandle (steamXXX_dll_str);
-
-    if (! hSteamAPI)
-      hSteamAPI = GetModuleHandle (steam_dll_str);
+    hSteamAPI = GetModuleHandle (steam_dll_str);
   }
   else {
-    hSteamAPI = GetModuleHandle (steamXXX_dll_str);
-
-    if (! hSteamAPI)
-      hSteamAPI = LoadLibrary (steam_dll_str);
+    hSteamAPI = LoadLibrary (steam_dll_str);
   }
 
   bImported = BMF_Load_SteamAPI_Imports (hSteamAPI, pre_load);
@@ -907,6 +907,8 @@ void
 __stdcall
 BMF::SteamAPI::SetOverlayState (bool active)
 {
+  EnterCriticalSection (&callback_cs);
+
   GameOverlayActivated_t state;
   state.m_bActive = active;
 
@@ -916,6 +918,8 @@ BMF::SteamAPI::SetOverlayState (bool active)
   while (it != overlay_activation_callbacks.end ()) {
     (*it++)->Run (&state);
   }
+
+  LeaveCriticalSection (&callback_cs);
 }
 
 
@@ -933,7 +937,6 @@ BMF::SteamAPI::SetOverlayState (bool active)
 // Hacks that break what little planning this project had to begin with ;)
 //
 
-__declspec (dllexport)
 void
 __stdcall
 BMF_SteamAPI_SetOverlayState (bool active)

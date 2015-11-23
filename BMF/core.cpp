@@ -1634,6 +1634,8 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
   if (/*FAILED (hr)*/ hr != S_OK)
     return hr;
 
+  BMF_DrawOSD ();
+
   static ULONGLONG last_osd_scale { 0ULL };
 
   SYSTEMTIME    stNow;
@@ -1807,8 +1809,6 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
       sli_state = bmf::NVAPI::GetSLIState (device);
     }
   }
-
-  BMF_DrawOSD ();
 
   //BMF::SteamAPI::Pump ();
 

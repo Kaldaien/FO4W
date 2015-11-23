@@ -211,9 +211,8 @@ void BMF_SaveConfig (std::wstring name         = L"dxgi",
 // Sort of a nasty hack until I come up with a way for plug-ins to
 //   formally read the parent DLL's configuration.
 //
-__declspec (dllexport)
 uint32_t
-__stdcall
+__cdecl
 BMF_Config_GetTargetFPS (void);
 
 #endif __BMF__CONFIG_H__
