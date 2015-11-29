@@ -1138,12 +1138,26 @@ typedef DECLSPEC_IMPORT HMODULE (WINAPI *LoadLibraryW_t)(LPCWSTR lpFileName);
 LoadLibraryA_t LoadLibraryA_Original = nullptr;
 LoadLibraryW_t LoadLibraryW_Original = nullptr;
 
+extern HMODULE hModSelf;
+
 HMODULE
 WINAPI
 LoadLibraryA_Detour (LPCSTR lpFileName)
 {
   if (lpFileName == nullptr)
     return NULL;
+
+  if (strstr (lpFileName, "GameOverlayRenderer")) {
+    //dll_log.Log (L" *** Delaying Steam Overlay for 15 seconds!");
+    //Sleep (15000UL);
+  }
+  else {
+    if (dll_role == D3D9 && strstr (lpFileName, "d3d9.dll"))// (! stricmp (lpFileName, "d3d9.dll")))
+      return hModSelf;
+    if (dll_role == DXGI && strstr (lpFileName, "dxgi.dll"))//(! stricmp (lpFileName, "dxgi.dll")))
+      return hModSelf;
+    //dll_log.Log (L" $$$ Loading Library: %hs", lpFileName);
+  }
 
   HMODULE hMod = LoadLibraryA_Original (lpFileName);
 
@@ -1161,6 +1175,18 @@ LoadLibraryW_Detour (LPCWSTR lpFileName)
 {
   if (lpFileName == nullptr)
     return NULL;
+
+  if (wcsstr (lpFileName, L"GameOverlayRenderer")) {
+    //dll_log.Log (L" *** Delaying Steam Overlay for 15 seconds!");
+    //Sleep (15000UL);
+  }
+  else {
+    if (dll_role == D3D9 && wcsstr (lpFileName, L"d3d9.dll"))//(! wcsicmp (lpFileName, L"d3d9.dll")))
+      return hModSelf;
+    if (dll_role == DXGI && wcsstr (lpFileName, L"dxgi.dll"))//(! wcsicmp (lpFileName, L"dxgi.dll")))
+      return hModSelf;
+    //dll_log.Log (L" $$$ Loading Library: %s", lpFileName);
+  }
 
   HMODULE hMod = LoadLibraryW_Original (lpFileName);
 
@@ -1185,7 +1211,9 @@ BMF_CreateFuncHook ( LPCWSTR pwszFuncName,
                       pDetour,
                         ppOriginal );
 
-  if (status != MH_OK) {
+  // Ignore the Already Created Error; happens A LOT as multiple
+  //   Direct3D devices are created during runtime.
+  if (status != MH_OK && status != MH_ERROR_ALREADY_CREATED) {
     dll_log.Log ( L" [ MinHook ] Failed to Install Hook for '%s' "
                   L"[Address: %04Xh]!  (Status: \"%hs\")",
                     pwszFuncName,
@@ -1205,6 +1233,7 @@ BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
 #if 1
   HMODULE hMod = GetModuleHandle (pwszModule);
 
+#if 0
   if (hMod == NULL) {
     if (LoadLibraryW_Original != nullptr) {
       hMod = LoadLibraryW_Original (pwszModule);
@@ -1212,17 +1241,23 @@ BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
       hMod = LoadLibraryW (pwszModule);
     }
   }
+#endif
+
+  LPVOID    pFuncAddr = nullptr;
+  MH_STATUS status    = MH_OK;
 
   if (hMod == 0)
-    return MH_ERROR_MODULE_NOT_FOUND;
+    status = MH_ERROR_MODULE_NOT_FOUND;
 
-  LPVOID pFuncAddr =
-    GetProcAddress (hMod, pszProcName);
+  else {
+    pFuncAddr =
+      GetProcAddress (hMod, pszProcName);
 
-  MH_STATUS status =
-    MH_CreateHook ( pFuncAddr,
-                      pDetour,
-                        ppOriginal );
+    status =
+      MH_CreateHook ( pFuncAddr,
+                        pDetour,
+                          ppOriginal );
+  }
 #else
   MH_STATUS status =
     MH_CreateHookApi ( pwszModule,
@@ -1327,11 +1362,14 @@ BMF_Init_MinHook (void)
                           LoadLibraryA_Detour,
                             (LPVOID *)&LoadLibraryA_Original );
 
+  //BMF_EnableHook (LoadLibraryA_Original);
+
   BMF_CreateDLLHook ( L"kernel32.dll",
                         "LoadLibraryW",
                           LoadLibraryW_Detour,
                             (LPVOID *)&LoadLibraryW_Original );
 
+  //BMF_EnableHook (LoadLibraryW_Original);
   BMF_EnableHook (MH_ALL_HOOKS);
 
   return status;
@@ -1393,6 +1431,8 @@ BMF_ShutdownCore (const wchar_t* backend)
 {
   BMF_AutoClose_Log (budget_log);
   BMF_AutoClose_Log (  dll_log );
+
+  BMF_UnloadImports ();
 
   if (hPumpThread != 0) {
     dll_log.LogEx   (true, L" [OSD] Shutting down Pump Thread... ");
@@ -1567,7 +1607,7 @@ BMF_ShutdownCore (const wchar_t* backend)
   DeleteCriticalSection (&init_mutex);
   DeleteCriticalSection (&budget_mutex);
 
-/////  BMF_UnInit_MinHook ();
+  ////////BMF_UnInit_MinHook ();
 
   if (nvapi_init)
     bmf::NVAPI::UnloadLibrary ();
@@ -1633,8 +1673,6 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
   //  we should not draw the OSD when these events happen.
   if (/*FAILED (hr)*/ hr != S_OK)
     return hr;
-
-  BMF_DrawOSD ();
 
   static ULONGLONG last_osd_scale { 0ULL };
 
@@ -1794,8 +1832,11 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
       HIWORD (GetAsyncKeyState (config.osd.keys.toggle [1])) &&
       HIWORD (GetAsyncKeyState (config.osd.keys.toggle [2])))
   {
-    if (! toggle_osd)
+    if (! toggle_osd) {
       config.osd.show = (! config.osd.show);
+      if (config.osd.show)
+        BMF_InstallOSD ();
+    }
     toggle_osd = true;
   } else {
     toggle_osd = false;
@@ -1809,6 +1850,8 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
       sli_state = bmf::NVAPI::GetSLIState (device);
     }
   }
+
+  BMF_DrawOSD ();
 
   //BMF::SteamAPI::Pump ();
 

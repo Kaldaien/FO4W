@@ -342,6 +342,55 @@ BMF_DrawExternalOSD (std::string app_name, std::string text)
   return TRUE;
 }
 
+void
+BMF_InstallOSD (void)
+{
+return;
+  BMF_AutoCriticalSection auto_cs (&osd_cs);
+
+#ifndef _WIN64
+  HMODULE hModRTSS = GetModuleHandle (L"RTSSHooks.dll");
+#else
+  HMODULE hModRTSS = GetModuleHandle (L"RTSSHooks64.dll");
+#endif
+
+  if (hModRTSS != nullptr) {
+#if 0
+    typedef int (__cdecl *UninstallRTSSHook_t)(void);
+
+    UninstallRTSSHook_t UninstallRTSSHook = 
+      (UninstallRTSSHook_t)GetProcAddress (hModRTSS, "UninstallRTSSHook");
+
+    if (UninstallRTSSHook != nullptr) {
+      UninstallRTSSHook ();
+    }
+#endif
+
+    wchar_t wszRTSSHook [512] = { L'\0' };
+    GetModuleFileNameW (hModRTSS, wszRTSSHook, 511);
+
+    FreeLibrary (hModRTSS);
+    hModRTSS =
+      LoadLibrary      (wszRTSSHook);
+
+#if 0
+    typedef int (__cdecl *InstallRTSSHook_t)(void);
+
+    InstallRTSSHook_t InstallRTSSHook = 
+      (InstallRTSSHook_t)GetProcAddress (hModRTSS, "InstallRTSSHook");
+
+    if (InstallRTSSHook != nullptr) {
+      dll_log.LogEx (true, L" Installing RTSS Hook: ");
+        InstallRTSSHook ();
+      dll_log.LogEx (false, L"done!\n");
+      return;
+    }
+
+    dll_log.LogEx (false, L"No Such Function\n");
+#endif
+  }
+}
+
 BOOL
 BMF_DrawOSD (void)
 {
@@ -369,6 +418,8 @@ BMF_DrawOSD (void)
     ++connect_attempts;
 
     // Test for _equality_, because we only want to print this once!
+    if (connect_attempts == MAX_RTSS_ATTEMPTS-1)
+      BMF_InstallOSD ();
     if (connect_attempts == MAX_RTSS_ATTEMPTS) {
       dll_log.Log (L"[RTSS] Exhausted Connection Attempts... disabling OSD!");
       DwmEnableMMCSS (TRUE);
@@ -391,6 +442,8 @@ BMF_DrawOSD (void)
     BMF_SetOSDScale (config.osd.scale);
     BMF_SetOSDPos   (config.osd.pos_x, config.osd.pos_y);
     BMF_SetOSDColor (config.osd.red, config.osd.green, config.osd.blue);
+
+    BMF_InstallOSD ();
   }
 
   char* pszOSD = szOSD;
@@ -412,8 +465,8 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-#if 0
-    OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.0.4   %ws\n\n",
+#if 1
+    OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.1.0   %ws\n\n",
 #else
     OSD_PRINTF "Fallout 4 \"Works\" v 0.2.1   %ws\n\n",
 #endif

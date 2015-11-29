@@ -48,8 +48,7 @@ BMF_EstablishDllRole (HMODULE hModule)
   return true;
 }
 
-
-__declspec(dllexport) bool attached = false;
+static bool attached = false;
 
 bool
 BMF_Attach (DLL_ROLE role)
@@ -137,7 +136,7 @@ APIENTRY DllMain ( HMODULE hModule,
       {
         BMF_Detach (dll_role);
 
-        //  extern void BMF_ShutdownCOM (void);
+        //extern void BMF_ShutdownCOM (void);
         //BMF_ShutdownCOM ();
       }
     } break;

@@ -562,6 +562,10 @@ extern "C" {
       int interval = config.render.framerate.present_interval;
       int flags    = Flags;
 
+      // Application preference
+      if (interval == -1)
+        interval = SyncInterval;
+
       if (bFlipMode) {
         flags = Flags | DXGI_PRESENT_RESTART;
 
@@ -735,7 +739,8 @@ extern "C" {
       else
         pDesc->SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-      pDesc->BufferCount = config.render.framerate.buffer_count;
+      if (config.render.framerate.buffer_count != -1)
+        pDesc->BufferCount = config.render.framerate.buffer_count;
 
       // We cannot switch modes on a waitable swapchain
       if (bFlipMode && bWait) {

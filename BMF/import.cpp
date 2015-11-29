@@ -18,6 +18,8 @@
 #include "import.h"
 #include "log.h"
 
+#include <comdef.h>
+
 const std::wstring BMF_IMPORT_EARLY = L"Early";
 const std::wstring BMF_IMPORT_LATE  = L"Late";
 const std::wstring BMF_IMPORT_LAZY  = L"Lazy";
@@ -58,8 +60,11 @@ BMF_LoadEarlyImports64 (void)
               dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
+              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
               imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                             err.WCode (), err.ErrorMessage () );
             }
           }
         }
@@ -99,8 +104,11 @@ BMF_LoadLateImports64 (void)
               dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
+              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
               imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                             err.WCode (), err.ErrorMessage () );
             }
           }
         }
@@ -140,8 +148,11 @@ BMF_LoadLazyImports64 (void)
               dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
+              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
               imports [i].hLibrary = (HMODULE)-3;
-              dll_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                             err.WCode (), err.ErrorMessage () );
             }
           }
         }
@@ -181,8 +192,11 @@ BMF_LoadEarlyImports32 (void)
               dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
+              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
               imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                             err.WCode (), err.ErrorMessage () );
             }
           }
         }
@@ -222,8 +236,11 @@ BMF_LoadLateImports32 (void)
               dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
+              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
               imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                             err.WCode (), err.ErrorMessage () );
             }
           }
         }
@@ -263,8 +280,11 @@ BMF_LoadLazyImports32 (void)
               dll_log.LogEx (false, L"success!\n");
               ++success;
             } else  {
+              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
               imports [i].hLibrary = (HMODULE)-3;
-              dll_log.LogEx (false, L"failure!\n");
+              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                             err.WCode (), err.ErrorMessage () );
             }
           }
         }
@@ -274,4 +294,25 @@ BMF_LoadLazyImports32 (void)
 
   if (success > 0)
     dll_log.LogEx (false, L"\n");
+}
+
+void
+BMF_UnloadImports (void)
+{
+  // Unload in reverse order, because that's safer :)
+  for (int i = BMF_MAX_IMPORTS - 1; i >= 0; i--) {
+    if (imports [i].hLibrary > 0) {
+      dll_log.LogEx ( true,
+                        L"Unloading Custom Import %s... ",
+                          imports [i].filename->get_value_str ().c_str () );
+      if (FreeLibrary (imports [i].hLibrary)) {
+        dll_log.LogEx (false, L"success!\n");
+      } else {
+        _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+
+        dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+          err.WCode (), err.ErrorMessage () );
+      }
+    }
+  }
 }

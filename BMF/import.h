@@ -51,4 +51,6 @@ void BMF_LoadEarlyImports32 (void);
 void BMF_LoadLateImports32  (void);
 void BMF_LoadLazyImports32  (void);
 
+void BMF_UnloadImports (void);
+
 #endif /* __BMF__IMPORT_H__ */

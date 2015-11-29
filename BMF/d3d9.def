@@ -8,8 +8,8 @@ EXPORTS
   D3DPERF_SetMarker        = D3DPERF_SetMarker        @5
   D3DPERF_SetOptions       = D3DPERF_SetOptions       @6
   D3DPERF_SetRegion        = D3DPERF_SetRegion        @7
-  Direct3DCreate9          = Direct3DCreate9          @8
-  Direct3DCreate9Ex        = Direct3DCreate9Ex        @9
+  Direct3DCreate9          = Direct3DCreate9          @30
+  Direct3DCreate9Ex        = Direct3DCreate9Ex        @31
 
   D3D9SetSamplerState_Override           = D3D9SetSamplerState_Override           @500
   D3D9SetVertexShaderConstantF_Override  = D3D9SetVertexShaderConstantF_Override  @501
@@ -41,19 +41,20 @@ EXPORTS
 ;LIBRARY "OpenGL32"
 
 EXPORTS
-glAccum                    = glAccum                    @19
-glAlphaFunc                = glAlphaFunc                @20
-glAreTexturesResident      = glAreTexturesResident      @21
-glArrayElement             = glArrayElement             @22
-glBegin                    = glBegin                    @23
-glBindTexture              = glBindTexture              @24
-glBitmap                   = glBitmap                   @25
-glBlendFunc                = glBlendFunc                @26
-glCallList                 = glCallList                 @27
-glCallLists                = glCallLists                @28
-glClear                    = glClear                    @29
-glClearAccum               = glClearAccum               @30
-glClearColor               = glClearColor               @31
+glAccum                    = glAccum                    @8
+glAlphaFunc                = glAlphaFunc                @9
+glAreTexturesResident      = glAreTexturesResident      @19
+glArrayElement             = glArrayElement             @20
+glBegin                    = glBegin                    @21
+glBindTexture              = glBindTexture              @22
+glBitmap                   = glBitmap                   @23
+glBlendFunc                = glBlendFunc                @24
+glCallList                 = glCallList                 @25
+glCallLists                = glCallLists                @26
+glClear                    = glClear                    @27
+glClearAccum               = glClearAccum               @28
+glClearColor               = glClearColor               @29
+; Discontinuity is to match D3D9.dll ordinals
 glClearDepth               = glClearDepth               @32
 glClearIndex               = glClearIndex               @33
 glClearStencil             = glClearStencil             @34
@@ -419,6 +420,13 @@ BMF_SetPresentParamsD3D9 = BMF_SetPresentParamsD3D9 @403
 BMF_NvAPI_IsInit             = BMF_NvAPI_IsInit             @404
 BMF_NvAPI_SetFramerateLimit  = BMF_NvAPI_SetFramerateLimit  @405
 BMF_NvAPI_SetAppFriendlyName = BMF_NvAPI_SetAppFriendlyName @406
+
+
+BMF_CreateFuncHook = BMF_CreateFuncHook @450
+BMF_CreateDLLHook  = BMF_CreateDLLHook  @451
+BMF_EnableHook     = BMF_EnableHook     @452
+BMF_DisableHook    = BMF_DisableHook    @453
+BMF_RemoveHook     = BMF_RemoveHook     @454
 
 
 ;
