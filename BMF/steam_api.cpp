@@ -756,9 +756,15 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
       }
     }
 
-    steam_log.LogEx (true, L" [!] SteamAPI_InitSafe ()...");
+#if 0
+    steam_log.LogEx (true, L" [!] SteamAPI_InitSafe ()... ");
 
     STEAMAPI_CALL1 (ret, InitSafe, ());
+#else
+    steam_log.LogEx (true, L" [!] SteamAPI_Init ()... ");
+
+    STEAMAPI_CALL1 (ret, Init, ());
+#endif
 
     steam_log.LogEx (false, L"%s! (Status: %lu) [%d-bit]\n\n",
       ret ? L"done" : L"failed",

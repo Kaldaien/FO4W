@@ -1139,11 +1139,15 @@ extern "C" {
             desc.DedicatedVideoMemory > match->DedicatedVideoMemory) {
 // This creates problems in 32-bit environments...
 #ifdef _WIN64
-            dll_log.Log (
-              L"   # SLI Detected (Corrected Memory Total: %llu MiB -- "
-              L"Original: %llu MiB)",
-              match->DedicatedVideoMemory >> 20ULL,
-              desc.DedicatedVideoMemory   >> 20ULL);
+            if (bmf::NVAPI::app_name != L"Fallout4.exe") {
+              dll_log.Log (
+                L"   # SLI Detected (Corrected Memory Total: %llu MiB -- "
+                L"Original: %llu MiB)",
+                match->DedicatedVideoMemory >> 20ULL,
+                desc.DedicatedVideoMemory   >> 20ULL);
+            } else {
+              match->DedicatedVideoMemory = desc.DedicatedVideoMemory;
+            }
 #endif
           }
         }

@@ -465,10 +465,10 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-#if 1
+#if 0
     OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.1.0   %ws\n\n",
 #else
-    OSD_PRINTF "Fallout 4 \"Works\" v 0.2.1   %ws\n\n",
+    OSD_PRINTF "Fallout 4 \"Works\" v 0.2.2   %ws\n\n",
 #endif
       time
     OSD_END
