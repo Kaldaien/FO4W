@@ -1152,9 +1152,9 @@ LoadLibraryA_Detour (LPCSTR lpFileName)
     //Sleep (15000UL);
   }
   else {
-    if (dll_role == D3D9 && strstr (lpFileName, "d3d9.dll"))// (! stricmp (lpFileName, "d3d9.dll")))
+    if (dll_role == D3D9 && (! stricmp (lpFileName, "d3d9.dll")))
       return hModSelf;
-    if (dll_role == DXGI && strstr (lpFileName, "dxgi.dll"))//(! stricmp (lpFileName, "dxgi.dll")))
+    if (dll_role == DXGI && (! stricmp (lpFileName, "dxgi.dll")))
       return hModSelf;
     //dll_log.Log (L" $$$ Loading Library: %hs", lpFileName);
   }
@@ -1181,9 +1181,9 @@ LoadLibraryW_Detour (LPCWSTR lpFileName)
     //Sleep (15000UL);
   }
   else {
-    if (dll_role == D3D9 && wcsstr (lpFileName, L"d3d9.dll"))//(! wcsicmp (lpFileName, L"d3d9.dll")))
+    if (dll_role == D3D9 && (! wcsicmp (lpFileName, L"d3d9.dll")))
       return hModSelf;
-    if (dll_role == DXGI && wcsstr (lpFileName, L"dxgi.dll"))//(! wcsicmp (lpFileName, L"dxgi.dll")))
+    if (dll_role == DXGI && (! wcsicmp (lpFileName, L"dxgi.dll")))
       return hModSelf;
     //dll_log.Log (L" $$$ Loading Library: %s", lpFileName);
   }
@@ -1275,6 +1275,8 @@ BMF_CreateDLLHook ( LPCWSTR pwszModule, LPCSTR  pszProcName,
   }
   else if (ppFuncAddr != nullptr)
     *ppFuncAddr = pFuncAddr;
+  else
+    BMF_EnableHook (pFuncAddr);
 
   return status;
 }
@@ -1354,6 +1356,7 @@ BMF_Init_MinHook (void)
                     MH_StatusToString (status) );
   }
 
+#if 0
   //
   // Hook LoadLibrary so that we can watch for things like steam_api*.dll
   //
@@ -1371,6 +1374,7 @@ BMF_Init_MinHook (void)
 
   //BMF_EnableHook (LoadLibraryW_Original);
   BMF_EnableHook (MH_ALL_HOOKS);
+#endif
 
   return status;
 }
@@ -1430,7 +1434,7 @@ bool
 BMF_ShutdownCore (const wchar_t* backend)
 {
   BMF_AutoClose_Log (budget_log);
-  BMF_AutoClose_Log (  dll_log );
+  BMF_AutoClose_Log (   dll_log );
 
   BMF_UnloadImports ();
 

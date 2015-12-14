@@ -19,7 +19,9 @@
 
 #include "RTSSSharedMemory.h"
 
-#include <shlwapi.h>
+#pragma comment (lib, "Shlwapi.lib")
+#include <Shlwapi.h>
+
 #include <float.h>
 #include <io.h>
 #include <tchar.h>
@@ -345,7 +347,7 @@ BMF_DrawExternalOSD (std::string app_name, std::string text)
 void
 BMF_InstallOSD (void)
 {
-return;
+#if 0
   BMF_AutoCriticalSection auto_cs (&osd_cs);
 
 #ifndef _WIN64
@@ -389,6 +391,7 @@ return;
     dll_log.LogEx (false, L"No Such Function\n");
 #endif
   }
+#endif
 }
 
 BOOL
@@ -465,13 +468,34 @@ BMF_DrawOSD (void)
     wchar_t time [64];
     GetTimeFormat (config.time.format,0L,&st,NULL,time,64);
 
-#if 0
-    OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.1.0   %ws\n\n",
-#else
-    OSD_PRINTF "Fallout 4 \"Works\" v 0.2.2   %ws\n\n",
-#endif
-      time
-    OSD_END
+    static HMODULE hModGame = GetModuleHandle (nullptr);
+    static wchar_t wszGameName [MAX_PATH] = { L'\0' };
+
+    static bool isTalesOfZestiria = false;
+    static bool isFallout4        = false;
+
+    if (wszGameName [0] == L'\0') {
+      GetModuleFileName (hModGame, wszGameName, MAX_PATH);
+      if (StrStrIW (wszGameName, L"Tales of Zestiria.exe"))
+        isTalesOfZestiria = true;
+      else if (StrStrIW (wszGameName, L"Fallout4.exe"))
+        isFallout4 = true;
+    }
+    
+    if (isTalesOfZestiria) {
+      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.2.0   %ws\n\n",
+                 time
+      OSD_END
+    }
+    else if (isFallout4) {
+      OSD_PRINTF "Fallout 4 \"Works\" v 0.2.2   %ws\n\n",
+                 time
+      OSD_END
+    } else {
+      OSD_PRINTF "Special K v 0.17   %ws\n\n",
+                 time
+      OSD_END
+    }
   }
 
   if (config.fps.show)
@@ -496,21 +520,37 @@ BMF_DrawOSD (void)
           //
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
-            static float last_ms = pApp->dwFrameTime / 1000.0f;
+            static LARGE_INTEGER last_frame = { 0 };
 
-            // Logic to eliminate frametime hiccups from hacking Kernel32.dll
-            if (pApp->dwFrameTime / 1000.0f < 1000.0f)
-              last_ms = pApp->dwFrameTime / 1000.0f;
+            LARGE_INTEGER freq;
+            LARGE_INTEGER now;
+
+            QueryPerformanceFrequency (&freq);
+            QueryPerformanceCounter   (&now);
+
+            static double last_ms =
+              1000.0 * ((double)(now.QuadPart - last_frame.QuadPart) /
+                        (double)freq.QuadPart);
 
             std::wstring api_name = BMF_GetAPINameFromOSDFlags (pApp->dwFlags);
             OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms",
               api_name.c_str (),
                 // Cast to FP to avoid integer division by zero.
                 1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
-                  last_ms
+                last_ms
                 //1000000.0f / pApp->dwFrameTime,
                   //pApp->dwFrameTime / 1000.0f
             OSD_END
+
+            double dt = (double)((now.QuadPart - last_frame.QuadPart) / (double)freq.QuadPart);
+
+            static LARGE_INTEGER update = { 0 };
+
+            if ((double)(now.QuadPart - update.QuadPart) / (double)freq.QuadPart > 0.066666) {
+              last_ms = 1000.0 * dt;
+              QueryPerformanceCounter (&update);
+            }
+            last_frame.QuadPart = now.QuadPart;
 
 #if 0
             extern IDXGISwapChain2* g_pSwapChain2;
