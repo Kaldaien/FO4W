@@ -24,7 +24,25 @@ WORD
 BMF_Timestamp (wchar_t* const out)
 {
   SYSTEMTIME stLogTime;
-  GetLocalTime (&stLogTime);
+
+#if 0
+  // Check for Windows 8 / Server 2012
+  static bool __hasSystemTimePrecise =
+    (LOBYTE (LOWORD (GetVersion ())) == 6  &&
+     HIBYTE (LOWORD (GetVersion ())) >= 2) ||
+     LOBYTE (LOWORD (GetVersion () > 6));
+
+  // More accurate timestamp is available on Windows 6.2+
+  if (__hasSystemTimePrecise) {
+    FILETIME   ftLogTime;
+    GetSystemTimePreciseAsFileTime (&ftLogTime);
+    FileTimeToSystemTime           (&ftLogTime, &stLogTime);
+  } else {
+#endif
+    GetSystemTime (&stLogTime);
+#if 0
+  }
+#endif
 
   wchar_t date [64] = { L'\0' };
   wchar_t time [64] = { L'\0' };

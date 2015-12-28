@@ -483,7 +483,7 @@ BMF_DrawOSD (void)
     }
     
     if (isTalesOfZestiria) {
-      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.2.0   %ws\n\n",
+      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.2.6   %ws\n\n",
                  time
       OSD_END
     }

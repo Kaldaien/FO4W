@@ -936,7 +936,8 @@ extern "C" {
                             L"Flip Discard" : L"<Unknown>");
     }
 
-    HRESULT res =
+    HRESULT res;
+    DXGI_CALL(res, 
       D3D11CreateDeviceAndSwapChain_Import (pAdapter,
                                             DriverType,
                                             Software,
@@ -948,12 +949,13 @@ extern "C" {
                                             ppSwapChain,
                                             ppDevice,
                                             pFeatureLevel,
-                                            ppImmediateContext);
+                                            ppImmediateContext));
 
     if (res == S_OK && (ppDevice != NULL))
     {
       dll_log.Log (L" >> Device = 0x%08Xh", *ppDevice);
     }
+    return S_OK;
 
     return res;
   }
@@ -1081,7 +1083,7 @@ extern "C" {
     int iver = BMF_GetDXGIAdapterInterfaceVer (*ppAdapter);
 
     // Only do this for NVIDIA SLI GPUs on Windows 10 (DXGI 1.4)
-    if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0 && iver >= 3) {
+    if (false) {//nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0 && iver >= 3) {
       if (! GetDesc_Original) {
         DXGI_VIRTUAL_OVERRIDE (ppAdapter, 8, "(*ppAdapter)->GetDesc",
           GetDesc_Override, GetDesc_Original, GetDesc_t);
@@ -1131,7 +1133,7 @@ extern "C" {
       }
       else {
         // Only do this for NVIDIA SLI GPUs on Windows 10 (DXGI 1.4)
-        if (nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0 && iver >= 3) {
+        if (false) { //nvapi_init && bmf::NVAPI::CountSLIGPUs () > 0 && iver >= 3) {
           DXGI_ADAPTER_DESC* match =
             bmf::NVAPI::FindGPUByDXGIName (desc.Description);
 
@@ -1395,6 +1397,8 @@ extern "C" {
 
 
 LPVOID pfnD3D11CreateDeviceAndSwapChain = nullptr;
+
+#if 0
 LPVOID pfnQueryPerformanceCounter       = nullptr;
 LPVOID pfnSleep                         = nullptr;
 
@@ -1479,6 +1483,7 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
     return ret;
   }
 }
+#endif
 
 
 
@@ -2161,6 +2166,7 @@ dxgi_init_callback (void)
 
   BMF_EnableHook (pfnD3D11CreateDeviceAndSwapChain);
 
+#if 0
   BMF_CreateDLLHook ( L"kernel32.dll", "QueryPerformanceCounter",
                       QueryPerformanceCounter_Detour, 
            (LPVOID *)&QueryPerformanceCounter_Original,
@@ -2173,6 +2179,7 @@ dxgi_init_callback (void)
 
   BMF_EnableHook (pfnQueryPerformanceCounter);
   BMF_EnableHook (pfnSleep);
+#endif
 
   BMF_InputHooker* pHooker = BMF_InputHooker::getInstance ();
   pHooker->Start ();
@@ -2204,8 +2211,10 @@ BMF::DXGI::Shutdown (void)
   BMF_InputHooker* pHooker = BMF_InputHooker::getInstance ();
   pHooker->End ();
 
+#if 0
   BMF_RemoveHook (pfnSleep);
   BMF_RemoveHook (pfnQueryPerformanceCounter);
+#endif
   BMF_RemoveHook (pfnD3D11CreateDeviceAndSwapChain);
 
   return BMF_ShutdownCore (L"dxgi");

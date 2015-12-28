@@ -589,6 +589,10 @@ BMF_NvAPI_SetFramerateLimit (uint32_t limit)
 
   limit_mask |= (limit & PS_FRAMERATE_LIMITER_FPSMASK);
 
+  // We need a way to forcefully disable this
+  if (limit == 255)
+    limit_mask = 0;
+
   // Default to application preference
   uint32_t target_prerender = config.render.framerate.pre_render_limit;
 
@@ -619,6 +623,23 @@ BMF_NvAPI_SetFramerateLimit (uint32_t limit)
 
   NVAPI_CALL (DRS_SaveSettings   (hSession));
   NVAPI_CALL (DRS_DestroySession (hSession));
+
+  if (! already_set) {
+#ifdef WIN32
+    HMODULE hLib = LoadLibrary (L"nvapi.dll");
+#else
+    HMODULE hLib = LoadLibrary (L"nvapi64.dll");
+#endif
+#define __NvAPI_RestartDisplayDriver                      0xB4B26B65
+    typedef void* (*NvAPI_QueryInterface_t)(unsigned int offset);
+    typedef NvAPI_Status(__cdecl *NvAPI_RestartDisplayDriver_t)(void);
+    NvAPI_QueryInterface_t       NvAPI_QueryInterface       =
+      (NvAPI_QueryInterface_t)GetProcAddress (hLib, "nvapi_QueryInterface");
+    NvAPI_RestartDisplayDriver_t NvAPI_RestartDisplayDriver =
+      (NvAPI_RestartDisplayDriver_t)NvAPI_QueryInterface (__NvAPI_RestartDisplayDriver);
+
+    NvAPI_RestartDisplayDriver ();
+  }
 
   return already_set;
 }

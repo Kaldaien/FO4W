@@ -177,6 +177,9 @@ struct bmf_config_t
       bool    flip_discard     = false;
       float   fudge_factor     = 3.333333f;
     } framerate;
+    struct {
+      bool    force_d3d9ex     = false;
+    } d3d9;
   } render;
 
   struct {

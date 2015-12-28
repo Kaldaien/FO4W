@@ -143,6 +143,9 @@ struct {
     bmf::ParameterBool*  flip_discard;
     bmf::ParameterFloat* fudge_factor;
   } framerate;
+  struct {
+    bmf::ParameterBool*  force_d3d9ex;
+  } d3d9;
 } render;
 
 
@@ -344,6 +347,15 @@ BMF_LoadConfig (std::wstring name) {
 
 
   if (dll_role == D3D9) {
+    render.d3d9.force_d3d9ex =
+      static_cast <bmf::ParameterBool *>
+        (g_ParameterFactory.create_parameter <bool> (
+          L"Force D3D9Ex Context")
+        );
+    render.d3d9.force_d3d9ex->register_to_ini (
+      dll_ini,
+        L"Render.D3D9",
+          L"ForceD3D9Ex" );
     render.framerate.target_fps =
       static_cast <bmf::ParameterInt *>
         (g_ParameterFactory.create_parameter <int> (
@@ -855,6 +867,12 @@ BMF_LoadConfig (std::wstring name) {
         config.render.framerate.fudge_factor =
           render.framerate.fudge_factor->get_value ();
     }
+
+    if (dll_role == D3D9) {
+      if (render.d3d9.force_d3d9ex->load ())
+        config.render.d3d9.force_d3d9ex =
+          render.d3d9.force_d3d9ex->get_value ();
+    }
   }
 
   if (steam.achievements.nosound->load ())
@@ -949,6 +967,10 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
       render.framerate.flip_discard->set_value   (config.render.framerate.flip_discard);
       render.framerate.fudge_factor->set_value   (config.render.framerate.fudge_factor);
     }
+
+    if (dll_role == D3D9) {
+      render.d3d9.force_d3d9ex->set_value (config.render.d3d9.force_d3d9ex);
+    }
   }
 
   steam.achievements.sound_file->set_value    (config.steam.achievement_sound);
@@ -1015,6 +1037,10 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
       render.framerate.max_delta_time->store ();
       render.framerate.flip_discard->store   ();
       render.framerate.fudge_factor->store   ();
+    }
+
+    if (dll_role == D3D9) {
+      render.d3d9.force_d3d9ex->store();
     }
   }
 
