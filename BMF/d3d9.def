@@ -26,8 +26,8 @@ EXPORTS
   D3D9SetViewport_Override               = D3D9SetViewport_Override               @512
   D3D9DrawIndexedPrimitive_Override      = D3D9DrawIndexedPrimitive_Override      @513
   D3D9EndScene_Override                  = D3D9EndScene_Override                  @514
-  D3D9SetTexture_Override                = D3D9SetTexture_Override                @515
-  D3D9UpdateSurface_Override             = D3D9UpdateSurface_Override             @516
+  ;D3D9SetTexture_Override                = D3D9SetTexture_Override                @515
+  ;D3D9UpdateSurface_Override             = D3D9UpdateSurface_Override             @516
 
 ;LIBRARY "dxgi"
 
