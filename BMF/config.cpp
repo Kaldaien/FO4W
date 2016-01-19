@@ -24,7 +24,7 @@
 #include "log.h"
 #include "steam_api.h"
 
-std::wstring BMF_VER_STR = L"0.17";
+std::wstring BMF_VER_STR = L"0.18";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -145,6 +145,7 @@ struct {
   } framerate;
   struct {
     bmf::ParameterBool*  force_d3d9ex;
+    bmf::ParameterInt*   hook_type;
   } d3d9;
 } render;
 
@@ -356,6 +357,15 @@ BMF_LoadConfig (std::wstring name) {
       dll_ini,
         L"Render.D3D9",
           L"ForceD3D9Ex" );
+    render.d3d9.hook_type =
+      static_cast <bmf::ParameterInt *>
+        (g_ParameterFactory.create_parameter <int> (
+          L"Hook Technique")
+        );
+    render.d3d9.hook_type->register_to_ini (
+      dll_ini,
+        L"Render.D3D9",
+          L"HookType" );
     render.framerate.target_fps =
       static_cast <bmf::ParameterInt *>
         (g_ParameterFactory.create_parameter <int> (
@@ -872,6 +882,9 @@ BMF_LoadConfig (std::wstring name) {
       if (render.d3d9.force_d3d9ex->load ())
         config.render.d3d9.force_d3d9ex =
           render.d3d9.force_d3d9ex->get_value ();
+      if (render.d3d9.hook_type->load ())
+        config.render.d3d9.hook_type =
+          render.d3d9.hook_type->get_value ();
     }
   }
 
@@ -970,6 +983,7 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
 
     if (dll_role == D3D9) {
       render.d3d9.force_d3d9ex->set_value (config.render.d3d9.force_d3d9ex);
+      render.d3d9.hook_type->set_value    (config.render.d3d9.hook_type);
     }
   }
 
@@ -1040,7 +1054,8 @@ BMF_SaveConfig (std::wstring name, bool close_config) {
     }
 
     if (dll_role == D3D9) {
-      render.d3d9.force_d3d9ex->store();
+      render.d3d9.force_d3d9ex->store ();
+      render.d3d9.hook_type->store    ();
     }
   }
 

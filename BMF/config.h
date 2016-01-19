@@ -179,6 +179,7 @@ struct bmf_config_t
     } framerate;
     struct {
       bool    force_d3d9ex     = false;
+      int     hook_type        = 0;
     } d3d9;
   } render;
 

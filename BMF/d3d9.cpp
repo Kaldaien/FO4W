@@ -88,12 +88,18 @@ typedef HRESULT (STDMETHODCALLTYPE *D3D9Reset_t)(
            IDirect3DDevice9      *This,
            D3DPRESENT_PARAMETERS *pPresentationParameters);
 
+typedef HRESULT (STDMETHODCALLTYPE *D3D9ResetEx_t)(
+           IDirect3DDevice9Ex    *This,
+           D3DPRESENT_PARAMETERS *pPresentationParameters,
+           D3DDISPLAYMODEEX      *pFullscreenDisplayMode );
+
 D3D9PresentDevice_t    D3D9Present_Original        = nullptr;
 D3D9PresentDeviceEx_t  D3D9PresentEx_Original      = nullptr;
 D3D9PresentSwapChain_t D3D9PresentSwap_Original    = nullptr;
 D3D9CreateDevice_t     D3D9CreateDevice_Original   = nullptr;
 D3D9CreateDeviceEx_t   D3D9CreateDeviceEx_Original = nullptr;
 D3D9Reset_t            D3D9Reset_Original          = nullptr;
+D3D9ResetEx_t          D3D9ResetEx_Original        = nullptr;
 
 Direct3DCreate9PROC   Direct3DCreate9_Import   = nullptr;
 Direct3DCreate9ExPROC Direct3DCreate9Ex_Import = nullptr;
@@ -161,6 +167,80 @@ extern "C" const wchar_t* BMF_DescribeVirtualProtectFlags (DWORD dwProtect);
   dll_log.LogEx (true, L"  Calling original function: ");            \
   (_Ret) = (_Call);                                                  \
   dll_log.LogEx (false, L"(ret=%s)\n\n", BMF_DescribeHRESULT (_Ret));\
+}
+
+void
+BMF_D3D9_FixUpBehaviorFlags (DWORD& BehaviorFlags)
+{
+  if (BehaviorFlags & D3DCREATE_SOFTWARE_VERTEXPROCESSING) {
+    dll_log.Log (L" D3D9 Fixup: "
+                 L"Software Vertex Processing Replaced with Mixed-Mode.");
+    BehaviorFlags &= ~D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+    BehaviorFlags |=  D3DCREATE_MIXED_VERTEXPROCESSING;
+  }
+}
+
+void
+BMF_D3D9_SetFPSTarget ( D3DPRESENT_PARAMETERS* pPresentationParameters,
+                        D3DDISPLAYMODEEX*      pFullscreenMode = nullptr )
+{
+  int TargetFPS = config.render.framerate.target_fps;
+
+  // First consider D3D9Ex FullScreen Mode
+  int Refresh   = pFullscreenMode != nullptr ? 
+                    pFullscreenMode->RefreshRate :
+                    0;
+
+  // Then, use the presentation parameters
+  if (Refresh == 0) {
+    Refresh = pPresentationParameters != nullptr ? 
+                pPresentationParameters->FullScreen_RefreshRateInHz :
+                0;
+  }
+
+  if (TargetFPS != 0 && Refresh != 0) {
+    if (Refresh >= TargetFPS) {
+      if (! (Refresh % TargetFPS)) {
+        dll_log.Log ( L"  >> Targeting %li FPS - using 1:%li VSYNC;"
+                      L" (refresh = %li Hz)\n",
+                        TargetFPS,
+                          Refresh / TargetFPS,
+                            Refresh );
+
+        pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
+        pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
+
+      } else {
+        dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
+                      L" (refresh = %li Hz)\n",
+                        TargetFPS,
+                          Refresh );
+      }
+    } else {
+      dll_log.Log ( L"  >> Cannot target %li FPS - higher than refresh rate;"
+                    L" (refresh = %li Hz)\n",
+                      TargetFPS,
+                        Refresh );
+    }
+  }
+
+  if (pPresentationParameters != nullptr) {
+    if (config.render.framerate.buffer_count != -1) {
+      dll_log.Log ( L"  >> Backbuffer Override: (Requested=%lu, Override=%lu)",
+                      pPresentationParameters->BackBufferCount,
+                        config.render.framerate.buffer_count );
+      pPresentationParameters->BackBufferCount =
+        config.render.framerate.buffer_count;
+    }
+
+    if (config.render.framerate.present_interval != -1) {
+      dll_log.Log ( L"  >> VSYNC Override: (Requested=1:%lu, Override=1:%lu)",
+                      pPresentationParameters->PresentationInterval,
+                        config.render.framerate.present_interval );
+      pPresentationParameters->PresentationInterval =
+        config.render.framerate.present_interval;
+    }
+  }
 }
 
 COM_DECLSPEC_NOTHROW
@@ -506,82 +586,93 @@ D3D9EndScene_Override (IDirect3DDevice9* This)
   return hr;
 }
 
-  COM_DECLSPEC_NOTHROW
-  __declspec (noinline)
-  HRESULT
-  WINAPI D3D9Reset ( IDirect3DDevice9      *This,
-                     D3DPRESENT_PARAMETERS *pPresentationParameters )
-  {
-    dll_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
-                  L"[Calling Thread: 0x%04x]",
-                  L"IDirect3DDevice9::Reset", This, pPresentationParameters,
-                                  GetCurrentThreadId ()
-    );
+COM_DECLSPEC_NOTHROW
+__declspec (noinline)
+HRESULT
+STDMETHODCALLTYPE
+D3D9Reset ( IDirect3DDevice9      *This,
+            D3DPRESENT_PARAMETERS *pPresentationParameters )
+{
+  dll_log.Log ( L"[!] %s (%08Xh, %08Xh) - "
+                L"[Calling Thread: 0x%04x]",
+                L"IDirect3DDevice9::Reset", This, pPresentationParameters,
+                                GetCurrentThreadId ()
+  );
 
-    int TargetFPS = config.render.framerate.target_fps;
-    int Refresh   = pPresentationParameters != nullptr ? 
-                      pPresentationParameters->FullScreen_RefreshRateInHz :
-                      0;
+  BMF_D3D9_SetFPSTarget    (      pPresentationParameters);
+  BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
 
-    if (TargetFPS != 0 && Refresh != 0) {
-      if (Refresh >= TargetFPS) {
-        if (! (Refresh % TargetFPS)) {
-          dll_log.Log ( L"  >> Targeting %li FPS - using 1:%li VSYNC;"
-                        L" (refresh = %li Hz)\n",
-                          TargetFPS,
-                            Refresh / TargetFPS,
-                              Refresh );
+  HRESULT hr;
 
-          pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
-          pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
+  D3D9_CALL (hr, D3D9Reset_Original (This,
+                                      pPresentationParameters));
 
-        } else {
-          dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
-                        L" (refresh = %li Hz)\n",
-                          TargetFPS,
-                            Refresh );
-        }
-      } else {
-        dll_log.Log ( L"  >> Cannot target %li FPS - higher than refresh rate;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh );
-      }
-    }
-
-    if (pPresentationParameters != nullptr) {
-      // So we can wait on this if need be
-      pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
-
-      if (config.render.framerate.buffer_count != -1) {
-        dll_log.Log ( L"  >> Backbuffer Override: (Requested=%lu, Override=%lu)",
-                        pPresentationParameters->BackBufferCount,
-                          config.render.framerate.buffer_count );
-      }
-
-      if (config.render.framerate.present_interval != -1) {
-        dll_log.Log ( L"  >> VSYNC Override: (Requested=1:%lu, Override=1:%lu)",
-                        pPresentationParameters->PresentationInterval,
-                          config.render.framerate.present_interval );
-      }
-    }
-
-    BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
-
-    HRESULT hr;
-
-    D3D9_CALL (hr, D3D9Reset_Original (This,
-                                       pPresentationParameters));
-
-    if (SUCCEEDED (hr)) {
+  if (SUCCEEDED (hr)) {
 #ifdef RESET_ENDS_FRAME
-      if (! config.osd.pump)
-        BMF_EndBufferSwap (hr);
+    if (! config.osd.pump)
+      BMF_EndBufferSwap (hr);
 #endif
-    }
-
-    return hr;
   }
+
+  return hr;
+}
+
+COM_DECLSPEC_NOTHROW
+__declspec (noinline)
+HRESULT
+STDMETHODCALLTYPE
+D3D9ResetEx ( IDirect3DDevice9Ex    *This,
+              D3DPRESENT_PARAMETERS *pPresentationParameters,
+              D3DDISPLAYMODEEX      *pFullscreenDisplayMode )
+{
+  dll_log.Log ( L"[!] %s (%08Xh, %08Xh, %08Xh) - "
+                L"[Calling Thread: 0x%04x]",
+                  L"IDirect3DDevice9Ex::ResetEx",
+                    This, pPresentationParameters, pFullscreenDisplayMode,
+                      GetCurrentThreadId () );
+
+  BMF_D3D9_SetFPSTarget    (      pPresentationParameters, pFullscreenDisplayMode);
+  BMF_SetPresentParamsD3D9 (This, pPresentationParameters);
+
+  HRESULT hr;
+
+  D3D9_CALL (hr, D3D9ResetEx_Original ( This,
+                                          pPresentationParameters,
+                                            pFullscreenDisplayMode ));
+
+  if (SUCCEEDED (hr)) {
+#ifdef RESET_ENDS_FRAME
+    if (! config.osd.pump)
+      BMF_EndBufferSwap (hr);
+#endif
+  }
+
+  return hr;
+}
+
+typedef HRESULT (STDMETHODCALLTYPE *DrawPrimitive_t)
+  ( IDirect3DDevice9* This,
+    D3DPRIMITIVETYPE  PrimitiveType,
+    UINT              StartVertex,
+    UINT              PrimitiveCount );
+
+DrawPrimitive_t D3D9DrawPrimitive_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+__declspec (noinline)
+HRESULT
+STDMETHODCALLTYPE
+D3D9DrawPrimitive_Override ( IDirect3DDevice9* This,
+                             D3DPRIMITIVETYPE  PrimitiveType,
+                             UINT              StartVertex,
+                             UINT              PrimitiveCount )
+{
+  return
+    D3D9DrawPrimitive_Original ( This,
+                                   PrimitiveType,
+                                     StartVertex,
+                                       PrimitiveCount );
+}
 
 typedef HRESULT (STDMETHODCALLTYPE *DrawIndexedPrimitive_t)
   ( IDirect3DDevice9* This,
@@ -616,6 +707,24 @@ D3D9DrawIndexedPrimitive_Override ( IDirect3DDevice9* This,
                                                     primCount );
 }
 
+
+typedef HRESULT (STDMETHODCALLTYPE *SetTexture_t)
+  (     IDirect3DDevice9      *This,
+   _In_ DWORD                  Sampler,
+   _In_ IDirect3DBaseTexture9 *pTexture);
+
+SetTexture_t D3D9SetTexture_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
+__declspec (noinline)
+HRESULT
+STDMETHODCALLTYPE
+D3D9SetTexture_Override ( IDirect3DDevice9      *This,
+                    _In_  DWORD                  Sampler,
+                    _In_  IDirect3DBaseTexture9 *pTexture )
+{
+  return D3D9SetTexture_Original (This, Sampler, pTexture);
+}
 
 typedef HRESULT (STDMETHODCALLTYPE *SetSamplerState_t)
   (IDirect3DDevice9*   This,
@@ -766,50 +875,16 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
                              D3DDISPLAYMODEEX       *pFullscreenDisplayMode,
                              IDirect3DDevice9Ex    **ppReturnedDeviceInterface)
 {
-  dll_log.Log (L"[!] %s (%08Xh, %lu, %lu, %08Xh, %lu, %08Xh, %08Xh, %08Xh) - "
-    L"[Calling Thread: 0x%04x]",
-    L"IDirect3D9Ex::CreateDeviceEx", This, Adapter, (DWORD)DeviceType,
-    hFocusWindow, BehaviorFlags, pPresentationParameters,
-    pFullscreenDisplayMode, ppReturnedDeviceInterface, GetCurrentThreadId ());
+  dll_log.Log ( L"[!] %s (%08Xh, %lu, %lu, %08Xh, 0x%04X, %08Xh, %08Xh, %08Xh) - "
+                L"[Calling Thread: 0x%04x]",
+                L"IDirect3D9Ex::CreateDeviceEx",
+                  This, Adapter, (DWORD)DeviceType,
+                    hFocusWindow, BehaviorFlags, pPresentationParameters,
+                      pFullscreenDisplayMode, ppReturnedDeviceInterface,
+                        GetCurrentThreadId () );
 
-  int TargetFPS = config.render.framerate.target_fps;
-  int Refresh   = pFullscreenDisplayMode != nullptr ? 
-                    pFullscreenDisplayMode->RefreshRate :
-                    0;
-
-  if (Refresh == 0) {
-    Refresh = pPresentationParameters != nullptr ? 
-                pPresentationParameters->FullScreen_RefreshRateInHz :
-                0;
-  }
-
-  if (TargetFPS != 0 && Refresh != 0) {
-    if (Refresh >= TargetFPS) {
-      if (! (Refresh % TargetFPS)) {
-        dll_log.Log ( L"  >> Targeting %li FPS - using 1:%lu VSYNC;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh / TargetFPS,
-                            Refresh );
-
-        pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
-        pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-      } else {
-        dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh );
-      }
-    } else {
-      dll_log.Log ( L"  >> Cannot target %li FPS - higher than refresh rate;"
-                    L" (refresh = %li Hz)\n",
-                      TargetFPS,
-                        Refresh );
-    }
-  }
-
-  if (pPresentationParameters != nullptr)
-    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
+  BMF_D3D9_SetFPSTarget       (pPresentationParameters, pFullscreenDisplayMode);
+  BMF_D3D9_FixUpBehaviorFlags (BehaviorFlags);
 
   HRESULT ret;
 
@@ -840,6 +915,10 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
                          "IDirect3DDevice9Ex::PresentEx",D3D9PresentCallbackEx,
                          D3D9PresentEx_Original, D3D9PresentDeviceEx_t);
 
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 132,
+                         "IDirect3DDevice9Ex::ResetEx", D3D9ResetEx,
+                         D3D9ResetEx_Original, D3D9ResetEx_t);
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 13,
                          "IDirect3DDevice9Ex::CreateAdditionalSwapChain",
                          D3D9CreateAdditionalSwapChain_Override,
@@ -851,7 +930,6 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
                          D3D9EndScene_Override,
                          D3D9EndScene_Original,
                          EndScene_t);
-
 
   static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
   static CreateDXGIFactory_t CreateDXGIFactory =
@@ -869,30 +947,6 @@ D3D9CreateDeviceEx_Override (IDirect3D9Ex           *This,
     adapter->Release ();
     factory->Release ();
   }
-
-#if 0
-  if (ppReturnedDeviceInterface != nullptr) {
-    void** vtable                     = *(void***)*ppReturnedDeviceInterface;
-    GetSwapChain_t       GetSwapChain = (GetSwapChain_t)vtable [14];
-    IDirect3DSwapChain9* SwapChain    = nullptr;
-
-    if (SUCCEEDED (
-          GetSwapChain ( (IDirect3DDevice9 *)*ppReturnedDeviceInterface,
-                           0,
-                             &SwapChain
-                       )
-                   )
-       ) {
-      D3D9_VIRTUAL_OVERRIDE (&SwapChain, 3,
-                             "IDirect3DSwapChain9::Present",
-                             D3D9PresentSwapCallback,
-                             D3D9PresentSwap_Original,
-                             D3D9PresentSwapChain_t);
-
-      ((IUnknown *)SwapChain)->Release ();
-    }
-  }
-#endif
 
   return ret;
 }
@@ -1050,439 +1104,54 @@ D3D9UpdateTexture_Override (IDirect3DDevice9      *This,
                                           pDestinationTexture );
 }
 
+typedef HRESULT (STDMETHODCALLTYPE *StretchRect_t)
+  (      IDirect3DDevice9    *This,
+         IDirect3DSurface9   *pSourceSurface,
+   const RECT                *pSourceRect,
+         IDirect3DSurface9   *pDestSurface,
+   const RECT                *pDestRect,
+         D3DTEXTUREFILTERTYPE Filter);
 
-HRESULT
+StretchRect_t D3D9StretchRect_Original = nullptr;
+
+COM_DECLSPEC_NOTHROW
 __declspec (noinline)
-WINAPI
-BMF_IDirect3D9::CreateDevice (UINT                   Adapter,
-                              D3DDEVTYPE             DeviceType,
-                              HWND                   hFocusWindow,
-                              DWORD                  BehaviorFlags,
-                              D3DPRESENT_PARAMETERS* pPresentationParameters,
-                              IDirect3DDevice9**     ppReturnedDeviceInterface)
+HRESULT
+STDMETHODCALLTYPE
+D3D9StretchRect_Override (      IDirect3DDevice9    *This,
+                                IDirect3DSurface9   *pSourceSurface,
+                          const RECT                *pSourceRect,
+                                IDirect3DSurface9   *pDestSurface,
+                          const RECT                *pDestRect,
+                                D3DTEXTUREFILTERTYPE Filter )
 {
-  dll_log.Log ( L"[!] %s (%08Xh, %lu, %lu, %08Xh, 0x%08X, %08Xh, %08Xh) - "
-                L"[Calling Thread: 0x%04x]",
-                  L"IDirect3D9::CreateDevice", this, Adapter, (DWORD)DeviceType,
-                    hFocusWindow, BehaviorFlags, pPresentationParameters,
-                      ppReturnedDeviceInterface, GetCurrentThreadId ());
-
-  int TargetFPS = config.render.framerate.target_fps;
-  int Refresh   = pPresentationParameters != nullptr ? 
-                    pPresentationParameters->FullScreen_RefreshRateInHz :
-                    0;
-
-  if (TargetFPS != 0 && Refresh != 0) {
-    if (Refresh >= TargetFPS) {
-      if (! (Refresh % TargetFPS)) {
-        dll_log.Log ( L"  >> Targeting %li FPS - using 1:%li VSYNC;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh / TargetFPS,
-                            Refresh );
-
-        pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
-        pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-
-      } else {
-        dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh );
-      }
-    } else {
-      dll_log.Log ( L"  >> Cannot target %li FPS - higher than refresh rate;"
-                    L" (refresh = %li Hz)\n",
-                      TargetFPS,
-                        Refresh );
-    }
-  }
-
-  if (pPresentationParameters != nullptr) {
-    // So we can wait on this if need be
-    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
-
-    if (config.render.framerate.buffer_count != -1) {
-      dll_log.Log ( L"  >> Backbuffer Override: (Requested=%lu, Override=%lu)",
-                      pPresentationParameters->BackBufferCount,
-                        config.render.framerate.buffer_count );
-    }
-
-    if (config.render.framerate.present_interval != -1) {
-      dll_log.Log ( L"  >> VSYNC Override: (Requested=1:%lu, Override=1:%lu)",
-                      pPresentationParameters->PresentationInterval,
-                        config.render.framerate.present_interval );
-    }
-  }
-
-  HRESULT ret;
-
-  //vtbl (This)
-  //-----------
-  // 3   TestCooperativeLevel
-  // 4   GetAvailableTextureMem
-  // 5   EvictManagedResources
-  // 6   GetDirect3D
-  // 7   GetDeviceCaps
-  // 8   GetDisplayMode
-  // 9   GetCreationParameters
-  // 10  SetCursorProperties
-  // 11  SetCursorPosition
-  // 12  ShowCursor
-  // 13  CreateAdditionalSwapChain
-  // 14  GetSwapChain
-  // 15  GetNumberOfSwapChains
-  // 16  Reset
-  // 17  Present
-  // 18  GetBackBuffer
-  // 19  GetRasterStatus
-  // 20  SetDialogBoxMode
-  // 21  SetGammaRamp
-  // 22  GetGammaRamp
-  // 23  CreateTexture
-  // 24  CreateVolumeTexture
-  // 25  CreateCubeTexture
-  // 26  CreateVertexBuffer
-  // 27  CreateIndexBuffer
-  // 28  CreateRenderTarget
-  // 29  CreateDepthStencilSurface
-  // 30  UpdateSurface
-  // 31  UpdateTexture
-  // 32  GetRenderTargetData
-  // 33  GetFrontBufferData
-  // 34  StretchRect
-  // 35  ColorFill
-  // 36  CreateOffscreenPlainSurface
-  // 37  SetRenderTarget
-  // 38  GetRenderTarget
-  // 39  SetDepthStencilSurface
-  // 40  GetDepthStencilSurface
-  // 41  BeginScene
-  // 42  EndScene
-  // 43  Clear
-  // 44  SetTransform
-  // 45  GetTransform
-  // 46  MultiplyTransform
-  // 47  SetViewport
-  // 48  GetViewport
-  // 49  SetMaterial
-  // 50  GetMaterial
-  // 51  SetLight
-  // 52  GetLight
-  // 53  LightEnable
-  // 54  GetLightEnable
-  // 55  SetClipPlane
-  // 56  GetClipPlane
-  // 57  SetRenderState
-  // 58  GetRenderState
-  // 59  CreateStateBlock
-  // 60  BeginStateBlock
-  // 61  EndStateBlock
-  // 62  SetClipStatus
-  // 63  GetClipStatus
-  // 64  GetTexture
-  // 65  SetTexture
-  // 66  GetTextureStageState
-  // 67  SetTextureStageState
-  // 68  GetSamplerState
-  // 69  SetSamplerState
-  // 70  ValidateDevice
-  // 71  SetPaletteEntries
-  // 72  GetPaletteEntries
-  // 73  SetCurrentTexturePalette
-  // 74  GetCurrentTexturePalette
-  // 75  SetScissorRect
-  // 76  GetScissorRect
-  // 77  SetSoftwareVertexProcessing
-  // 78  GetSoftwareVertexProcessing
-  // 79  SetNPatchMode
-  // 80  GetNPatchMode
-  // 81  DrawPrimitive
-  // 82  DrawIndexedPrimitive
-  // 83  DrawPrimitiveUP
-  // 84  DrawIndexedPrimitiveUP
-  // 85  ProcessVertices
-  // 86  CreateVertexDeclaration
-  // 87  SetVertexDeclaration
-  // 88  GetVertexDeclaration
-  // 89  SetFVF
-  // 90  GetFVF
-  // 91  CreateVertexShader
-  // 92  SetVertexShader
-  // 93  GetVertexShader
-  // 94  SetVertexShaderConstantF
-  // 95  GetVertexShaderConstantF
-  // 96  SetVertexShaderConstantI
-  // 97  GetVertexShaderConstantI
-  // 98  SetVertexShaderConstantB
-  // 99  GetVertexShaderConstantB
-  // 100 SetStreamSource
-  // 101 GetStreamSource
-  // 102 SetStreamSourceFreq
-  // 103 GetStreamSourceFreq
-  // 104 SetIndices
-  // 105 GetIndices
-  // 106 CreatePixelShader
-  // 107 SetPixelShader
-  // 108 GetPixelShader
-  // 109 SetPixelShaderConstantF
-  // 110 GetPixelShaderConstantF
-  // 111 SetPixelShaderConstantI
-  // 112 GetPixelShaderConstantI
-  // 113 SetPixelShaderConstantB
-  // 114 GetPixelShaderConstantB
-  // 115 DrawRectPatch
-  // 116 DrawTriPatch
-  // 117 DeletePatch
-  // 118 CreateQuery
-
-  D3D9_CALL (ret, d3d9_->CreateDevice ( Adapter,
-                                          DeviceType,
-                                            hFocusWindow,
-                                              BehaviorFlags,
-                                                pPresentationParameters,
-                                                  ppReturnedDeviceInterface ));
-
-  // Do not attempt to do vtable override stuff if this failed,
-  //   that will cause an immediate crash! Instead log some information that
-  //     might help diagnose the problem.
-  if (! SUCCEEDED (ret)) {
-    if (pPresentationParameters != nullptr) {
-      dll_log.LogEx (true,
-                L"  SwapChain Settings:   Res=(%lux%lu), Format=0x%04X, "
-                                        L"Count=%lu - "
-                                        L"SwapEffect: 0x%02X, Flags: 0x%04X,"
-                                        L"AutoDepthStencil: %s "
-                                        L"PresentationInterval: %lu\n",
-                   pPresentationParameters->BackBufferWidth,
-                   pPresentationParameters->BackBufferHeight,
-                   pPresentationParameters->BackBufferFormat,
-                   pPresentationParameters->BackBufferCount,
-                   pPresentationParameters->SwapEffect,
-                   pPresentationParameters->Flags,
-                   pPresentationParameters->EnableAutoDepthStencil ? L"true" :
-                                                                     L"false",
-                   pPresentationParameters->PresentationInterval);
-
-      if (! pPresentationParameters->Windowed) {
-        dll_log.LogEx (true,
-                L"  Fullscreen Settings:  Refresh Rate: %lu\n",
-                   pPresentationParameters->FullScreen_RefreshRateInHz);
-        dll_log.LogEx (true,
-                L"  Multisample Settings: Type: %X, Quality: %lu\n",
-                   pPresentationParameters->MultiSampleType,
-                   pPresentationParameters->MultiSampleQuality);
-      }
-    }
-
-    return ret;
-  }
-
-  BMF_SetPresentParamsD3D9 ( *ppReturnedDeviceInterface,
-                               pPresentationParameters );
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
-                         "IDirect3DDevice9::Reset", D3D9Reset,
-                         D3D9Reset_Original, D3D9Reset_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
-                         "IDirect3DDevice9::Present", D3D9PresentCallback,
-                         D3D9Present_Original, D3D9PresentDevice_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 13,
-                         "IDirect3DDevice9::CreateAdditionalSwapChain",
-                         D3D9CreateAdditionalSwapChain_Override,
-                         D3D9CreateAdditionalSwapChain_Original,
-                         CreateAdditionalSwapChain_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 23,
-                         "IDirect3DDevice9::CreateTexture",
-                         D3D9CreateTexture_Override,
-                         D3D9CreateTexture_Original,
-                         CreateTexture_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 28,
-                         "IDirect3DDevice9::CreateRenderTarget",
-                         D3D9CreateRenderTarget_Override,
-                         D3D9CreateRenderTarget_Original,
-                         CreateRenderTarget_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 29,
-                         "IDirect3DDevice9::CreateDepthStencilSurface",
-                         D3D9CreateDepthStencilSurface_Override,
-                         D3D9CreateDepthStencilSurface_Original,
-                         CreateDepthStencilSurface_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 31,
-                         "IDirect3DDevice9::UpdateTexture",
-                         D3D9UpdateTexture_Override,
-                         D3D9UpdateTexture_Original,
-                         UpdateTexture_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 37,
-                         "IDirect3DDevice9::SetRenderTarget",
-                         D3D9SetRenderTarget_Override,
-                         D3D9SetRenderTarget_Original,
-                         SetRenderTarget_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 39,
-                         "IDirect3DDevice9::SetDepthStencilSurface",
-                         D3D9SetDepthStencilSurface_Override,
-                         D3D9SetDepthStencilSurface_Original,
-                         SetDepthStencilSurface_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 42,
-                         "IDirect3DDevice9::EndScene",
-                         D3D9EndScene_Override,
-                         D3D9EndScene_Original,
-                         EndScene_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 47,
-                         "IDirect3DDevice9::SetViewport",
-                         D3D9SetViewport_Override,
-                         D3D9SetViewport_Original,
-                         SetViewport_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 69,
-                         "IDirect3DDevice9::SetSamplerState",
-                          D3D9SetSamplerState_Override,
-                          D3D9SetSamplerState_Original,
-                          SetSamplerState_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 75,
-                         "IDirect3DDevice9::SetScissorRect",
-                          D3D9SetScissorRect_Override,
-                          D3D9SetScissorRect_Original,
-                          SetScissorRect_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 82,
-                         "IDirect3DDevice9::DrawIndexedPrimitive",
-                         D3D9DrawIndexedPrimitive_Override,
-                         D3D9DrawIndexedPrimitive_Original,
-                         DrawIndexedPrimitive_t);
-
-#if 0
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 87,
-                         "IDirect3DDevice9::SetVertexDeclaration",
-                         D3D9SetVertexDeclaration_Override,
-                         D3D9SetVertexDeclaration_Original,
-                         SetVertexDeclaration_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 89,
-                         "IDirect3DDevice9::DrawIndexedPrimitive",
-                         D3D9SetFVF_Override,
-                         D3D9SetFVF_Original,
-                         SetFVF_t);
-#endif
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 92,
-                         "IDirect3DDevice9::SetVertexShader",
-                          D3D9SetVertexShader_Override,
-                          D3D9SetVertexShader_Original,
-                          SetVertexShader_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 94,
-                         "IDirect3DDevice9::SetSetVertexShaderConstantF",
-                          D3D9SetVertexShaderConstantF_Override,
-                          D3D9SetVertexShaderConstantF_Original,
-                          SetVertexShaderConstantF_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 107,
-                        "IDirect3DDevice9::SetPixelShader",
-                         D3D9SetPixelShader_Override,
-                         D3D9SetPixelShader_Original,
-                         SetPixelShader_t);
-
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 109,
-                        "IDirect3DDevice9::SetPixelShaderConstantF",
-                         D3D9SetPixelShaderConstantF_Override,
-                         D3D9SetPixelShaderConstantF_Original,
-                         SetPixelShaderConstantF_t);
-
-  static HMODULE hDXGI = LoadLibrary (L"dxgi.dll");
-  static CreateDXGIFactory_t CreateDXGIFactory =
-    (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
-
-  IDXGIFactory* factory = nullptr;
-
-  // Only spawn the DXGI 1.4 budget thread if ... DXGI 1.4 is implemented.
-  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory))) {
-    IDXGIAdapter* adapter;
-    factory->EnumAdapters (Adapter, &adapter);
-
-    BMF_StartDXGI_1_4_BudgetThread (&adapter);
-
-    adapter->Release ();
-    factory->Release ();
-  }
-
-  return ret;
+  return D3D9StretchRect_Original ( This,
+                                      pSourceSurface,
+                                      pSourceRect,
+                                        pDestSurface,
+                                        pDestRect,
+                                          Filter );
 }
 
 HRESULT
 __declspec (noinline)
 WINAPI
 D3D9CreateDevice_Override (IDirect3D9*            This,
-                  UINT                   Adapter,
-                  D3DDEVTYPE             DeviceType,
-                  HWND                   hFocusWindow,
-                  DWORD                  BehaviorFlags,
-                  D3DPRESENT_PARAMETERS* pPresentationParameters,
-                  IDirect3DDevice9**     ppReturnedDeviceInterface)
+                           UINT                   Adapter,
+                           D3DDEVTYPE             DeviceType,
+                           HWND                   hFocusWindow,
+                           DWORD                  BehaviorFlags,
+                           D3DPRESENT_PARAMETERS* pPresentationParameters,
+                           IDirect3DDevice9**     ppReturnedDeviceInterface)
 {
-  dll_log.Log ( L"[!] %s (%08Xh, %lu, %lu, %08Xh, 0x%08X, %08Xh, %08Xh) - "
+  dll_log.Log ( L"[!] %s (%08Xh, %lu, %lu, %08Xh, 0x%04X, %08Xh, %08Xh) - "
                 L"[Calling Thread: 0x%04x]",
                   L"IDirect3D9::CreateDevice", This, Adapter, (DWORD)DeviceType,
                     hFocusWindow, BehaviorFlags, pPresentationParameters,
                       ppReturnedDeviceInterface, GetCurrentThreadId ());
 
-  int TargetFPS = config.render.framerate.target_fps;
-  int Refresh   = pPresentationParameters != nullptr ? 
-                    pPresentationParameters->FullScreen_RefreshRateInHz :
-                    0;
-
-  if (TargetFPS != 0 && Refresh != 0) {
-    if (Refresh >= TargetFPS) {
-      if (! (Refresh % TargetFPS)) {
-        dll_log.Log ( L"  >> Targeting %li FPS - using 1:%li VSYNC;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh / TargetFPS,
-                            Refresh );
-
-        pPresentationParameters->SwapEffect           = D3DSWAPEFFECT_DISCARD;
-        pPresentationParameters->PresentationInterval = Refresh / TargetFPS;
-
-      } else {
-        dll_log.Log ( L"  >> Cannot target %li FPS - no such factor exists;"
-                      L" (refresh = %li Hz)\n",
-                        TargetFPS,
-                          Refresh );
-      }
-    } else {
-      dll_log.Log ( L"  >> Cannot target %li FPS - higher than refresh rate;"
-                    L" (refresh = %li Hz)\n",
-                      TargetFPS,
-                        Refresh );
-    }
-  }
-
-  if (pPresentationParameters != nullptr) {
-    // So we can wait on this if need be
-    pPresentationParameters->Flags |= D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
-
-    if (config.render.framerate.buffer_count != -1) {
-      dll_log.Log ( L"  >> Backbuffer Override: (Requested=%lu, Override=%lu)",
-                      pPresentationParameters->BackBufferCount,
-                        config.render.framerate.buffer_count );
-    }
-
-    if (config.render.framerate.present_interval != -1) {
-      dll_log.Log ( L"  >> VSYNC Override: (Requested=1:%lu, Override=1:%lu)",
-                      pPresentationParameters->PresentationInterval,
-                        config.render.framerate.present_interval );
-    }
-  }
+  BMF_D3D9_SetFPSTarget       (pPresentationParameters);
+  BMF_D3D9_FixUpBehaviorFlags (BehaviorFlags);
 
   HRESULT ret;
 
@@ -1650,13 +1319,24 @@ D3D9CreateDevice_Override (IDirect3D9*            This,
   BMF_SetPresentParamsD3D9 ( *ppReturnedDeviceInterface,
                                pPresentationParameters );
 
+  void** vftable = *(void***)*ppReturnedDeviceInterface;
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 16,
                          "IDirect3DDevice9::Reset", D3D9Reset,
                          D3D9Reset_Original, D3D9Reset_t);
 
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
-                         "IDirect3DDevice9::Present", D3D9PresentCallback,
-                         D3D9Present_Original, D3D9PresentDevice_t);
+  if (config.render.d3d9.hook_type == 1) {
+    BMF_CreateFuncHook ( L"IDirect3DDevice9::Present",
+                         vftable [17],
+                         D3D9PresentCallback,
+              (LPVOID *)&D3D9Present_Original );
+    BMF_EnableHook     (vftable [17]);
+  }
+  else {
+    D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 17,
+                           "IDirect3DDevice9::Present", D3D9PresentCallback,
+                           D3D9Present_Original, D3D9PresentDevice_t);
+  }
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 13,
                          "IDirect3DDevice9::CreateAdditionalSwapChain",
@@ -1688,6 +1368,12 @@ D3D9CreateDevice_Override (IDirect3D9*            This,
                          D3D9UpdateTexture_Original,
                          UpdateTexture_t);
 
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 34,
+                         "IDirect3DDevice9::StretchRect",
+                         D3D9StretchRect_Override,
+                         D3D9StretchRect_Original,
+                         StretchRect_t);
+
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 37,
                          "IDirect3DDevice9::SetRenderTarget",
                          D3D9SetRenderTarget_Override,
@@ -1700,17 +1386,31 @@ D3D9CreateDevice_Override (IDirect3D9*            This,
                          D3D9SetDepthStencilSurface_Original,
                          SetDepthStencilSurface_t);
 
-  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 42,
-                         "IDirect3DDevice9::EndScene",
+  if (config.render.d3d9.hook_type == 1) {
+    BMF_CreateFuncHook ( L"IDirect3DDevice9::EndScene",
+                         vftable [42],
                          D3D9EndScene_Override,
-                         D3D9EndScene_Original,
-                         EndScene_t);
+              (LPVOID *)&D3D9EndScene_Original );
+    BMF_EnableHook     (vftable [42]);
+  } else {
+    D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 42,
+                           "IDirect3DDevice9::EndScene",
+                           D3D9EndScene_Override,
+                           D3D9EndScene_Original,
+                           EndScene_t);
+  }
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 47,
                          "IDirect3DDevice9::SetViewport",
                          D3D9SetViewport_Override,
                          D3D9SetViewport_Original,
                          SetViewport_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 65,
+                         "IDirect3DDevice9::SetTexture",
+                          D3D9SetTexture_Override,
+                          D3D9SetTexture_Original,
+                          SetTexture_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 69,
                          "IDirect3DDevice9::SetSamplerState",
@@ -1723,6 +1423,12 @@ D3D9CreateDevice_Override (IDirect3D9*            This,
                           D3D9SetScissorRect_Override,
                           D3D9SetScissorRect_Original,
                           SetScissorRect_t);
+
+  D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 81,
+                         "IDirect3DDevice9::DrawPrimitive",
+                         D3D9DrawPrimitive_Override,
+                         D3D9DrawPrimitive_Original,
+                         DrawPrimitive_t);
 
   D3D9_VIRTUAL_OVERRIDE (ppReturnedDeviceInterface, 82,
                          "IDirect3DDevice9::DrawIndexedPrimitive",
@@ -1799,7 +1505,7 @@ Direct3DCreate9 (UINT SDKVersion)
   IDirect3D9* d3d9 = nullptr;
 
   IDirect3D9Ex* pD3D9 = nullptr;
-  if (true){//FAILED (Direct3DCreate9Ex (SDKVersion, &pD3D9))) {
+  if ((! config.render.d3d9.force_d3d9ex) || FAILED (Direct3DCreate9Ex (SDKVersion, &pD3D9))) {
     if (Direct3DCreate9_Import) {
       dll_log.Log ( L"[!] %s (%lu) - "
         L"[Calling Thread: 0x%04x]",
@@ -1814,11 +1520,19 @@ Direct3DCreate9 (UINT SDKVersion)
   if (d3d9 != nullptr) {
     void** vftable = *(void***)&*d3d9;
 
-    BMF_CreateFuncHook ( L"IDirect3D9::CreateDevice",
-                         vftable [16],
-                         D3D9CreateDevice_Override,
-              (LPVOID *)&D3D9CreateDevice_Original );
-    BMF_EnableHook     (vftable [16]);
+    if (config.render.d3d9.hook_type == 1) {
+      BMF_CreateFuncHook ( L"IDirect3D9::CreateDevice",
+                           vftable [16],
+                           D3D9CreateDevice_Override,
+                (LPVOID *)&D3D9CreateDevice_Original );
+      BMF_EnableHook     (vftable [16]);
+    } else {
+      D3D9_VIRTUAL_OVERRIDE (&d3d9, 16,
+                             "IDirect3D9::CreateDevice",
+                             D3D9CreateDevice_Override,
+                             D3D9CreateDevice_Original,
+                             D3D9CreateDevice_t);
+    }
   }
 
   return d3d9;
@@ -1840,26 +1554,41 @@ Direct3DCreate9Ex (__in UINT SDKVersion, __out IDirect3D9Ex **ppD3D)
 
   HRESULT hr = E_FAIL;
 
-  IDirect3D9Ex* pD3D = nullptr;
+  IDirect3D9Ex* d3d9ex = nullptr;
 
   if (Direct3DCreate9Ex_Import) {
-    D3D9_CALL (hr, Direct3DCreate9Ex_Import (SDKVersion, &pD3D));
+    D3D9_CALL (hr, Direct3DCreate9Ex_Import (SDKVersion, &d3d9ex));
 
-    if (SUCCEEDED (hr) && pD3D != nullptr) {
-      void** vftable = *(void***)&*pD3D;
+    if (SUCCEEDED (hr) && d3d9ex!= nullptr) {
+      void** vftable = *(void***)&*d3d9ex;
 
-      BMF_CreateFuncHook ( L"IDirect3D9::CreateDevice",
-                           vftable [16],
-                           D3D9CreateDevice_Override,
-                (LPVOID *)&D3D9CreateDevice_Original );
-      BMF_EnableHook     (vftable [16]);
+      if (config.render.d3d9.hook_type == 1) {
+        BMF_CreateFuncHook ( L"IDirect3D9::CreateDevice",
+                             vftable [16],
+                             D3D9CreateDevice_Override,
+                  (LPVOID *)&D3D9CreateDevice_Original );
+        BMF_EnableHook     (vftable [16]);
 
-      BMF_CreateFuncHook ( L"IDirect3D9Ex::CreateDeviceEx",
-                           vftable [20],
-                           D3D9CreateDeviceEx_Override,
-                (LPVOID *)&D3D9CreateDeviceEx_Original );
-      BMF_EnableHook     (vftable [20]);
-      *ppD3D = pD3D;
+        BMF_CreateFuncHook ( L"IDirect3D9Ex::CreateDeviceEx",
+                             vftable [20],
+                             D3D9CreateDeviceEx_Override,
+                  (LPVOID *)&D3D9CreateDeviceEx_Original );
+        BMF_EnableHook     (vftable [20]);
+      } else {
+        D3D9_VIRTUAL_OVERRIDE (&d3d9ex, 16,
+                             "IDirect3D9::CreateDevice",
+                             D3D9CreateDevice_Override,
+                             D3D9CreateDevice_Original,
+                             D3D9CreateDevice_t);
+
+        D3D9_VIRTUAL_OVERRIDE (&d3d9ex, 20,
+                             "IDirect3D9Ex::CreateDeviceEx",
+                             D3D9CreateDeviceEx_Override,
+                             D3D9CreateDeviceEx_Original,
+                             D3D9CreateDeviceEx_t);
+      }
+
+      *ppD3D = d3d9ex;
     }
   }
 

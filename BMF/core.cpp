@@ -37,6 +37,8 @@
 #include "osd.h"
 #include "io_monitor.h"
 #include "import.h"
+#include "console.h"
+#include "framerate.h"
 
 memory_stats_t mem_stats [MAX_GPU_NODES];
 mem_info_t     mem_info  [NumBuffers];
@@ -64,6 +66,7 @@ bool USE_SLI = true;
 NV_GET_CURRENT_SLI_STATE sli_state;
 BOOL                     nvapi_init = FALSE;
 int                      gpu_prio;
+uint32_t                 frames_drawn;
 
 HMODULE backend_dll;
 
@@ -1003,6 +1006,9 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     dll_log.LogEx (false, L"\n");
   }
 
+  BMF_Console* pConsole = BMF_Console::getInstance ();
+  pConsole->Start ();
+
   typedef void (WINAPI *callback_t)(void);
   callback_t callback_fn = (callback_t)callback;
   callback_fn ();
@@ -1081,6 +1087,8 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   }
 
   dll_log.LogEx (false, L"\n");
+
+  BMF::Framerate::Init ();
 
   szOSD =
     (char *)
@@ -1438,6 +1446,9 @@ BMF_ShutdownCore (const wchar_t* backend)
 
   BMF_UnloadImports ();
 
+  BMF_Console* pConsole = BMF_Console::getInstance ();
+  pConsole->End ();
+
   if (hPumpThread != 0) {
     dll_log.LogEx   (true, L" [OSD] Shutting down Pump Thread... ");
 
@@ -1607,6 +1618,8 @@ BMF_ShutdownCore (const wchar_t* backend)
   BMF::SteamAPI::Shutdown ();
   dll_log.LogEx  (false, L"done!\n");
 
+  BMF::Framerate::Shutdown ();
+
   // Hopefully these things are done by now...
   DeleteCriticalSection (&init_mutex);
   DeleteCriticalSection (&budget_mutex);
@@ -1661,6 +1674,9 @@ BMF_BeginBufferSwap (void)
       BMF::SteamAPI::Init (false);
     }
   }
+
+  extern void BMF_DrawConsole (void);
+  BMF_DrawConsole ();
 }
 
 extern void BMF_UnlockSteamAchievement (int idx);
@@ -1858,6 +1874,14 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
   BMF_DrawOSD ();
 
   //BMF::SteamAPI::Pump ();
+
+  frames_drawn++;
+
+  //
+  // TZFix has its own limiter
+  //
+  if (! GetModuleHandle (L"tzfix.dll"))
+    BMF::Framerate::GetLimiter ()->wait ();
 
   return hr;
 }

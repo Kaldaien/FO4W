@@ -39,7 +39,7 @@ BMF_Timestamp (wchar_t* const out)
     FileTimeToSystemTime           (&ftLogTime, &stLogTime);
   } else {
 #endif
-    GetSystemTime (&stLogTime);
+    GetLocalTime (&stLogTime);
 #if 0
   }
 #endif

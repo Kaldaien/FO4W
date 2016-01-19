@@ -32,6 +32,7 @@
 #include "memory_monitor.h"
 
 #include "core.h"
+#include "framerate.h"
 
 #include "log.h"
 
@@ -394,9 +395,17 @@ BMF_InstallOSD (void)
 #endif
 }
 
+BMF::Framerate::Stats frame_history;
+BMF::Framerate::Stats frame_history2;
+
 BOOL
 BMF_DrawOSD (void)
 {
+  LARGE_INTEGER now;
+  double        dt;
+
+  BMF::Framerate::Tick (dt, now);
+
   if (! cs_init) {
     InitializeCriticalSectionAndSpinCount (&osd_cs, (1UL << 31));
     cs_init = true;
@@ -404,8 +413,9 @@ BMF_DrawOSD (void)
 
   BMF_AutoCriticalSection auto_cs (&osd_cs, true);
 
-  if (! auto_cs.try_result ())
+  if (! auto_cs.try_result ()) {
     return false;
+  }
 
   //
   // Enough attempts to cover 15 Seconds at 240 Hz
@@ -473,6 +483,7 @@ BMF_DrawOSD (void)
 
     static bool isTalesOfZestiria = false;
     static bool isFallout4        = false;
+    static bool isDivinityOrigSin = false;
 
     if (wszGameName [0] == L'\0') {
       GetModuleFileName (hModGame, wszGameName, MAX_PATH);
@@ -480,10 +491,12 @@ BMF_DrawOSD (void)
         isTalesOfZestiria = true;
       else if (StrStrIW (wszGameName, L"Fallout4.exe"))
         isFallout4 = true;
+      else if (StrStrIW (wszGameName, L"EoCApp.exe"))
+        isDivinityOrigSin = true;
     }
     
     if (isTalesOfZestiria) {
-      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.2.6   %ws\n\n",
+      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.3.0   %ws\n\n",
                  time
       OSD_END
     }
@@ -491,8 +504,12 @@ BMF_DrawOSD (void)
       OSD_PRINTF "Fallout 4 \"Works\" v 0.2.2   %ws\n\n",
                  time
       OSD_END
+    } else if (isDivinityOrigSin) {
+      OSD_PRINTF "Divinity: Original Sin \"Works\" v 0.0.1   %ws\n\n",
+                 time
+      OSD_END
     } else {
-      OSD_PRINTF "Special K v 0.17   %ws\n\n",
+      OSD_PRINTF "Special K v 0.18   %ws\n\n",
                  time
       OSD_END
     }
@@ -520,37 +537,92 @@ BMF_DrawOSD (void)
           //
           if (pApp->dwProcessID == GetCurrentProcessId ())
           {
-            static LARGE_INTEGER last_frame = { 0 };
+            // What the bloody hell?! How do we ever get a dt value near 0?
+            if (dt > 0.001)
+              frame_history.addSample (1000.0 * dt, now);
+            else
+              frame_history.addSample (INFINITY, now);
 
-            LARGE_INTEGER freq;
-            LARGE_INTEGER now;
+            frame_history2.addSample (BMF::Framerate::GetLimiter ()->effective_frametime (), now);
 
-            QueryPerformanceFrequency (&freq);
-            QueryPerformanceCounter   (&now);
+            double mean    = frame_history.calcMean     ();
+            double sd      = frame_history.calcSqStdDev (mean);
+            double min     = frame_history.calcMin      ();
+            double max     = frame_history.calcMax      ();
+            int    hitches = frame_history.calcHitches  (1.2, mean);
 
-            static double last_ms =
-              1000.0 * ((double)(now.QuadPart - last_frame.QuadPart) /
-                        (double)freq.QuadPart);
+            double effective_mean = frame_history2.calcMean  ();
 
             std::wstring api_name = BMF_GetAPINameFromOSDFlags (pApp->dwFlags);
-            OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms",
-              api_name.c_str (),
-                // Cast to FP to avoid integer division by zero.
-                1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
-                last_ms
-                //1000000.0f / pApp->dwFrameTime,
-                  //pApp->dwFrameTime / 1000.0f
-            OSD_END
 
-            double dt = (double)((now.QuadPart - last_frame.QuadPart) / (double)freq.QuadPart);
+            if (mean != INFINITY) {
+              OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms (s=%3.2f,min=%3.2f,max=%3.2f,hitches=%d)   <%4.01f FPS / %3.2f ms>",
+                api_name.c_str (),
+                  // Cast to FP to avoid integer division by zero.
+                  1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
+                  mean,
+                    sqrt (sd),
+                      min,
+                        max,
+                          hitches,
+                            1000.0 / effective_mean,
+                              effective_mean
+              OSD_END
 
-            static LARGE_INTEGER update = { 0 };
+#if 0
+              //
+              // Framerate Smoothing
+              //
+              double effective_fps = 1000.0 / effective_mean;
 
-            if ((double)(now.QuadPart - update.QuadPart) / (double)freq.QuadPart > 0.066666) {
-              last_ms = 1000.0 * dt;
-              QueryPerformanceCounter (&update);
+              if (effective_fps > 60.0)
+                effective_fps = 60.0;
+
+              if (effective_fps < 30.0)
+                effective_fps = 30.0;
+
+              static double        last_change = 0.0;
+              static LARGE_INTEGER when        = { 0 };
+
+              if (fabs (effective_fps - last_change) > 10.0 || (double)(now.QuadPart - when.QuadPart) / (double)BMF::Framerate::Stats::freq.QuadPart > 0.25) {
+                extern float target_fps;
+                target_fps = effective_fps;
+                //BMF::Framerate::GetLimiter ()->change_limit (effective_fps);
+                last_change   = effective_fps;
+                when.QuadPart = now.QuadPart;
+              }
+#endif
+
+
+
+              static LARGE_INTEGER last_frame;
+
+#if 0
+              if (1000.0 * dt < config.render.framerate.max_delta_time) {
+                LARGE_INTEGER next;
+                next.QuadPart = last_frame.QuadPart + ((double)SK_FrameStats::freq.QuadPart * (double)(config.render.framerate.max_delta_time) / 1000.0);
+
+                LARGE_INTEGER delay;
+                while (true) {
+                  QueryPerformanceCounter (&delay);
+
+                  if (delay.QuadPart < next.QuadPart)
+                    continue;
+
+                  break;
+                }
+
+                QueryPerformanceCounter (&last_frame);
+              }
+#endif
+            } else {
+              OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms",
+                api_name.c_str (),
+                  // Cast to FP to avoid integer division by zero.
+                  1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
+                    pApp->dwFrameTime / 1000.0f
+              OSD_END
             }
-            last_frame.QuadPart = now.QuadPart;
 
 #if 0
             extern IDXGISwapChain2* g_pSwapChain2;

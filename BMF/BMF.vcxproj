@@ -430,11 +430,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="adl.h" />
+    <ClInclude Include="command.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="console.h" />
     <ClInclude Include="core.h" />
     <ClInclude Include="d3d9_backend.h" />
     <ClInclude Include="dxgi_backend.h" />
     <ClInclude Include="dxgi_interfaces.h" />
+    <ClInclude Include="framerate.h" />
     <ClInclude Include="gpu_monitor.h" />
     <ClInclude Include="import.h" />
     <ClInclude Include="ini.h" />
@@ -455,10 +458,13 @@
   <ItemGroup>
     <ClCompile Include="adl.cpp" />
     <ClCompile Include="BMF.cpp" />
+    <ClCompile Include="command.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="console.cpp" />
     <ClCompile Include="core.cpp" />
     <ClCompile Include="d3d9.cpp" />
     <ClCompile Include="dxgi.cpp" />
+    <ClCompile Include="framerate.cpp" />
     <ClCompile Include="gpu_monitor.cpp" />
     <ClCompile Include="import.cpp" />
     <ClCompile Include="ini.cpp" />
