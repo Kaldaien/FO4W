@@ -122,6 +122,7 @@ namespace NVAPI {
 
   extern std::wstring app_name;
   extern std::wstring friendly_name;
+  extern std::wstring launcher_name;
 
   // Guilty until proven innocent
   extern bool nv_hardware;

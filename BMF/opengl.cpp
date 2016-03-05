@@ -25,7 +25,7 @@
 
 #include "core.h"
 
-#define WaitForInit()
+extern void WaitForInit (void);
 
 extern "C"
 {
@@ -34,7 +34,7 @@ void
 WINAPI
 opengl_init_callback (void)
 {
-  dll_log.Log (L"Skipping Stones Because of GL...");
+  dll_log.Log (L"Doing things that look odd in GL");
   dll_log.Log (L"================================");
 
   typedef HRESULT (STDMETHODCALLTYPE *CreateDXGIFactory_t)(REFIID,IDXGIFactory**);
@@ -43,25 +43,60 @@ opengl_init_callback (void)
   static CreateDXGIFactory_t CreateDXGIFactory =
     (CreateDXGIFactory_t)GetProcAddress (hDXGI, "CreateDXGIFactory");
 
-  IDXGIFactory* factory;
+  IDXGIFactory* factory = nullptr;
 
   // Only spawn the DXGI 1.4 budget thread if ... DXGI 1.4 is implemented.
-  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory))) {
-    IDXGIAdapter* adapter;
-    factory->EnumAdapters (0, &adapter);
+  if (SUCCEEDED (CreateDXGIFactory (__uuidof (IDXGIFactory4), &factory)) && factory != nullptr) {
+    IDXGIAdapter* adapter = nullptr;
 
-    BMF_StartDXGI_1_4_BudgetThread (&adapter);
+    if  (SUCCEEDED (factory->EnumAdapters (0, &adapter)) && adapter != nullptr) {
+      BMF_StartDXGI_1_4_BudgetThread (&adapter);
 
-    adapter->Release ();
+      adapter->Release ();
+    }
+
     factory->Release ();
   }
 }
 
 }
 
+
+HMODULE
+BMF_LoadRealGL (void)
+{
+  wchar_t wszBackendDLL [MAX_PATH] = { L'\0' };
+
+#ifdef _WIN64
+  GetSystemDirectory (wszBackendDLL, MAX_PATH);
+#else
+  BOOL bWOW64;
+  ::IsWow64Process (GetCurrentProcess (), &bWOW64);
+
+  if (bWOW64)
+    GetSystemWow64Directory (wszBackendDLL, MAX_PATH);
+  else
+    GetSystemDirectory (wszBackendDLL, MAX_PATH);
+#endif
+
+  lstrcatW (wszBackendDLL, L"\\OpenGL32.dll");
+
+  return LoadLibraryW (wszBackendDLL);
+}
+
+
 bool
 BMF::OpenGL::Startup (void)
 {
+  //
+  // For Thread Local Storage to work correctly, this is the only option
+  //   we cannot load the system-wide DLL from a temporary thread, it must
+  //     be the one that handled DLL process attach.
+  //
+  //   This was VERY hard to debug, please pay attention!
+  //
+  BMF_LoadRealGL ();
+
   return BMF_StartupCore (L"OpenGL32", opengl_init_callback);
 }
 
@@ -71,15 +106,18 @@ BMF::OpenGL::Shutdown (void)
   return BMF_ShutdownCore (L"OpenGL32");
 }
 
+//#include <GL/gl.h>
+
 extern "C"
 {
 
 #define OPENGL_STUB(_Return, _Name, _Proto, _Args)                        \
-  COM_DECLSPEC_NOTHROW _Return STDMETHODCALLTYPE                          \
+  __declspec (noinline)                                                   \
+  _Return WINAPI                                                          \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
-    typedef _Return (STDMETHODCALLTYPE *passthrough_t) _Proto;            \
+    typedef _Return (WINAPI *passthrough_t) _Proto;                       \
     static passthrough_t _default_impl = nullptr;                         \
                                                                           \
     if (_default_impl == nullptr) {                                       \
@@ -98,11 +136,12 @@ extern "C"
 }
 
 #define OPENGL_STUB_(_Name, _Proto, _Args)                                \
-  COM_DECLSPEC_NOTHROW void STDMETHODCALLTYPE                             \
+  __declspec (noinline)                                                   \
+  void WINAPI                                                             \
   _Name _Proto {                                                          \
     WaitForInit ();                                                       \
                                                                           \
-    typedef void (STDMETHODCALLTYPE *passthrough_t) _Proto;               \
+    typedef void (WINAPI *passthrough_t) _Proto;                          \
     static passthrough_t _default_impl = nullptr;                         \
                                                                           \
     if (_default_impl == nullptr) {                                       \
@@ -120,7 +159,7 @@ extern "C"
     _default_impl _Args;                                                  \
 }
 
-#include <stdint.h>
+#include <cstdint>
 
 typedef uint32_t  GLenum;
 typedef uint8_t   GLboolean;
@@ -1009,7 +1048,7 @@ OPENGL_STUB(BOOL, wglSetPixelFormat, (HDC hDC, DWORD PixelFormat, CONST PIXELFOR
 
 
 #if 1
-__declspec (nothrow)
+__declspec (noinline)
 BOOL
 WINAPI
 wglSwapBuffers (HDC hDC)
@@ -1038,7 +1077,7 @@ wglSwapBuffers (HDC hDC)
 
 
 // THIS IS THE ONLY THING WE CARE ABOUT, GOOD GRIEF!!!
-__declspec (nothrow)
+__declspec (noinline)
 BOOL
 WINAPI
 SwapBuffers (HDC hDC)

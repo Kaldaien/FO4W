@@ -24,7 +24,7 @@
 #include "log.h"
 #include "steam_api.h"
 
-std::wstring BMF_VER_STR = L"0.18";
+std::wstring BMF_VER_STR = L"0.20";
 
 static bmf::INI::File*  dll_ini = nullptr;
 
@@ -753,14 +753,27 @@ BMF_LoadConfig (std::wstring name) {
           (*sec).first.c_str (),
             L"Architecture" );
 
+      imports [import].blacklist = 
+         static_cast <bmf::ParameterStringW *>
+             (g_ParameterFactory.create_parameter <std::wstring> (
+                L"Blakclisted Executables")
+             );
+      imports [import].blacklist->register_to_ini (
+        dll_ini,
+          (*sec).first.c_str (),
+            L"Blacklist" );
+
       imports [import].filename->load     ();
       imports [import].when->load         ();
       imports [import].role->load         ();
       imports [import].architecture->load ();
+      imports [import].blacklist->load    ();
+
+      imports [import].hLibrary = NULL;
 
       ++import;
 
-      if (import >= BMF_MAX_IMPORTS)
+      if (import > BMF_MAX_IMPORTS)
         break;
     }
 

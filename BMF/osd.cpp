@@ -200,6 +200,8 @@ BMF_GetSharedMemory (void)
 
 #include "log.h"
 
+#include <d3d9.h>
+
 std::wstring
 BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
 {
@@ -213,9 +215,20 @@ BMF_GetAPINameFromOSDFlags (DWORD dwFlags)
     return L"OpenGL";
 
   if (dwFlags & APPFLAG_D3D9EX)
-    return L"D3D9EX";
-  if (dwFlags & APPFLAG_D3D9)
+    return L"D3D9Ex";
+
+  if (dwFlags & APPFLAG_D3D9) {
+    extern IDirect3DDevice9*   g_pD3D9Dev;
+           IDirect3DDevice9Ex* pExDev;
+
+    // TODO: Add a query for this with its code written in d3d9.cpp, instead of, well querying it ;)
+    if (SUCCEEDED (g_pD3D9Dev->QueryInterface (__uuidof (IDirect3DDevice9Ex), (void **)&pExDev))) {
+      pExDev->Release ();
+      return L"D3D9Ex";
+    }
+
     return L"D3D9";
+  }
 
 #ifdef OLDER_D3D_SUPPORT
   if (dwFlags & APPFLAG_D3D8)
@@ -345,6 +358,28 @@ BMF_DrawExternalOSD (std::string app_name, std::string text)
   return TRUE;
 }
 
+
+//Stupid Hack, rewrite me... (IN PROGRESS - see isPlugin below)
+static bool isArkhamKnight    = false;
+static bool isTalesOfZestiria = false;
+static bool isFallout4        = false;
+static bool isDivinityOrigSin = false;
+
+static bool isPlugin          = false;
+
+
+// TODO: Move this into CORE or somehwere else, the "plugin" system
+//        needs a proper formal design.
+std::wstring plugin_name = L"";
+
+void
+__stdcall
+SK_SetPluginName (std::wstring name)
+{
+  plugin_name = name;
+  isPlugin    = true;
+}
+
 void
 BMF_InstallOSD (void)
 {
@@ -395,6 +430,7 @@ BMF_InstallOSD (void)
 #endif
 }
 
+
 BMF::Framerate::Stats frame_history;
 BMF::Framerate::Stats frame_history2;
 
@@ -411,11 +447,13 @@ BMF_DrawOSD (void)
     cs_init = true;
   }
 
+#if 0
   BMF_AutoCriticalSection auto_cs (&osd_cs, true);
 
   if (! auto_cs.try_result ()) {
     return false;
   }
+#endif
 
   //
   // Enough attempts to cover 15 Seconds at 240 Hz
@@ -481,22 +519,20 @@ BMF_DrawOSD (void)
     static HMODULE hModGame = GetModuleHandle (nullptr);
     static wchar_t wszGameName [MAX_PATH] = { L'\0' };
 
-    static bool isTalesOfZestiria = false;
-    static bool isFallout4        = false;
-    static bool isDivinityOrigSin = false;
-
     if (wszGameName [0] == L'\0') {
       GetModuleFileName (hModGame, wszGameName, MAX_PATH);
-      if (StrStrIW (wszGameName, L"Tales of Zestiria.exe"))
+      if (StrStrIW (wszGameName, L"BatmanAK.exe"))
+        isArkhamKnight = true;
+      else if (StrStrIW (wszGameName, L"Tales of Zestiria.exe"))
         isTalesOfZestiria = true;
       else if (StrStrIW (wszGameName, L"Fallout4.exe"))
         isFallout4 = true;
       else if (StrStrIW (wszGameName, L"EoCApp.exe"))
         isDivinityOrigSin = true;
     }
-    
+
     if (isTalesOfZestiria) {
-      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.3.0   %ws\n\n",
+      OSD_PRINTF "Tales of Zestiria \"Fix\" v 1.3.1   %ws\n\n",
                  time
       OSD_END
     }
@@ -508,9 +544,17 @@ BMF_DrawOSD (void)
       OSD_PRINTF "Divinity: Original Sin \"Works\" v 0.0.1   %ws\n\n",
                  time
       OSD_END
-    } else {
-      OSD_PRINTF "Special K v 0.18   %ws\n\n",
+    } else if (isArkhamKnight) {
+      OSD_PRINTF "Batman \"Fix\" v 0.20   %ws\n\n",
                  time
+      OSD_END
+    } else if (isPlugin) {
+      OSD_PRINTF "%ws   %ws\n\n",
+                 plugin_name.c_str (), time
+      OSD_END
+    } else {
+      OSD_PRINTF "Special K v %ws   %ws\n\n",
+                 BMF_VER_STR.c_str (), time
       OSD_END
     }
   }
@@ -556,19 +600,19 @@ BMF_DrawOSD (void)
             std::wstring api_name = BMF_GetAPINameFromOSDFlags (pApp->dwFlags);
 
             if (mean != INFINITY) {
-              OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms (s=%3.2f,min=%3.2f,max=%3.2f,hitches=%d)   <%4.01f FPS / %3.2f ms>",
-                api_name.c_str (),
-                  // Cast to FP to avoid integer division by zero.
-                  1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
-                  mean,
-                    sqrt (sd),
-                      min,
-                        max,
-                          hitches,
-                            1000.0 / effective_mean,
-                              effective_mean
-              OSD_END
-
+              if (BMF::Framerate::GetLimiter ()->get_limit () != 0.0 && (! isTalesOfZestiria) && frame_history2.calcNumSamples () > 0) {
+                OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms (s=%3.2f,min=%3.2f,max=%3.2f,hitches=%d)   <%4.01f FPS / %3.2f ms>",
+                  api_name.c_str (),
+                    // Cast to FP to avoid integer division by zero.
+                    1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
+                    mean,
+                      sqrt (sd),
+                        min,
+                          max,
+                            hitches,
+                              1000.0 / effective_mean,
+                                effective_mean
+                OSD_END
 #if 0
               //
               // Framerate Smoothing
@@ -604,7 +648,7 @@ BMF_DrawOSD (void)
 
                 LARGE_INTEGER delay;
                 while (true) {
-                  QueryPerformanceCounter (&delay);
+                  QueryPerformanceCounter_Original (&delay);
 
                   if (delay.QuadPart < next.QuadPart)
                     continue;
@@ -612,10 +656,28 @@ BMF_DrawOSD (void)
                   break;
                 }
 
-                QueryPerformanceCounter (&last_frame);
+                QueryPerformanceCounter_Original (&last_frame);
               }
 #endif
-            } else {
+              }
+
+              // No Effective Frametime History
+              else {
+                OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms (s=%3.2f,min=%3.2f,max=%3.2f,hitches=%d)",
+                  api_name.c_str (),
+                    // Cast to FP to avoid integer division by zero.
+                    1000.0f * (float)pApp->dwFrames / (float)(pApp->dwTime1 - pApp->dwTime0),
+                    mean,
+                      sqrt (sd),
+                        min,
+                          max,
+                            hitches
+                OSD_END
+              }
+            }
+
+            // No Frametime History
+            else {
               OSD_PRINTF "  %-6ws :  %#4.01f FPS, %#13.01f ms",
                 api_name.c_str (),
                   // Cast to FP to avoid integer division by zero.
@@ -766,7 +828,7 @@ BMF_DrawOSD (void)
   //
   // DXGI 1.4 Memory Info (VERY accurate)
   ///
-  if (nodes > 0) {
+  if (nodes > 0 && nodes < 4) {
     // We need to be careful here, it's not guaranteed that NvAPI adapter indices
     //   match up with DXGI 1.4 node indices... Adapter LUID may shed some light
     //     on that in the future.
@@ -936,7 +998,7 @@ BMF_DrawOSD (void)
                io_counter.other_mb_sec, io_counter.other_iop_sec
   OSD_END
 
-  if (nodes > 0) {
+  if (nodes > 0 && nodes < 4) {
     int i = 0;
 
     OSD_M_PRINTF "\n"

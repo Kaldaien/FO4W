@@ -20,7 +20,7 @@
 
 #include "parameter.h"
 
-#define BMF_MAX_IMPORTS 4
+#define BMF_MAX_IMPORTS 8
 
 extern const std::wstring BMF_IMPORT_EARLY;
 extern const std::wstring BMF_IMPORT_LATE;
@@ -39,6 +39,7 @@ struct import_t {
   bmf::ParameterStringW* when         = nullptr; // 0 = Early,  1 = Late,  2 = Lazy
   bmf::ParameterStringW* role         = nullptr; // 0 = dxgi,   1 = d3d11
   bmf::ParameterStringW* architecture = nullptr; // 0 = 64-bit, 1 = 32-bit
+  bmf::ParameterStringW* blacklist    = nullptr;
 };
 
 extern import_t imports [BMF_MAX_IMPORTS];

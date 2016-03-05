@@ -83,9 +83,16 @@ BMF_Console::getInstance (void)
   return pConsole;
 }
 
+#include "framerate.h"
+bool bNoConsole = false;
+
 void
 BMF_Console::Draw (void)
 {
+  // Some plugins have their own...
+  if (bNoConsole)
+    return;
+
   static bool          carret    = false;
   static LARGE_INTEGER last_time = { 0 };
 
@@ -97,8 +104,10 @@ BMF_Console::Draw (void)
     LARGE_INTEGER now;
     LARGE_INTEGER freq;
 
-    QueryPerformanceFrequency (&freq);
-    QueryPerformanceCounter   (&now);
+    QueryPerformanceFrequency        (&freq);
+
+    extern LARGE_INTEGER BMF_QueryPerf (void);
+    now = BMF_QueryPerf ();
 
     // Blink the Carret
     if ((now.QuadPart - last_time.QuadPart) > (freq.QuadPart / 3)) {
@@ -127,8 +136,10 @@ void
 BMF_Console::Start (void)
 {
   // STUPID HACK UNTIL WE PROPERLY UNIFY BMF AND TZFIX'S CONSOLE.
-  if (GetModuleHandle (L"tzfix.dll"))
+  if (GetModuleHandle (L"tzfix.dll") || GetModuleHandle (L"AgDrag.dll") || GetModuleHandle (L"tsfix.dll")) {
+    bNoConsole = true;
     return;
+  }
 
   hMsgPump =
     CreateThread ( NULL,
@@ -143,8 +154,10 @@ void
 BMF_Console::End (void)
 {
   // STUPID HACK UNTIL WE PROPERLY UNIFY BMF AND TZFIX'S CONSOLE.
-  if (GetModuleHandle (L"tzfix.dll"))
+  if (GetModuleHandle (L"tzfix.dll") || GetModuleHandle (L"AgDrag.dll") || GetModuleHandle (L"tsfix.dll")) {
+    bNoConsole = true;
     return;
+  }
 
   TerminateThread     (hMsgPump, 0);
   UnhookWindowsHookEx (hooks.keyboard);
@@ -191,12 +204,17 @@ BMF_Console::MessagePump (LPVOID hook_ptr)
       continue;
     }
 
-    if (hWndForeground == GetDesktopWindow ()) {
+    DWORD dwProc;
+
+    dwThreadId =
+      GetWindowThreadProcessId (hWndForeground, &dwProc);
+
+    // Ugly hack, but a different window might be in the foreground...
+    if (dwProc != GetCurrentProcessId ()) {
+      //dll_log.Log (L" *** Tried to hook the wrong process!!!");
       Sleep (83);
       continue;
     }
-
-    dwThreadId = GetWindowThreadProcessId (hWndForeground, nullptr);
 
     break;
   }

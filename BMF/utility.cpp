@@ -23,6 +23,9 @@
 #include <Shlobj.h>
 #pragma comment (lib, "shell32.lib")
 
+#include <process.h>
+#include <tlhelp32.h>
+
 int
 BMF_MessageBox (std::wstring caption, std::wstring title, uint32_t flags)
 {
@@ -121,4 +124,57 @@ void
 BMF_SetNormalFileAttribs (std::wstring file)
 {
   SetFileAttributes (file.c_str (), FILE_ATTRIBUTE_NORMAL);
+}
+
+
+bool
+SK_IsAdmin (void)
+{
+  bool   bRet   = false;
+  HANDLE hToken = 0;
+
+  if (OpenProcessToken (GetCurrentProcess (), TOKEN_QUERY, &hToken)) {
+    TOKEN_ELEVATION Elevation;
+    DWORD cbSize = sizeof (TOKEN_ELEVATION);
+
+    if (GetTokenInformation (hToken, TokenElevation, &Elevation, sizeof (Elevation), &cbSize)) {
+      bRet = Elevation.TokenIsElevated != 0;
+    }
+  }
+
+  if (hToken)
+    CloseHandle (hToken);
+
+  return bRet;
+}
+
+bool
+SK_IsProcessRunning (const wchar_t* wszProcName)
+{
+  HANDLE         hProcSnap;
+  PROCESSENTRY32 pe32;
+
+  hProcSnap =
+    CreateToolhelp32Snapshot (TH32CS_SNAPPROCESS, 0);
+
+  if (hProcSnap == INVALID_HANDLE_VALUE)
+    return false;
+
+  pe32.dwSize = sizeof PROCESSENTRY32;
+
+  if (! Process32First (hProcSnap, &pe32)) {
+    CloseHandle (hProcSnap);
+    return false;
+  }
+
+  do {
+    if (! lstrcmpiW (wszProcName, pe32.szExeFile)) {
+      CloseHandle (hProcSnap);
+      return true;
+    }
+  } while (Process32Next (hProcSnap, &pe32));
+
+  CloseHandle (hProcSnap);
+
+  return false;
 }

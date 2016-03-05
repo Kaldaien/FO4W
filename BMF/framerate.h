@@ -23,26 +23,6 @@
 #include <cstdint>
 #include <cmath>
 
-static
-auto BMF_CurrentPerf = []()->
- LARGE_INTEGER
-  {
-    LARGE_INTEGER             time; 
-    QueryPerformanceCounter (&time);
-    return                    time;
-  };
-
-static
-auto BMF_DeltaPerf = [](auto delta, auto freq)->
- LARGE_INTEGER
-  {
-    LARGE_INTEGER time = BMF_CurrentPerf ();
-
-    time.QuadPart -= (LONGLONG)(delta * freq);
-
-    return time;
-  };
-
 namespace BMF
 {
   namespace Framerate
@@ -62,7 +42,8 @@ namespace BMF
       void init (double target);
       void wait (void);
 
-      void change_limit (double target);
+      void   set_limit (double target);
+      double get_limit (void) { return fps; };
 
       double effective_frametime (void);
 
@@ -96,9 +77,7 @@ namespace BMF
         samples++;
       }
 
-      double calcMean (double seconds = 1.0) {
-        return calcMean (BMF_DeltaPerf (seconds, freq.QuadPart));
-      }
+      double calcMean (double seconds = 1.0);
 
       double calcMean (LARGE_INTEGER start) {
         double mean = 0.0;
@@ -115,9 +94,7 @@ namespace BMF
         return mean / (double)samples_used;
       }
 
-      double calcSqStdDev (double mean, double seconds = 1.0) {
-        return calcSqStdDev (mean, BMF_DeltaPerf (seconds, freq.QuadPart));
-      }
+      double calcSqStdDev (double mean, double seconds = 1.0);
 
       double calcSqStdDev (double mean, LARGE_INTEGER start) {
         double sd = 0.0;
@@ -135,9 +112,7 @@ namespace BMF
         return sd / (double)samples_used;
       }
 
-      double calcMin (double seconds = 1.0) {
-        return calcMin (BMF_DeltaPerf (seconds, freq.QuadPart));
-      }
+      double calcMin (double seconds = 1.0);
 
       double calcMin (LARGE_INTEGER start) {
         double min = INFINITY;
@@ -152,9 +127,7 @@ namespace BMF
         return min;
       }
 
-      double calcMax (double seconds = 1.0) {
-        return calcMax (BMF_DeltaPerf (seconds, freq.QuadPart));
-      }
+      double calcMax (double seconds = 1.0);
 
       double calcMax (LARGE_INTEGER start) {
         double max = -INFINITY;
@@ -169,9 +142,7 @@ namespace BMF
         return max;
       }
 
-      int calcHitches (double tolerance, double mean, double seconds = 1.0) {
-        return calcHitches (tolerance, mean, BMF_DeltaPerf (seconds, freq.QuadPart));
-      }
+      int calcHitches (double tolerance, double mean, double seconds = 1.0);
 
       int calcHitches (double tolerance, double mean, LARGE_INTEGER start) {
         int hitches = 0;
@@ -212,9 +183,7 @@ namespace BMF
         return hitches;
       }
 
-      int calcNumSamples (double seconds = 1.0) {
-        return calcNumSamples (BMF_DeltaPerf (seconds, freq.QuadPart));
-      }
+      int calcNumSamples (double seconds = 1.0);
 
       int calcNumSamples (LARGE_INTEGER start) {
         int samples_used = 0;

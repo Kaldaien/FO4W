@@ -45,6 +45,12 @@ BMF_EstablishDllRole (HMODULE hModule)
   else if (! _wcsicmp (wszDllName, L"OpenGL32.dll"))
     dll_role = DLL_ROLE::OpenGL;
 
+  //
+  // Fallback to d3d9
+  //
+  else
+    dll_role = DLL_ROLE::D3D9;
+
   return true;
 }
 
@@ -98,6 +104,7 @@ BMF_Detach (DLL_ROLE role)
   return false;
 }
 
+#define IGNORE_THREAD_ATTACH
 
 // We need this to load embedded resources correctly...
 HMODULE hModSelf;
@@ -111,6 +118,10 @@ APIENTRY DllMain ( HMODULE hModule,
   {
     case DLL_PROCESS_ATTACH:
     {
+#ifdef IGNORE_THREAD_ATTACH
+      DisableThreadLibraryCalls (hModule);
+#endif
+
       if (! attached)
       {
         hModSelf = hModule;
@@ -120,15 +131,25 @@ APIENTRY DllMain ( HMODULE hModule,
       }
     } break;
 
+#ifndef IGNORE_THREAD_ATTACH
     case DLL_THREAD_ATTACH:
       //dll_log.Log (L"Custom dxgi.dll Attached (tid=%x)",
       //                GetCurrentThreadId ());
+      if (dll_role == DLL_ROLE::OpenGL) {
+        extern HMODULE LoadRealGL (void);
+        LoadRealGL ();
+      }
       break;
 
     case DLL_THREAD_DETACH:
       //dll_log.Log (L"Custom dxgi.dll Detached (tid=%x)",
       //                GetCurrentThreadId ());
+      if (dll_role == DLL_ROLE::OpenGL) {
+        //extern HMODULE FreeRealGL (void);
+        //FreeRealGL ();
+      }
       break;
+#endif
 
     case DLL_PROCESS_DETACH:
     {

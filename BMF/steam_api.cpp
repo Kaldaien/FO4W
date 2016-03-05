@@ -39,7 +39,7 @@ static bool init = false;
 
 // To spoof Overlay Activation (pause the game)
 #include <set>
-std::set <class CCallbackBase *> overlay_activation_callbacks;
+std::multiset <class CCallbackBase *> overlay_activation_callbacks;
 CRITICAL_SECTION callback_cs = { 0 };
 
 
@@ -78,6 +78,8 @@ S_API SteamAPI_GetHSteamPipe_t      SteamAPI_GetHSteamPipe      = nullptr;
 
 S_API SteamClient_t                 SteamClient                 = nullptr;
 
+bool S_CALLTYPE SteamAPI_Init_XXX (void);
+
 
 S_API SteamAPI_RegisterCallback_t   SteamAPI_RegisterCallback_Original   = nullptr;
 S_API SteamAPI_UnregisterCallback_t SteamAPI_UnregisterCallback_Original = nullptr;
@@ -88,6 +90,8 @@ S_CALLTYPE
 SteamAPI_RegisterCallback_Detour (class CCallbackBase *pCallback, int iCallback)
 {
   EnterCriticalSection (&callback_cs);
+
+  SteamAPI_Init_XXX ();
 
   switch (iCallback)
   {
@@ -116,11 +120,14 @@ SteamAPI_UnregisterCallback_Detour (class CCallbackBase *pCallback)
 {
   EnterCriticalSection (&callback_cs);
 
+  SteamAPI_Init_XXX ();
+
   switch (pCallback->GetICallback ())
   {
     case GameOverlayActivated_t::k_iCallback:
       steam_log.Log (L" * Game Uninstalled Overlay Activation Callback");
-      overlay_activation_callbacks.erase (pCallback);
+      if (overlay_activation_callbacks.find (pCallback) != overlay_activation_callbacks.end ())
+        overlay_activation_callbacks.erase (pCallback);
       break;
     case ScreenshotRequested_t::k_iCallback:
       steam_log.Log (L" * Game Uninstalled Screenshot Callback");
@@ -132,6 +139,49 @@ SteamAPI_UnregisterCallback_Detour (class CCallbackBase *pCallback)
   LeaveCriticalSection (&callback_cs);
 }
 
+typedef bool (S_CALLTYPE* SteamAPI_Init_pfn)(void);
+SteamAPI_Init_pfn SteamAPI_Init_Original = nullptr;
+
+bool S_CALLTYPE SteamAPI_Init_Detour (void);
+
+void HookSteam (void)
+{
+  static bool init = false;
+  if (! init) {
+    steam_log.init ("logs/steam_api.log", "w");
+    steam_log.silent = config.steam.silent;
+    InitializeCriticalSectionAndSpinCount (&callback_cs, 1024UL);
+    init = true;
+  }
+
+  if (config.steam.silent)
+    return;
+
+#ifndef _WIN64
+  const wchar_t* wszSteamDLLName = L"steam_api.dll";
+#else
+  const wchar_t* wszSteamDLLName = L"steam_api64.dll";
+#endif
+
+  LoadLibrary (wszSteamDLLName);
+
+  BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_RegisterCallback",
+                       SteamAPI_RegisterCallback_Detour,
+                     (LPVOID *)&SteamAPI_RegisterCallback_Original,
+                     (LPVOID *)&SteamAPI_RegisterCallback);
+  BMF_EnableHook (SteamAPI_RegisterCallback);
+  BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_UnregisterCallback",
+                     SteamAPI_UnregisterCallback_Detour,
+                     (LPVOID *)&SteamAPI_UnregisterCallback_Original,
+                     (LPVOID *)&SteamAPI_UnregisterCallback);
+  BMF_EnableHook (SteamAPI_UnregisterCallback);
+  BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_Init",
+                     SteamAPI_Init_Detour,
+                     (LPVOID *)&SteamAPI_Init_Original,
+                     (LPVOID *)&SteamAPI_Init);
+  BMF_EnableHook (SteamAPI_Init);
+}
+
 
 extern "C" void __cdecl SteamAPIDebugTextHook (int nSeverity, const char *pchDebugText);
 
@@ -139,6 +189,9 @@ class BMF_SteamAPIContext {
 public:
   bool Init (HMODULE hSteamDLL)
   {
+    if (config.steam.silent)
+      return false;
+
     wchar_t wszSteamDLLName [MAX_PATH];
     GetModuleFileNameW (hSteamDLL, wszSteamDLLName, MAX_PATH);
 
@@ -191,11 +244,7 @@ public:
             "SteamAPI_RegisterCallback"
         );
 #else
-      BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_RegisterCallback",
-                           SteamAPI_RegisterCallback_Detour,
-                (LPVOID *)&SteamAPI_RegisterCallback_Original,
-                (LPVOID *)&SteamAPI_RegisterCallback);
-      BMF_EnableHook (SteamAPI_RegisterCallback);
+      HookSteam ();
 #endif
     }
 
@@ -207,11 +256,7 @@ public:
             "SteamAPI_UnregisterCallback"
         );
 #else
-      BMF_CreateDLLHook (wszSteamDLLName, "SteamAPI_UnregisterCallback",
-                           SteamAPI_UnregisterCallback_Detour,
-                (LPVOID *)&SteamAPI_UnregisterCallback_Original,
-                (LPVOID *)&SteamAPI_UnregisterCallback);
-      BMF_EnableHook (SteamAPI_UnregisterCallback);
+      HookSteam ();
 #endif
     }
 
@@ -329,11 +374,13 @@ public:
     utils_       = nullptr;
     screenshots_ = nullptr;
 
+#if 0
     if (SteamAPI_Shutdown != nullptr) {
       // We probably should not shutdown Steam API; the underlying
       //  game will do this at a more opportune time for sure.
       SteamAPI_Shutdown ();
     }
+#endif
   }
 
   ISteamUserStats*   UserStats   (void) { return user_stats_;  }
@@ -693,6 +740,9 @@ SteamAPIDebugTextHook (int nSeverity, const char *pchDebugText)
 bool
 BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
 {
+#define STEAM_INIT_FUNC_SAFE SteamAPI_InitSafe
+#define STEAM_INIT_FUNC      SteamAPI_Init
+
   SteamAPI_Init =
     (SteamAPI_Init_t)GetProcAddress (
       hDLL,
@@ -711,7 +761,21 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
         "SteamAPI_RestartAppIfNecessary"
     );
 
-  if (SteamAPI_InitSafe != nullptr) {
+  if (SteamClient == nullptr) {
+    SteamClient =
+      (SteamClient_t)GetProcAddress (
+         hDLL,
+           "SteamClient"
+      );
+  }
+
+  if (SteamClient != nullptr && SteamClient () != nullptr && (! pre_load)) {
+    steam_log.Log (L" * Skipping SteamAPI Initialization - game already did it...");
+    return true;
+  }
+
+  // If we are pre-loading, then we may have to initialize SteamAPI ourselves :(
+  if (STEAM_INIT_FUNC_SAFE != nullptr && pre_load) {
     int appid;
 
     FILE* steam_appid = fopen ("steam_appid.txt", "r+");
@@ -730,8 +794,8 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
       }
 
       // If we are pre-loading the DLL, we cannot recover from this...
-      //if (pre_load)
-        //return false;
+      if (pre_load)
+        return false;
     } else {
       fscanf (steam_appid, "%d", &appid);
       fclose (steam_appid);
@@ -756,15 +820,9 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
       }
     }
 
-#if 0
     steam_log.LogEx (true, L" [!] SteamAPI_InitSafe ()... ");
 
-    STEAMAPI_CALL1 (ret, InitSafe, ());
-#else
-    steam_log.LogEx (true, L" [!] SteamAPI_Init ()... ");
-
-    STEAMAPI_CALL1 (ret, Init, ());
-#endif
+    ret = STEAM_INIT_FUNC_SAFE ();
 
     steam_log.LogEx (false, L"%s! (Status: %lu) [%d-bit]\n\n",
       ret ? L"done" : L"failed",
@@ -787,14 +845,15 @@ BMF_Load_SteamAPI_Imports (HMODULE hDLL, bool pre_load)
 void
 BMF::SteamAPI::Init (bool pre_load)
 {
+  if (config.steam.silent)
+    return;
+
   // We allow a fixed number of chances to initialize, and then we give up.
   static int    init_tries = 0;
   static time_t last_try   = 0;
 
   if (init)
     return;
-
-  InitializeCriticalSectionAndSpinCount (&callback_cs, 1024UL);
 
   // We want to give the init a second-chance because it's not quite
   //  up to snuff yet, but some games would just continue to try and
@@ -803,72 +862,6 @@ BMF::SteamAPI::Init (bool pre_load)
     return;
 
   last_try = time (NULL);
-
-  if (init_tries++ == 0) {
-    steam_log.init ("logs/steam_api.log", "w");
-    steam_log.silent = config.steam.silent;
-
-    steam_log.Log (L"Initializing SteamWorks Backend");
-    steam_log.Log (L"-------------------------------\n");
-  }
-
-#ifdef _WIN64
-  const wchar_t* steam_dll_str    = L"steam_api64.dll";
-#else
-  const wchar_t* steam_dll_str    = L"steam_api.dll";
-#endif
-
-  HMODULE hSteamAPI = nullptr;
-  bool    bImported = false;
-
-  if (pre_load) {
-    if (init_tries == 1) {
-      steam_log.Log (L" @ %s was already loaded...\n", steam_dll_str);
-    }
-
-    hSteamAPI = GetModuleHandle (steam_dll_str);
-  }
-  else {
-    hSteamAPI = LoadLibrary (steam_dll_str);
-  }
-
-  bImported = BMF_Load_SteamAPI_Imports (hSteamAPI, pre_load);
-
-  if (! bImported) {
-    init = false;
-    return;
-  }
-
-  steam_ctx.Init (hSteamAPI);
-
-  ISteamUserStats* stats = steam_ctx.UserStats ();
-
-  if (stats)
-    stats->RequestCurrentStats ();
-  else 
-  // Close, but no - we still have not initialized this monster.
-  {
-    init = false;
-    return;
-  }
-
-  steam_log.Log (L" Creating Achievement Manager...");
-
-  // Don't report our own callbacks!
-  BMF_DisableHook (SteamAPI_RegisterCallback);
-  {
-    steam_achievements = new BMF_Steam_AchievementManager (
-        config.steam.achievement_sound.c_str ()
-      );
-  }
-  BMF_EnableHook (SteamAPI_RegisterCallback);
-
-  steam_log.LogEx (false, L"\n");
-
-  // Phew, finally!
-  steam_log.Log (L"--- Initialization Finished (%d tries) ---", init_tries);
-
-  init = true;
 }
 
 void
@@ -937,6 +930,98 @@ BMF::SteamAPI::SetOverlayState (bool active)
 
 
 
+bool
+S_CALLTYPE
+SteamAPI_Init_Detour (void)
+{
+  static int  init_tries = -1;
+
+  if (++init_tries == 0) {
+    steam_log.Log (L"Initializing SteamWorks Backend");
+    steam_log.Log (L"-------------------------------\n");
+  }
+
+  bool ret = SteamAPI_Init_Original ();
+
+  if (ret == true && (! steam_log.silent))
+    SteamAPI_Init_XXX ();
+
+  return ret;
+}
+
+bool
+S_CALLTYPE
+SteamAPI_Init_XXX (void)
+{
+  int init_tries = 1;
+
+  static bool init = false;
+
+  if (init)
+    return true;
+
+  bool ret = true;
+
+#ifdef _WIN64
+  const wchar_t* steam_dll_str    = L"steam_api64.dll";
+#else
+  const wchar_t* steam_dll_str = L"steam_api.dll";
+#endif
+
+  HMODULE hSteamAPI = nullptr;
+  bool    bImported = false;
+
+  if (true) {//tpre_load) {
+    if (init_tries == 1) {
+      steam_log.Log (L" @ %s was already loaded...\n", steam_dll_str);
+    }
+
+    hSteamAPI = GetModuleHandle (steam_dll_str);
+  }
+  else {
+    hSteamAPI = LoadLibrary (steam_dll_str);
+  }
+
+  bImported = BMF_Load_SteamAPI_Imports (hSteamAPI, /*pre_load*/true);
+
+  if (! bImported) {
+    //init = false;
+    //return false;
+  }
+
+  steam_ctx.Init (hSteamAPI);
+
+  ISteamUserStats* stats = steam_ctx.UserStats ();
+
+  if (stats)
+    stats->RequestCurrentStats ();
+  else 
+  // Close, but no - we still have not initialized this monster.
+  {
+    //init = false;
+    //return false;
+  }
+
+  steam_log.Log (L" Creating Achievement Manager...");
+
+  // Don't report our own callbacks!
+  BMF_DisableHook (SteamAPI_RegisterCallback);
+  {
+    steam_achievements = new BMF_Steam_AchievementManager (
+        config.steam.achievement_sound.c_str ()
+      );
+  }
+  BMF_EnableHook (SteamAPI_RegisterCallback);
+
+  steam_log.LogEx (false, L"\n");
+
+  // Phew, finally!
+  steam_log.Log (L"--- Initialization Finished (%d tries) ---", init_tries);
+
+  init = true;
+
+  return ret;
+}
 
 
 //

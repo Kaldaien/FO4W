@@ -538,6 +538,9 @@ WINAPI BudgetThread (LPVOID user_data)
         )
       ) ;
 
+    // Fix for AMD drivers, that don't allow querying non-local memory
+    int nodes = max (0, node - 1);
+
     node = 0;
 
     while (node < MAX_GPU_NODES &&
@@ -548,7 +551,7 @@ WINAPI BudgetThread (LPVOID user_data)
         )
       ) ;
 
-    int nodes = node - 1;
+    //int nodes = max (0, node - 1);
 
     // Set the number of SLI/CFX Nodes
     mem_info [buffer].nodes = nodes;
@@ -775,6 +778,70 @@ osd_pump (LPVOID lpThreadParam)
   return 0;
 }
 
+DWORD
+WINAPI
+BMF_InitCOM_Thread (LPVOID lpThreadParam)
+{
+  extern bool BMF_InitCOM (void);
+  BMF_InitCOM ();
+
+  Sleep (1000);
+
+  //
+  // Spawn CPU Refresh Thread
+  //
+  if (cpu_stats.hThread == 0) {
+    dll_log.LogEx (true, L" [WMI] Spawning CPU Monitor...      ");
+    cpu_stats.hThread = CreateThread (NULL, 0, BMF_MonitorCPU, NULL, 0, NULL);
+    if (cpu_stats.hThread != 0)
+      dll_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (cpu_stats.hThread));
+    else
+      dll_log.LogEx (false, L"Failed!\n");
+  }
+
+  Sleep (1000);
+
+  if (disk_stats.hThread == 0) {
+    dll_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
+    disk_stats.hThread =
+      CreateThread (NULL, 0, BMF_MonitorDisk, NULL, 0, NULL);
+    if (disk_stats.hThread != 0)
+      dll_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (disk_stats.hThread));
+    else
+      dll_log.LogEx (false, L"failed!\n");
+  }
+
+  Sleep (1000);
+
+  if (pagefile_stats.hThread == 0) {
+    dll_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
+    pagefile_stats.hThread =
+      CreateThread (NULL, 0, BMF_MonitorPagefile, NULL, 0, NULL);
+    if (pagefile_stats.hThread != 0)
+      dll_log.LogEx (false, L"tid=0x%04x\n",
+        GetThreadId (pagefile_stats.hThread));
+    else
+      dll_log.LogEx (false, L"failed!\n");
+  }
+
+  Sleep (1000);
+
+  //
+  // Spawn Process Monitor Thread
+  //
+  if (process_stats.hThread == 0) {
+    dll_log.LogEx (true, L" [WMI] Spawning Process Monitor...  ");
+    process_stats.hThread = CreateThread (NULL, 0, BMF_MonitorProcess, NULL, 0, NULL);
+    if (process_stats.hThread != 0)
+      dll_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (process_stats.hThread));
+    else
+      dll_log.LogEx (false, L"Failed!\n");
+  }
+
+  return 0;
+}
+
+
 
 void
 BMF_InitCore (const wchar_t* backend, void* callback)
@@ -797,9 +864,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     L"------------------------------------------------------------------------"
     L"-----------\n");
 
-  extern bool BMF_InitCOM (void);
-  BMF_InitCOM ();
-
   DWORD   dwProcessSize = MAX_PATH;
   wchar_t wszProcessName [MAX_PATH];
 
@@ -815,7 +879,23 @@ BMF_InitCore (const wchar_t* backend, void* callback)
 
   host_app = pwszShortName;
 
-  dll_log.Log (L">> (%s) <<", pwszShortName);
+  extern HMODULE hModSelf;
+  wchar_t wszModuleName  [MAX_PATH];
+  GetModuleBaseName (hProc, hModSelf, wszModuleName, MAX_PATH);
+
+  dll_log.Log (L">> (%s) [%s] <<\n", pwszShortName, wszModuleName);
+
+  dll_log.LogEx (true, L"Loading user preferences from %s.ini... ", backend);
+
+  if (BMF_LoadConfig (backend)) {
+    dll_log.LogEx (false, L"done!\n");
+  } else {
+    dll_log.LogEx (false, L"failed!\n");
+    // If no INI file exists, write one immediately.
+    dll_log.LogEx (true, L"  >> Writing base INI file, because none existed... ");
+    BMF_SaveConfig (backend);
+    dll_log.LogEx (false, L"done!\n");
+  }
 
   if (! lstrcmpW (pwszShortName, L"BatmanAK.exe"))
     USE_SLI = false;
@@ -823,6 +903,10 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   dll_log.LogEx (false,
     L"----------------------------------------------------------------------"
     L"-------------\n");
+
+  // If the module name is this, then we need to load the system-wide DLL...
+  wchar_t wszProxyName [MAX_PATH];
+  wsprintf (wszProxyName, L"%s.dll", backend);
 
   wchar_t wszBackendDLL [MAX_PATH] = { L'\0' };
 #ifdef _WIN64
@@ -843,40 +927,61 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   lstrcatW (wszBackendDLL, backend);
   lstrcatW (wszBackendDLL, L".dll");
 
-  dll_log.LogEx (true, L" Loading default %s.dll: ", backend);
+  const wchar_t* dll_name = wszBackendDLL;
 
-  backend_dll = LoadLibrary (wszBackendDLL);
+  if (! lstrcmpiW (wszProxyName, wszModuleName)) {
+    dll_name = wszBackendDLL;
+  } else {
+    dll_name = wszProxyName;
+  }
+
+  bool load_proxy = false;
+  extern import_t imports [BMF_MAX_IMPORTS];
+
+  for (int i = 0; i < BMF_MAX_IMPORTS; i++) {
+    if (imports [i].role != nullptr && imports [i].role->get_value () == backend) {
+      dll_log.LogEx (true, L" Loading proxy %s.dll:    ", backend);
+      dll_name   = _wcsdup (imports [i].filename->get_value ().c_str ());
+      load_proxy = true;
+      break;
+    }
+  }
+
+  if (! load_proxy)
+    dll_log.LogEx (true, L" Loading default %s.dll: ", backend);
+
+  backend_dll = LoadLibrary (dll_name);
 
   if (backend_dll != NULL)
-    dll_log.LogEx (false, L" (%s)\n", wszBackendDLL);
+    dll_log.LogEx (false, L" (%s)\n", dll_name);
   else
-    dll_log.LogEx (false, L" FAILED (%s)!\n", wszBackendDLL);
+    dll_log.LogEx (false, L" FAILED (%s)!\n", dll_name);
+
+  // Free the temporary string storage
+  if (load_proxy)
+    free ((void *)dll_name);
 
   dll_log.LogEx (false,
     L"----------------------------------------------------------------------"
     L"-------------\n");
 
 
-  dll_log.LogEx (true, L"Loading user preferences from %s.ini... ", backend);
-  if (BMF_LoadConfig (backend)) {
-    dll_log.LogEx (false, L"done!\n\n");
-  } else {
-    dll_log.LogEx (false, L"failed!\n");
-    // If no INI file exists, write one immediately.
-    dll_log.LogEx (true, L"  >> Writing base INI file, because none existed... ");
-    BMF_SaveConfig (backend);
-    dll_log.LogEx (false, L"done!\n\n");
-  }
-
-
   MH_STATUS WINAPI BMF_Init_MinHook (void);
   BMF_Init_MinHook ();
 
+  BMF::Framerate::Init ();
+
+  // Setup hooks before we initialize the library
+  extern void HookSteam (void);
+  HookSteam ();
 
   // Hard-code the AppID for ToZ
-  if (! lstrcmpW (pwszShortName, L"Tales of Zestiria.exe"))
-    config.steam.appid = 351970;
+  //if (! lstrcmpW (pwszShortName, L"Tales of Zestiria.exe"))
+    //config.steam.appid = 351970;
 
+  // Game won't start from the commandline without this...
+  if (! lstrcmpW (pwszShortName, L"dis1_st.exe"))
+    config.steam.appid = 405900;
 
   // Load user-defined DLLs (Early)
 #ifdef _WIN64
@@ -885,6 +990,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   BMF_LoadEarlyImports32 ();
 #endif
 
+#ifdef STEAM_EARLY
   // Start Steam EARLY, so that it can hook into everything at an opportune
   //   time.
   if (BMF::SteamAPI::AppID () == 0)
@@ -899,6 +1005,7 @@ BMF_InitCore (const wchar_t* backend, void* callback)
     else
       BMF::SteamAPI::Init (false);
   }
+#endif
 
   if (config.system.silent) {
     dll_log.silent = true;
@@ -975,6 +1082,22 @@ BMF_InitCore (const wchar_t* backend, void* callback)
                                SW_SHOWDEFAULT );
       exit (0);
     }
+  } else {
+    dll_log.LogEx (true, L"Initializing ADL:   ");
+
+    extern BOOL BMF_InitADL (void);
+    BOOL adl_init = BMF_InitADL ();
+
+    dll_log.LogEx (false, L" %s\n\n", adl_init ? L"Success" : L"Failed");
+
+    if (adl_init) {
+      extern int BMF_ADL_CountPhysicalGPUs (void);
+      extern int BMF_ADL_CountActiveGPUs   (void);
+
+      dll_log.Log ( L"  * Number of Installed AMD GPUs: %i (%i are active)",
+                      BMF_ADL_CountPhysicalGPUs (),
+                        BMF_ADL_CountActiveGPUs () );
+    }
   }
 
   HMODULE hMod = GetModuleHandle (pwszShortName);
@@ -1013,67 +1136,19 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   callback_t callback_fn = (callback_t)callback;
   callback_fn ();
 
+//#define DEBUG_SYMS
+#ifdef DEBUG_SYMS
   dll_log.LogEx (true, L" @ Loading Debug Symbols: ");
 
   SymInitializeW       (GetCurrentProcess (), NULL, TRUE);
   SymRefreshModuleList (GetCurrentProcess ());
 
   dll_log.LogEx (false, L"done!\n");
+#endif
 
-  dll_log.Log (L"=== Initialization Finished! ===\n");
+  dll_log.Log (L"=== Initialization Finished! ===");
 
-  //
-  // Spawn CPU Refresh Thread
-  //
-  if (cpu_stats.hThread == 0) {
-    dll_log.LogEx (true, L" [WMI] Spawning CPU Monitor...      ");
-    cpu_stats.hThread = CreateThread (NULL, 0, BMF_MonitorCPU, NULL, 0, NULL);
-    if (cpu_stats.hThread != 0)
-      dll_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (cpu_stats.hThread));
-    else
-      dll_log.LogEx (false, L"Failed!\n");
-  }
-
-  Sleep (90);
-
-  if (disk_stats.hThread == 0) {
-    dll_log.LogEx (true, L" [WMI] Spawning Disk Monitor...     ");
-    disk_stats.hThread =
-      CreateThread (NULL, 0, BMF_MonitorDisk, NULL, 0, NULL);
-    if (disk_stats.hThread != 0)
-      dll_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (disk_stats.hThread));
-    else
-      dll_log.LogEx (false, L"failed!\n");
-  }
-
-  Sleep (90);
-
-  if (pagefile_stats.hThread == 0) {
-    dll_log.LogEx (true, L" [WMI] Spawning Pagefile Monitor... ");
-    pagefile_stats.hThread =
-      CreateThread (NULL, 0, BMF_MonitorPagefile, NULL, 0, NULL);
-    if (pagefile_stats.hThread != 0)
-      dll_log.LogEx (false, L"tid=0x%04x\n",
-        GetThreadId (pagefile_stats.hThread));
-    else
-      dll_log.LogEx (false, L"failed!\n");
-  }
-
-  Sleep (90);
-
-  //
-  // Spawn Process Monitor Thread
-  //
-  if (process_stats.hThread == 0) {
-    dll_log.LogEx (true, L" [WMI] Spawning Process Monitor...  ");
-    process_stats.hThread = CreateThread (NULL, 0, BMF_MonitorProcess, NULL, 0, NULL);
-    if (process_stats.hThread != 0)
-      dll_log.LogEx (false, L"tid=0x%04x\n", GetThreadId (process_stats.hThread));
-    else
-      dll_log.LogEx (false, L"Failed!\n");
-  }
-
-  dll_log.LogEx (false, L"\n");
+  //CreateThread (NULL, 0, BMF_InitCOM_Thread, nullptr, 0, nullptr);
 
   // Create a thread that pumps the OSD
   if (config.osd.pump) {
@@ -1087,8 +1162,6 @@ BMF_InitCore (const wchar_t* backend, void* callback)
   }
 
   dll_log.LogEx (false, L"\n");
-
-  BMF::Framerate::Init ();
 
   szOSD =
     (char *)
@@ -1426,6 +1499,7 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
   init->backend  = backend;
   init->callback = callback;
 
+#if 1
   hInitThread = CreateThread (NULL, 0, DllThread, init, 0, NULL);
 
   // Give other DXGI hookers time to queue up before processing any calls
@@ -1434,6 +1508,9 @@ BMF_StartupCore (const wchar_t* backend, void* callback)
   /* Default: 0.25 secs seems adequate */
   if (hInitThread != 0)
     WaitForSingleObject (hInitThread, config.system.init_delay);
+#else
+  DllThread (init);
+#endif
 
   return true;
 }
@@ -1661,7 +1738,9 @@ BMF_BeginBufferSwap (void)
 #ifdef _WIN64
     if (GetModuleHandle (L"steam_api64.dll"))
 #else
-    if (GetModuleHandle (L"steam_api.dll"))
+    //if (GetModuleHandle (L"msvc120.dll"))
+    //if (GetModuleHandle (L"steam_api.dll"))
+    if (true)
 #endif
     {
       BMF::SteamAPI::Init (true);
@@ -1681,32 +1760,34 @@ BMF_BeginBufferSwap (void)
 
 extern void BMF_UnlockSteamAchievement (int idx);
 
-COM_DECLSPEC_NOTHROW
-HRESULT
-STDMETHODCALLTYPE
-BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
+ULONGLONG poll_interval = 0;
+
+#if 0
+#define MT_KEYBOARD
+#define USE_MT_KEYS
+#endif
+
+#ifdef MT_KEYBOARD
+DWORD
+WINAPI
+KeyboardThread (void* user)
 {
-  // Draw after present, this may make stuff 1 frame late, but... it
-  //   helps with VSYNC performance.
-
-  // Treat resize and obscured statuses as failures; DXGI does not, but
-  //  we should not draw the OSD when these events happen.
-  if (/*FAILED (hr)*/ hr != S_OK)
-    return hr;
-
-  static ULONGLONG last_osd_scale { 0ULL };
+  ULONGLONG last_osd_scale { 0ULL };
+  ULONGLONG last_poll      { 0ULL };
 
   SYSTEMTIME    stNow;
   FILETIME      ftNow;
   LARGE_INTEGER ullNow;
 
+while (true)
+{
   GetSystemTime        (&stNow);
   SystemTimeToFileTime (&stNow, &ftNow);
 
   ullNow.HighPart = ftNow.dwHighDateTime;
   ullNow.LowPart  = ftNow.dwLowDateTime;
 
-  if (ullNow.QuadPart - last_osd_scale > 1000000ULL) {
+  if (ullNow.QuadPart - last_osd_scale > 25ULL * poll_interval) {
     if (HIWORD (GetAsyncKeyState (config.osd.keys.expand [0])) &&
         HIWORD (GetAsyncKeyState (config.osd.keys.expand [1])) &&
         HIWORD (GetAsyncKeyState (config.osd.keys.expand [2])))
@@ -1722,6 +1803,11 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
       last_osd_scale = ullNow.QuadPart;
       BMF_ResizeOSD (-1);
     }
+  }
+
+  if (ullNow.QuadPart < last_poll + poll_interval) {
+    Sleep (10);
+    last_poll = ullNow.QuadPart;
   }
 
   static bool toggle_time = false;
@@ -1861,6 +1947,219 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
   } else {
     toggle_osd = false;
   }
+} return 0; }
+#else
+void
+DoKeyboard (void)
+{
+  static ULONGLONG last_osd_scale { 0ULL };
+  static ULONGLONG last_poll      { 0ULL };
+
+  SYSTEMTIME    stNow;
+  FILETIME      ftNow;
+  LARGE_INTEGER ullNow;
+
+  GetSystemTime        (&stNow);
+  SystemTimeToFileTime (&stNow, &ftNow);
+
+  ullNow.HighPart = ftNow.dwHighDateTime;
+  ullNow.LowPart  = ftNow.dwLowDateTime;
+
+  if (ullNow.QuadPart - last_osd_scale > 25ULL * poll_interval) {
+    if (HIWORD (GetAsyncKeyState (config.osd.keys.expand [0])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.expand [1])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.expand [2])))
+    {
+      last_osd_scale = ullNow.QuadPart;
+      BMF_ResizeOSD (+1);
+    }
+
+    if (HIWORD (GetAsyncKeyState (config.osd.keys.shrink [0])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.shrink [1])) &&
+        HIWORD (GetAsyncKeyState (config.osd.keys.shrink [2])))
+    {
+      last_osd_scale = ullNow.QuadPart;
+      BMF_ResizeOSD (-1);
+    }
+  }
+
+#if 0
+  if (ullNow.QuadPart < last_poll + poll_interval) {
+    Sleep (10);
+    last_poll = ullNow.QuadPart;
+  }
+#endif
+
+  static bool toggle_time = false;
+  if (HIWORD (GetAsyncKeyState (config.time.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.time.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.time.keys.toggle [2])))
+  {
+    if (! toggle_time) {
+      BMF_UnlockSteamAchievement (0);
+
+      config.time.show = (! config.time.show);
+    }
+    toggle_time = true;
+  } else {
+    toggle_time = false;
+  }
+
+  static bool toggle_mem = false;
+  if (HIWORD (GetAsyncKeyState (config.mem.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.mem.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.mem.keys.toggle [2])))
+  {
+    if (! toggle_mem)
+      config.mem.show = (! config.mem.show);
+    toggle_mem = true;
+  } else {
+    toggle_mem = false;
+  }
+
+  static bool toggle_balance = false;
+  if (HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.load_balance.keys.toggle [2])))
+  {
+    if (! toggle_balance)
+      config.load_balance.use = (! config.load_balance.use);
+    toggle_balance = true;
+  } else {
+    toggle_balance = false;
+  }
+
+  static bool toggle_sli = false;
+  if (HIWORD (GetAsyncKeyState (config.sli.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.sli.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.sli.keys.toggle [2])))
+  {
+    if (! toggle_sli)
+      config.sli.show = (! config.sli.show);
+    toggle_sli = true;
+  } else {
+    toggle_sli = false;
+  }
+
+  static bool toggle_io = false;
+  if (HIWORD (GetAsyncKeyState (config.io.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.io.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.io.keys.toggle [2])))
+  {
+    if (! toggle_io)
+      config.io.show = (! config.io.show);
+    toggle_io = true;
+  } else {
+    toggle_io = false;
+  }
+
+  static bool toggle_cpu = false;
+  if (HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.cpu.keys.toggle [2])))
+  {
+    if (! toggle_cpu)
+      config.cpu.show = (! config.cpu.show);
+    toggle_cpu = true;
+  } else {
+    toggle_cpu = false;
+  }
+
+  static bool toggle_gpu = false;
+  if (HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.gpu.keys.toggle [2])))
+  {
+    if (! toggle_gpu)
+      config.gpu.show = (! config.gpu.show);
+    toggle_gpu = true;
+  } else {
+    toggle_gpu = false;
+  }
+
+  static bool toggle_fps = false;
+  if (HIWORD (GetAsyncKeyState (config.fps.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.fps.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.fps.keys.toggle [2])))
+  {
+    if (! toggle_fps)
+      config.fps.show = (! config.fps.show);
+    toggle_fps = true;
+  } else {
+    toggle_fps = false;
+  }
+
+  static bool toggle_disk = false;
+  if (HIWORD (GetAsyncKeyState (config.disk.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.disk.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.disk.keys.toggle [2])))
+  {
+    if (! toggle_disk)
+      config.disk.show = (! config.disk.show);
+    toggle_disk = true;
+  } else {
+    toggle_disk = false;
+  }
+
+  static bool toggle_pagefile = false;
+  if (HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.pagefile.keys.toggle [2])))
+  {
+    if (! toggle_pagefile)
+      config.pagefile.show = (! config.pagefile.show);
+    toggle_pagefile = true;
+  } else {
+    toggle_pagefile = false;
+  }
+
+  static bool toggle_osd = false;
+  if (HIWORD (GetAsyncKeyState (config.osd.keys.toggle [0])) &&
+      HIWORD (GetAsyncKeyState (config.osd.keys.toggle [1])) &&
+      HIWORD (GetAsyncKeyState (config.osd.keys.toggle [2])))
+  {
+    if (! toggle_osd) {
+      config.osd.show = (! config.osd.show);
+      if (config.osd.show)
+        BMF_InstallOSD ();
+    }
+    toggle_osd = true;
+  } else {
+    toggle_osd = false;
+  }
+}
+#endif
+
+COM_DECLSPEC_NOTHROW
+HRESULT
+STDMETHODCALLTYPE
+BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
+{
+  // Draw after present, this may make stuff 1 frame late, but... it
+  //   helps with VSYNC performance.
+
+  // Treat resize and obscured statuses as failures; DXGI does not, but
+  //  we should not draw the OSD when these events happen.
+  //if (FAILED (hr))
+    //return hr;
+
+#ifdef USE_MT_KEYS
+  //
+  // Do this in a different thread for the handful of game that use GetAsyncKeyState
+  //   from the rendering thread to handle keyboard input.
+  //
+  if (poll_interval == 0ULL) {
+    LARGE_INTEGER freq;
+    QueryPerformanceFrequency (&freq);
+
+    // Every 10 ms
+    poll_interval = freq.QuadPart / 100ULL;
+
+    CreateThread (nullptr, 0, KeyboardThread, nullptr, 0, nullptr);
+  }
+#else
+  DoKeyboard ();
+#endif
 
   if (config.sli.show && device != nullptr)
   {
@@ -1871,17 +2170,21 @@ BMF_EndBufferSwap (HRESULT hr, IUnknown* device)
     }
   }
 
-  BMF_DrawOSD ();
+  //if (dll_role != DLL_ROLE::D3D9)
+    BMF_DrawOSD ();
 
   //BMF::SteamAPI::Pump ();
 
   frames_drawn++;
 
+  static HMODULE hModTZFix = GetModuleHandle (L"tzfix.dll");
+
   //
   // TZFix has its own limiter
   //
-  if (! GetModuleHandle (L"tzfix.dll"))
+  if (! hModTZFix) {
     BMF::Framerate::GetLimiter ()->wait ();
+  }
 
   return hr;
 }

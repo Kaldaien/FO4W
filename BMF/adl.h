@@ -21,11 +21,18 @@ typedef int ( *ADL_OVERDRIVE6_FANSPEED_GET )(int iAdapterIndex, ADLOD6FanSpeedIn
 
 #include <Windows.h>
 
-BOOL BMF_InitADL (void);
+BOOL BMF_InitADL               (void);
+int  BMF_ADL_CountPhysicalGPUs (void);
+int  BMF_ADL_CountActiveGPUs   (void);
+
+AdapterInfo*
+     BMF_ADL_GetActiveAdapter  (int idx);
+
 
 extern BOOL ADL_init;
 
 extern ADL_ADAPTER_NUMBEROFADAPTERS_GET   ADL_Adapter_NumberOfAdapters_Get;
+extern ADL_ADAPTER_ACTIVE_GET             ADL_Adapter_Active_Get;
 extern ADL_ADAPTER_ADAPTERINFO_GET        ADL_Adapter_AdapterInfo_Get;
 
 extern ADL_OVERDRIVE5_TEMPERATURE_GET     ADL_Overdrive5_Temperature_Get;

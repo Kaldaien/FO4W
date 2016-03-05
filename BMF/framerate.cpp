@@ -24,44 +24,54 @@
 #include "command.h"
 #include "core.h" // Hooking
 
+#include <d3d9.h>
+extern IDirect3DDevice9 *g_pD3D9Dev;
+
+typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
+QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
+
+auto BMF_CurrentPerf = []()->
+ LARGE_INTEGER
+  {
+    LARGE_INTEGER                     time; 
+    QueryPerformanceCounter_Original (&time);
+    return                            time;
+  };
+
+auto BMF_DeltaPerf = [](auto delta, auto freq)->
+ LARGE_INTEGER
+  {
+    LARGE_INTEGER time = BMF_CurrentPerf ();
+
+    time.QuadPart -= (LONGLONG)(delta * freq);
+
+    return time;
+  };
+
+LARGE_INTEGER
+BMF_QueryPerf (void)
+{
+  return BMF_CurrentPerf ();
+}
+
 LARGE_INTEGER BMF::Framerate::Stats::freq;
 
 LPVOID pfnQueryPerformanceCounter       = nullptr;
 LPVOID pfnSleep                         = nullptr;
 
+#if 0
 static __declspec (thread) int           last_sleep     =   1;
 static __declspec (thread) LARGE_INTEGER last_perfCount = { 0 };
+#endif
 
-typedef MMRESULT (WINAPI *timeBeginPeriod_t)(UINT uPeriod);
-timeBeginPeriod_t timeBeginPeriod_Original = nullptr;
-
-MMRESULT
-WINAPI
-timeBeginPeriod_Detour (UINT uPeriod)
-{
-  dll_log.Log ( L"[!] timeBeginPeriod (%d) - "
-    L"[Calling Thread: 0x%04x]",
-    uPeriod,
-    GetCurrentThreadId () );
-
-
-  return timeBeginPeriod_Original (uPeriod);
-}
-
-typedef void (WINAPI *Sleep_t)(DWORD dwMilliseconds);
-Sleep_t Sleep_Original = nullptr;
+typedef void (WINAPI *Sleep_pfn)(DWORD dwMilliseconds);
+Sleep_pfn Sleep_Original = nullptr;
 
 void
 WINAPI
 Sleep_Detour (DWORD dwMilliseconds)
 {
-  static bool period = false;
-  if (! period) {
-    timeBeginPeriod (1);
-    period = true;
-  }
-
-  last_sleep = dwMilliseconds;
+  //last_sleep = dwMilliseconds;
 
   //if (config.framerate.yield_processor && dwMilliseconds == 0)
   //if (dwMilliseconds == 0)
@@ -70,23 +80,19 @@ Sleep_Detour (DWORD dwMilliseconds)
   // TODO: Stop this nonsense and make an actual parameter for this...
   //         (min sleep?)
   if (dwMilliseconds >= config.render.framerate.max_delta_time) {
+    if (dwMilliseconds == 0)
+      return YieldProcessor ();
+
     Sleep_Original (dwMilliseconds);
   }
 }
 
-typedef BOOL (WINAPI *QueryPerformanceCounter_t)(_Out_ LARGE_INTEGER *lpPerformanceCount);
-QueryPerformanceCounter_t QueryPerformanceCounter_Original = nullptr;
-
+__declspec (dllexport)
 BOOL
 WINAPI
 QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 {
-  static bool period = false;
-  if (! period) {
-    timeBeginPeriod (1);
-    period = true;
-  }
-
+#if 0
   BOOL ret = QueryPerformanceCounter_Original (lpPerformanceCount);
 
   if (last_sleep > 0 /*thread_sleep [GetCurrentThreadId ()] > 0 *//*|| (! (tzf::FrameRateFix::fullscreen ||
@@ -115,10 +121,12 @@ QueryPerformanceCounter_Detour (_Out_ LARGE_INTEGER *lpPerformanceCount)
 
     return ret;
   }
+#endif
+  return QueryPerformanceCounter_Original (lpPerformanceCount);
 }
 
-float limiter_tolerance = 0.4f;
-float target_fps        = 60.0;
+float limiter_tolerance = 0.25f;
+float target_fps        = 0.0;
 
 void
 BMF::Framerate::Init (void)
@@ -126,25 +134,41 @@ BMF::Framerate::Init (void)
   BMF_CommandProcessor* pCommandProc =
     BMF_GetCommandProcessor ();
 
+  // TEMP HACK BECAUSE THIS ISN'T STORED in D3D9.INI
+  if (GetModuleHandle (L"AgDrag.dll"))
+    config.render.framerate.max_delta_time = 5;
+
+  if (GetModuleHandle (L"tsfix.dll"))
+    config.render.framerate.max_delta_time = 0;
+
+  pCommandProc->AddVariable ( "MaxDeltaTime",
+          new BMF_VarStub <int> (&config.render.framerate.max_delta_time));
+
   pCommandProc->AddVariable ( "LimiterTolerance",
           new BMF_VarStub <float> (&limiter_tolerance));
   pCommandProc->AddVariable ( "TargetFPS",
           new BMF_VarStub <float> (&target_fps));
 
-#if 0
   BMF_CreateDLLHook ( L"kernel32.dll", "QueryPerformanceCounter",
-                      QueryPerformanceCounter_Detour, 
+                      QueryPerformanceCounter_Detour,
            (LPVOID *)&QueryPerformanceCounter_Original,
            (LPVOID *)&pfnQueryPerformanceCounter );
   BMF_EnableHook (pfnQueryPerformanceCounter);
-#endif
 
-#if 1
-  BMF_CreateDLLHook ( L"kernel32.dll", "Sleep",
-                      Sleep_Detour, 
-           (LPVOID *)&Sleep_Original,
-           (LPVOID *)&pfnSleep );
-  BMF_EnableHook (pfnSleep);
+  if (! GetModuleHandle (L"tsfix.dll")) {
+    BMF_CreateDLLHook ( L"kernel32.dll", "Sleep",
+                        Sleep_Detour, 
+             (LPVOID *)&Sleep_Original,
+             (LPVOID *)&pfnSleep );
+    BMF_EnableHook (pfnSleep);
+  }
+#if 0
+  else {
+    QueryPerformanceCounter_Original =
+      (QueryPerformanceCounter_t)
+        GetProcAddress ( GetModuleHandle (L"kernel32.dll"),
+                           "QueryPerformanceCounter" );
+  }
 #endif
 }
 
@@ -177,28 +201,25 @@ BMF::Framerate::Limiter::init (double target)
 
   frames = 0;
 
-#if 0
   IDirect3DDevice9Ex* d3d9ex = nullptr;
-  if (tzf::RenderFix::pDevice != nullptr) {
-    tzf::RenderFix::pDevice->QueryInterface ( 
-                       __uuidof (IDirect3DDevice9Ex),
-                         (void **)&d3d9ex );
+  if (g_pD3D9Dev != nullptr) {
+    g_pD3D9Dev->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
+                                   (void **)&d3d9ex );
   }
-#endif
 
   QueryPerformanceFrequency (&freq);
 
-#if 0
   // Align the start to VBlank for minimum input latency
   if (d3d9ex != nullptr) {
     d3d9ex->SetMaximumFrameLatency (1);
     d3d9ex->WaitForVBlank          (0);
-    d3d9ex->SetMaximumFrameLatency (max_latency);
+    d3d9ex->SetMaximumFrameLatency (
+      config.render.framerate.pre_render_limit == -1 ?
+           2 : config.render.framerate.pre_render_limit );
     d3d9ex->Release                ();
   }
-#endif
 
-  QueryPerformanceCounter (&start);
+  QueryPerformanceCounter_Original (&start);
 
   next.QuadPart = 0ULL;
   time.QuadPart = 0ULL;
@@ -216,9 +237,12 @@ BMF::Framerate::Limiter::wait (void)
   if (fps != target_fps)
     init (target_fps);
 
+  if (target_fps == 0)
+    return;
+
   frames++;
 
-  QueryPerformanceCounter (&time);
+  QueryPerformanceCounter_Original (&time);
 
   // Actual frametime before we forced a delay
   effective_ms = 1000.0 * ((double)(time.QuadPart - last.QuadPart) / (double)freq.QuadPart);
@@ -234,24 +258,26 @@ BMF::Framerate::Limiter::wait (void)
     frames         = 0;
     start.QuadPart = time.QuadPart + (ms / 1000.0) * (double)freq.QuadPart;
     restart        = false;
+    //init (target_fps);
+    //return;
   }
 
   next.QuadPart = (start.QuadPart + (double)frames * (ms / 1000.0) * (double)freq.QuadPart);
 
   if (next.QuadPart > 0ULL) {
-#if 0
     // If available (Windows 7+), wait on the swapchain
     IDirect3DDevice9Ex* d3d9ex = nullptr;
-    if (tzf::RenderFix::pDevice != nullptr) {
-      tzf::RenderFix::pDevice->QueryInterface ( 
-                          __uuidof (IDirect3DDevice9Ex),
-                            (void **)&d3d9ex );
+    if (g_pD3D9Dev != nullptr) {
+      g_pD3D9Dev->QueryInterface ( __uuidof (IDirect3DDevice9Ex),
+                                     (void **)&d3d9ex );
     }
-#endif
 
     while (time.QuadPart < next.QuadPart) {
 #if 0
-      if (wait_for_vblank && (double)(next.QuadPart - time.QuadPart) > (0.0166667 * (double)freq.QuadPart)) {
+      if ((double)(next.QuadPart - time.QuadPart) > (0.0166667 * (double)freq.QuadPart))
+        Sleep (10);
+#else
+      if (true/*wait_for_vblank*/ && (double)(next.QuadPart - time.QuadPart) > (0.016666666667 * (double)freq.QuadPart)) {
         if (d3d9ex != nullptr) {
           d3d9ex->WaitForVBlank (0);
         }
@@ -267,13 +293,11 @@ BMF::Framerate::Limiter::wait (void)
       }
 #endif
 
-      QueryPerformanceCounter (&time);
+      QueryPerformanceCounter_Original (&time);
     }
 
-#if 0
     if (d3d9ex != nullptr)
       d3d9ex->Release ();
-#endif
   }
 
   else {
@@ -285,7 +309,7 @@ BMF::Framerate::Limiter::wait (void)
 }
 
 void
-BMF::Framerate::Limiter::change_limit (double target) {
+BMF::Framerate::Limiter::set_limit (double target) {
   init (target);
 }
 
@@ -319,3 +343,40 @@ BMF::Framerate::Tick (double& dt, LARGE_INTEGER& now)
 
   last_frame = now;
 };
+
+
+double
+BMF::Framerate::Stats::calcMean (double seconds)
+{
+  return calcMean (BMF_DeltaPerf (seconds, freq.QuadPart));
+}
+
+double
+BMF::Framerate::Stats::calcSqStdDev (double mean, double seconds)
+{
+  return calcSqStdDev (mean, BMF_DeltaPerf (seconds, freq.QuadPart));
+}
+
+double
+BMF::Framerate::Stats::calcMin (double seconds)
+{
+  return calcMin (BMF_DeltaPerf (seconds, freq.QuadPart));
+}
+
+double
+BMF::Framerate::Stats::calcMax (double seconds)
+{
+  return calcMax (BMF_DeltaPerf (seconds, freq.QuadPart));
+}
+
+int
+BMF::Framerate::Stats::calcHitches (double tolerance, double mean, double seconds)
+{
+  return calcHitches (tolerance, mean, BMF_DeltaPerf (seconds, freq.QuadPart));
+}
+
+int
+BMF::Framerate::Stats::calcNumSamples (double seconds)
+{
+  return calcNumSamples (BMF_DeltaPerf (seconds, freq.QuadPart));
+}

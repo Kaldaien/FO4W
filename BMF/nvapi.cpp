@@ -882,6 +882,125 @@ BMF_NvAPI_IsInit (void)
   return NVAPI::nv_hardware;
 }
 
+void
+__stdcall
+BMF_NvAPI_SetAppName (const wchar_t* wszAppName)
+{
+  app_name = wszAppName;
+}
+
+void
+__stdcall
+BMF_NvAPI_SetLauncher (const wchar_t* wszLauncherName)
+{
+  launcher_name = wszLauncherName;
+}
+
+BOOL
+__stdcall
+BMF_NvAPI_AddLauncherToProf (void)
+{
+  if (! nv_hardware)
+    return FALSE;
+
+  NvDRSSessionHandle hSession;
+  NVAPI_CALL (DRS_CreateSession (&hSession));
+  NVAPI_CALL (DRS_LoadSettings  (hSession));
+
+  NvDRSProfileHandle hProfile;
+  static NVDRS_APPLICATION app = { 0 };
+
+  //BMF_NvAPI_GetAppProfile (hSession, &hProfile, &app);
+  NVAPI_SILENT ();
+
+  app.version = NVDRS_APPLICATION_VER;
+
+  NvAPI_Status ret;
+  NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
+                                              (NvU16 *)app_name.c_str (),
+                                                &hProfile,
+                                                  &app ),
+                ret );
+
+  // If no executable exists anywhere by this name, create a profile for it
+  //   and then add the executable to it.
+  if (ret == NVAPI_EXECUTABLE_NOT_FOUND) {
+    NVDRS_PROFILE custom_profile = { 0 };
+
+    custom_profile.isPredefined = false;
+    lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
+    custom_profile.version = NVDRS_PROFILE_VER;
+
+    // It's not necessarily wrong if this does not return NVAPI_OK, so don't
+    //   raise a fuss if it happens.
+    NVAPI_SILENT ()
+    {
+      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+    }
+    NVAPI_VERBOSE ()
+
+    // Add the application name to the profile, if a profile already exists
+    if (ret == NVAPI_PROFILE_NAME_IN_USE)
+      NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
+                                              (NvU16 *)friendly_name.c_str (),
+                                                &hProfile),
+                      ret );
+
+    if (ret == NVAPI_OK) {
+      memset (&app, 0, sizeof (NVDRS_APPLICATION));
+
+      *app.appName = L'\0';
+      //lstrcpyW ((wchar_t *)app.appName,          app_name.c_str      ());
+      lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+      lstrcpyW ((wchar_t *)app.launcher,         launcher_name.c_str ());
+      app.version      = NVDRS_APPLICATION_VER;
+      app.isPredefined = false;
+      app.isMetro      = false;
+
+      NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+      NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
+    }
+  } else {
+    memset (&app, 0, sizeof (NVDRS_APPLICATION));
+
+    *app.appName = L'\0';
+    //lstrcpyW ((wchar_t *)app.appName,          app_name.c_str      ());
+    lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+    lstrcpyW ((wchar_t *)app.launcher,         launcher_name.c_str ());
+    app.version      = NVDRS_APPLICATION_VER;
+    app.isPredefined = false;
+    app.isMetro      = false;
+
+    NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+    NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
+  }
+
+  NVAPI_CALL (DRS_SaveSettings   (hSession));
+  NVAPI_CALL (DRS_DestroySession (hSession));
+
+#if 0
+  if (! already_set) {
+#ifdef WIN32
+    HMODULE hLib = LoadLibrary (L"nvapi.dll");
+#else
+    HMODULE hLib = LoadLibrary (L"nvapi64.dll");
+#endif
+#define __NvAPI_RestartDisplayDriver                      0xB4B26B65
+    typedef void* (*NvAPI_QueryInterface_t)(unsigned int offset);
+    typedef NvAPI_Status(__cdecl *NvAPI_RestartDisplayDriver_t)(void);
+    NvAPI_QueryInterface_t       NvAPI_QueryInterface       =
+      (NvAPI_QueryInterface_t)GetProcAddress (hLib, "nvapi_QueryInterface");
+    NvAPI_RestartDisplayDriver_t NvAPI_RestartDisplayDriver =
+      (NvAPI_RestartDisplayDriver_t)NvAPI_QueryInterface (__NvAPI_RestartDisplayDriver);
+
+    NvAPI_RestartDisplayDriver ();
+  }
+#endif
+
+  return true;
+}
+
 bool         NVAPI::nv_hardware   = false;
 std::wstring NVAPI::friendly_name = L"Tales of Zestiria";
 std::wstring NVAPI::app_name      = L"Tales Of Zestiria.exe";
+std::wstring NVAPI::launcher_name = L"";

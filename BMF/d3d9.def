@@ -1,4 +1,13 @@
-LIBRARY "d3d9"
+;
+; Ignore the ordinal numbers, they are informational at best and all imports
+;   need to be resolved by name.
+;
+;  The numbers are here merely to hint at the purpose of groups of
+;    imports/exports, with higher numbered imports being more likely to change
+;      in the future.
+;
+
+;LIBRARY "d3d9"
 
 EXPORTS
   D3DPERF_BeginEvent       = D3DPERF_BeginEvent       @1
@@ -25,11 +34,16 @@ EXPORTS
   D3D9UpdateTexture_Override             = D3D9UpdateTexture_Override             @511
   D3D9SetViewport_Override               = D3D9SetViewport_Override               @512
   D3D9DrawIndexedPrimitive_Override      = D3D9DrawIndexedPrimitive_Override      @513
-  D3D9EndScene_Override                  = D3D9EndScene_Override                  @514
-  D3D9SetTexture_Override                = D3D9SetTexture_Override                @515
-  D3D9DrawPrimitive_Override             = D3D9DrawPrimitive_Override             @516
-  D3D9StretchRect_Override               = D3D9StretchRect_Override               @517
-  ;D3D9UpdateSurface_Override             = D3D9UpdateSurface_Override             @518
+  D3D9BeginScene_Override                = D3D9BeginScene_Override                @514
+  D3D9EndScene_Override                  = D3D9EndScene_Override                  @515
+  D3D9SetTexture_Override                = D3D9SetTexture_Override                @516
+  D3D9DrawPrimitive_Override             = D3D9DrawPrimitive_Override             @517
+  D3D9StretchRect_Override               = D3D9StretchRect_Override               @518
+  ;D3D9UpdateSurface_Override             = D3D9UpdateSurface_Override             @519
+  D3D9SetRenderState_Override            = D3D9SetRenderState_Override            @520
+  D3D9DrawPrimitiveUP_Override           = D3D9DrawPrimitiveUP_Override           @521
+  D3D9DrawIndexedPrimitiveUP_Override    = D3D9DrawIndexedPrimitiveUP_Override    @522
+  D3D9SetCursorPosition_Override         = D3D9SetCursorPosition_Override         @523
 
 ;LIBRARY "dxgi"
 
@@ -423,9 +437,19 @@ BMF_EndBufferSwap        = BMF_EndBufferSwap        @401
 BMF_DrawExternalOSD      = BMF_DrawExternalOSD      @402
 BMF_SetPresentParamsD3D9 = BMF_SetPresentParamsD3D9 @403
 
-BMF_NvAPI_IsInit             = BMF_NvAPI_IsInit             @404
-BMF_NvAPI_SetFramerateLimit  = BMF_NvAPI_SetFramerateLimit  @405
-BMF_NvAPI_SetAppFriendlyName = BMF_NvAPI_SetAppFriendlyName @406
+; First new symbol to use the new name for this project
+SK_SetPluginName         = SK_SetPluginName         @404
+SK_GetCommandProcessor   = BMF_GetCommandProcessor  @405 ; Alias to existing name
+
+QueryPerformanceCounter_Detour = QueryPerformanceCounter_Detour @406
+Sleep_Detour                   = Sleep_Detour                   @407
+
+BMF_NvAPI_IsInit             = BMF_NvAPI_IsInit             @420
+BMF_NvAPI_SetFramerateLimit  = BMF_NvAPI_SetFramerateLimit  @421
+BMF_NvAPI_SetAppFriendlyName = BMF_NvAPI_SetAppFriendlyName @422
+BMF_NvAPI_SetAppName         = BMF_NvAPI_SetAppName         @423
+BMF_NvAPI_SetLauncher        = BMF_NvAPI_SetLauncher        @424
+BMF_NvAPI_AddLauncherToProf  = BMF_NvAPI_AddLauncherToProf  @425
 
 
 BMF_CreateFuncHook = BMF_CreateFuncHook @450

@@ -213,7 +213,8 @@ public:
   bool                RemoveVariable ( const char*   szVariable );
 
 
-  BMF_CommandResult ProcessCommandLine (const char* szCommandLine);
+  BMF_CommandResult ProcessCommandLine      (const char* szCommandLine);
+  BMF_CommandResult ProcessCommandFormatted (const char* szCommandFormat, ...);
 
 
 protected:

@@ -18,6 +18,8 @@
 #include "gpu_monitor.h"
 #include "config.h"
 
+#include "log.h"
+
 gpu_sensors_t gpu_stats;
 
 #include "nvapi.h"
@@ -35,7 +37,7 @@ void
 BMF_PollGPU (void)
 {
   if (! nvapi_init) {
-    if (! BMF_InitADL ()) {
+    if (! ADL_init) {
       gpu_stats.num_gpus = 0;
       return;
     }
@@ -295,43 +297,61 @@ if (nvapi_init)
       }
     }
   }
+
   else if (ADL_init == ADL_TRUE)
   {
-    ADL_Adapter_NumberOfAdapters_Get (&gpu_stats.num_gpus);
+    gpu_stats.num_gpus = BMF_ADL_CountActiveGPUs ();
+    //dll_log.Log (L"AMD GPUs: %i", gpu_stats.num_gpus);
 
     for (int i = 0; i < gpu_stats.num_gpus; i++) {
+      AdapterInfo* pAdapter = BMF_ADL_GetActiveAdapter (i);
+
+      if (pAdapter->iAdapterIndex >= ADL_MAX_ADAPTERS || pAdapter->iAdapterIndex < 0) {
+        dll_log.Log (L"INVALID ADL ADAPTER: %i", pAdapter->iAdapterIndex);
+        break;
+      }
+
       ADLPMActivity activity;
+
+      ZeroMemory (&activity, sizeof (ADLPMActivity));
+
       activity.iSize = sizeof (ADLPMActivity);
 
-      ADL_Overdrive5_CurrentActivity_Get (i, &activity);
+      ADL_Overdrive5_CurrentActivity_Get (pAdapter->iAdapterIndex, &activity);
 
       gpu_stats.gpus [i].loads_percent.gpu = activity.iActivityPercent;
       gpu_stats.gpus [i].hwinfo.pcie_gen   = activity.iCurrentBusSpeed;
       gpu_stats.gpus [i].hwinfo.pcie_lanes = activity.iCurrentBusLanes;
 
-      gpu_stats.gpus [i].clocks_kHz.gpu    = activity.iEngineClock / 1000;
-      gpu_stats.gpus [i].clocks_kHz.ram    = activity.iMemoryClock / 1000;
+      gpu_stats.gpus [i].clocks_kHz.gpu    = activity.iEngineClock * 10UL;
+      gpu_stats.gpus [i].clocks_kHz.ram    = activity.iMemoryClock * 10UL;
 
       gpu_stats.gpus [i].volts_mV.supported = true;
       gpu_stats.gpus [i].volts_mV.over      = false;
       gpu_stats.gpus [i].volts_mV.core      = (float)activity.iVddc; // mV?
 
       ADLTemperature temp;
+
+      ZeroMemory (&temp, sizeof (ADLTemperature));
+
       temp.iSize = sizeof (ADLTemperature);
 
-      ADL_Overdrive5_Temperature_Get (i, 0, &temp);
+      ADL_Overdrive5_Temperature_Get (pAdapter->iAdapterIndex, 0, &temp);
 
-      gpu_stats.gpus [i].temps_c.gpu = temp.iTemperature;
+      gpu_stats.gpus [i].temps_c.gpu = temp.iTemperature / 1000UL;
 
       ADLFanSpeedValue fanspeed;
+
+      ZeroMemory (&fanspeed, sizeof (ADLFanSpeedValue));
+
       fanspeed.iSize      = sizeof (ADLFanSpeedValue);
       fanspeed.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_RPM;
 
-      ADL_Overdrive5_FanSpeed_Get (i, 0, &fanspeed);
+      ADL_Overdrive5_FanSpeed_Get (pAdapter->iAdapterIndex, 0, &fanspeed);
 
       gpu_stats.gpus [i].fans_rpm.gpu       = fanspeed.iFanSpeed;
       gpu_stats.gpus [i].fans_rpm.supported = true;
     }
   }
-  }
+}
 }

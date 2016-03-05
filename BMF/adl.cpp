@@ -1,4 +1,5 @@
 #include "adl.h"
+#include "log.h"
 
 BOOL ADL_init = ADL_FALSE;
 
@@ -6,6 +7,7 @@ HINSTANCE hADL_DLL;
 
 ADL_ADAPTER_NUMBEROFADAPTERS_GET   ADL_Adapter_NumberOfAdapters_Get;
 ADL_ADAPTER_ADAPTERINFO_GET        ADL_Adapter_AdapterInfo_Get;
+ADL_ADAPTER_ACTIVE_GET             ADL_Adapter_Active_Get;
 
 ADL_MAIN_CONTROL_CREATE            ADL_Main_Control_Create;
 ADL_MAIN_CONTROL_DESTROY           ADL_Main_Control_Destroy;
@@ -32,6 +34,9 @@ void __stdcall ADL_Main_Memory_Free ( void** lpBuffer )
   }
 }
 
+AdapterInfo adl_adapters [ADL_MAX_ADAPTERS];
+AdapterInfo adl_active   [ADL_MAX_ADAPTERS];
+
 BOOL
 BMF_InitADL (void)
 {
@@ -39,9 +44,17 @@ BMF_InitADL (void)
     return ADL_init;
   }
 
+  ZeroMemory (adl_adapters, sizeof (AdapterInfo) * ADL_MAX_ADAPTERS);
+  ZeroMemory (adl_active,   sizeof (AdapterInfo) * ADL_MAX_ADAPTERS);
+
+  for (int i = 0; i < ADL_MAX_ADAPTERS; i++) {
+    adl_adapters [i].iSize = sizeof (AdapterInfo);
+    adl_active   [i].iSize = sizeof (AdapterInfo);
+  }
+
   hADL_DLL = LoadLibrary (L"atiadlxx.dll");
   if (hADL_DLL == nullptr) {
-    // A 32 bit calling application on 64 bit OS will fail to LoadLIbrary.
+    // A 32 bit calling application on 64 bit OS will fail to LoadLibrary.
     // Try to load the 32 bit library (atiadlxy.dll) instead
     hADL_DLL = LoadLibrary (L"atiadlxy.dll");
   }
@@ -70,6 +83,11 @@ BMF_InitADL (void)
        hADL_DLL, "ADL_Adapter_AdapterInfo_Get"
      );
 
+    ADL_Adapter_Active_Get        =
+     (ADL_ADAPTER_ACTIVE_GET)GetProcAddress (
+       hADL_DLL, "ADL_Adapter_Active_Get"
+     );
+
     ADL_Overdrive5_Temperature_Get     =
       (ADL_OVERDRIVE5_TEMPERATURE_GET)GetProcAddress (
         hADL_DLL, "ADL_Overdrive5_Temperature_Get"
@@ -88,11 +106,12 @@ BMF_InitADL (void)
     if (ADL_Main_Control_Create            != nullptr &&
         ADL_Main_Control_Destroy           != nullptr &&
         ADL_Adapter_NumberOfAdapters_Get   != nullptr &&
+        ADL_Adapter_Active_Get             != nullptr &&
         ADL_Adapter_AdapterInfo_Get        != nullptr &&
         ADL_Overdrive5_Temperature_Get     != nullptr &&
         ADL_Overdrive5_FanSpeed_Get        != nullptr &&
         ADL_Overdrive5_CurrentActivity_Get != nullptr) {
-      if (ADL_OK == ADL_Main_Control_Create (ADL_Main_Memory_Alloc, 1)) {
+      if (ADL_OK == ADL_Main_Control_Create (ADL_Main_Memory_Alloc, 0)) {
         ADL_init = ADL_TRUE;
         return TRUE;
       }
@@ -101,4 +120,54 @@ BMF_InitADL (void)
 
   ADL_init = ADL_FALSE - 1;
   return FALSE;
+}
+
+int
+BMF_ADL_CountPhysicalGPUs (void)
+{
+  int num_gpus = 0;
+
+  if (ADL_Adapter_NumberOfAdapters_Get (&num_gpus) == ADL_OK) {
+    return num_gpus;
+  }
+
+  return 0;
+}
+
+// Also populates a list of active adapters
+int
+BMF_ADL_CountActiveGPUs (void)
+{
+  int active_count  = 0;
+  int adapter_count = BMF_ADL_CountPhysicalGPUs ();
+
+  //dll_log.Log (L"Adapter Count: %d", adapter_count);
+
+  ADL_Adapter_AdapterInfo_Get (
+    adl_adapters,
+      adapter_count * sizeof (AdapterInfo)
+  );
+
+  for (int i = 0; i < adapter_count; i++) {
+    int adapter_status = ADL_FALSE;
+
+    ADL_Adapter_Active_Get (adl_adapters [i].iAdapterIndex, &adapter_status);
+
+    if (adapter_status == ADL_TRUE) {
+      memcpy ( &adl_active     [active_count++],
+                 &adl_adapters [i],
+                   sizeof AdapterInfo );
+    }
+  }
+
+  return active_count;
+}
+
+AdapterInfo*
+BMF_ADL_GetActiveAdapter (int idx)
+{
+  if (idx < ADL_MAX_ADAPTERS)
+    return &adl_active [idx];
+
+  return nullptr;
 }

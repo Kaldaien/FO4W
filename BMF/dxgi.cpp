@@ -1428,8 +1428,6 @@ dxgi_init_callback (void)
   BMF_CommandProcessor* pCommandProc =
     BMF_GetCommandProcessor ();
 
-  pCommandProc->AddVariable ( "MaxDeltaTime",
-          new BMF_VarStub <int> (&config.render.framerate.max_delta_time));
   pCommandProc->AddVariable ( "PresentationInterval",
           new BMF_VarStub <int> (&config.render.framerate.present_interval));
   pCommandProc->AddVariable ( "PreRenderLimit",
@@ -1443,9 +1441,33 @@ dxgi_init_callback (void)
 }
 
 
+HMODULE
+BMF_LoadRealDXGI (void)
+{
+  wchar_t wszBackendDLL [MAX_PATH] = { L'\0' };
+
+#ifdef _WIN64
+  GetSystemDirectory (wszBackendDLL, MAX_PATH);
+#else
+  BOOL bWOW64;
+  ::IsWow64Process (GetCurrentProcess (), &bWOW64);
+
+  if (bWOW64)
+    GetSystemWow64Directory (wszBackendDLL, MAX_PATH);
+  else
+    GetSystemDirectory (wszBackendDLL, MAX_PATH);
+#endif
+
+  lstrcatW (wszBackendDLL, L"\\dxgi.dll");
+
+  return LoadLibraryW (wszBackendDLL);
+}
+
 bool
 BMF::DXGI::Startup (void)
 {
+  BMF_LoadRealDXGI ();
+
   return BMF_StartupCore (L"dxgi", dxgi_init_callback);
 }
 

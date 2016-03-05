@@ -20,12 +20,17 @@
 
 #include <comdef.h>
 
+extern std::wstring host_app;
+
 const std::wstring BMF_IMPORT_EARLY = L"Early";
 const std::wstring BMF_IMPORT_LATE  = L"Late";
 const std::wstring BMF_IMPORT_LAZY  = L"Lazy";
+const std::wstring BMF_IMPORT_PROXY = L"Proxy";
 
-const std::wstring BMF_IMPORT_ROLE_DXGI  = L"dxgi";
-const std::wstring BMF_IMPORT_ROLE_D3D11 = L"d3d11";
+const std::wstring BMF_IMPORT_ROLE_DXGI   = L"dxgi";
+const std::wstring BMF_IMPORT_ROLE_D3D11  = L"d3d11";
+const std::wstring BMF_IMPORT_ROLE_D3D9   = L"d3d9";
+const std::wstring BMF_IMPORT_ROLE_OPENGL = L"opengl";
 
 const std::wstring BMF_IMPORT_ARCH_X64   = L"x64";
 const std::wstring BMF_IMPORT_ARCH_WIN32 = L"Win32";
@@ -43,6 +48,15 @@ BMF_LoadEarlyImports64 (void)
     if (imports [i].hLibrary != NULL)
       continue;
 
+    bool         blacklisted = false;
+    std::wstring blacklist   =
+      imports [i].blacklist != nullptr ?
+        imports [i].blacklist->get_value_str () :
+        L"";
+
+    if (blacklist.find (host_app) != std::wstring::npos)
+      blacklisted = true;
+
     if (imports [i].filename != nullptr) {
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
@@ -52,19 +66,23 @@ BMF_LoadEarlyImports64 (void)
             dll_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
-            imports [i].hLibrary = LoadLibrary (
+            if (! blacklisted) {
+              imports [i].hLibrary = LoadLibrary (
                 imports [i].filename->get_value_str ().c_str ()
-            );
+              );
 
-            if (imports [i].hLibrary != NULL) {
-              dll_log.LogEx (false, L"success!\n");
-              ++success;
-            } else  {
-              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+              if (imports [i].hLibrary != NULL) {
+                dll_log.LogEx (false, L"success!\n");
+                ++success;
+              } else  {
+                _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-              imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
-                             err.WCode (), err.ErrorMessage () );
+                imports [i].hLibrary = (HMODULE)-2;
+                dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                               err.WCode (), err.ErrorMessage () );
+              }
+            } else {
+              dll_log.LogEx (false, L"failed: Host App is Blacklisted!\n");
             }
           }
         }
@@ -87,6 +105,15 @@ BMF_LoadLateImports64 (void)
     if (imports [i].hLibrary != NULL)
       continue;
 
+    bool         blacklisted = false;
+    std::wstring blacklist   =
+      imports [i].blacklist != nullptr ?
+        imports [i].blacklist->get_value_str () :
+        L"";
+
+    if (blacklist.find (host_app) != std::wstring::npos)
+      blacklisted = true;
+
     if (imports [i].filename != nullptr) {
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
@@ -96,19 +123,23 @@ BMF_LoadLateImports64 (void)
             dll_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
-            imports [i].hLibrary = LoadLibrary (
-              imports [i].filename->get_value_str ().c_str ()
+            if (! blacklisted) {
+              imports [i].hLibrary = LoadLibrary (
+                imports [i].filename->get_value_str ().c_str ()
               );
 
-            if (imports [i].hLibrary != NULL) {
-              dll_log.LogEx (false, L"success!\n");
-              ++success;
-            } else  {
-              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+              if (imports [i].hLibrary != NULL) {
+                dll_log.LogEx (false, L"success!\n");
+                ++success;
+              } else  {
+                _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-              imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
-                             err.WCode (), err.ErrorMessage () );
+                imports [i].hLibrary = (HMODULE)-2;
+                dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                               err.WCode (), err.ErrorMessage () );
+              }
+            } else {
+              dll_log.LogEx (false, L"failed: Host App is Blacklisted!\n");
             }
           }
         }
@@ -131,6 +162,15 @@ BMF_LoadLazyImports64 (void)
     if (imports [i].hLibrary != NULL)
       continue;
 
+    bool         blacklisted = false;
+    std::wstring blacklist   =
+      imports [i].blacklist != nullptr ?
+        imports [i].blacklist->get_value_str () :
+        L"";
+
+    if (blacklist.find (host_app) != std::wstring::npos)
+      blacklisted = true;
+
     if (imports [i].filename != nullptr) {
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
@@ -140,19 +180,23 @@ BMF_LoadLazyImports64 (void)
             dll_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
                 imports [i].filename->get_value_str ().c_str ());
 
-            imports [i].hLibrary = LoadLibrary (
-              imports [i].filename->get_value_str ().c_str ()
+            if (! blacklisted) {
+              imports [i].hLibrary = LoadLibrary (
+                imports [i].filename->get_value_str ().c_str ()
               );
 
-            if (imports [i].hLibrary != NULL) {
-              dll_log.LogEx (false, L"success!\n");
-              ++success;
-            } else  {
-              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+              if (imports [i].hLibrary != NULL) {
+                dll_log.LogEx (false, L"success!\n");
+                ++success;
+              } else  {
+                _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-              imports [i].hLibrary = (HMODULE)-3;
-              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
-                             err.WCode (), err.ErrorMessage () );
+                imports [i].hLibrary = (HMODULE)-3;
+                dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                               err.WCode (), err.ErrorMessage () );
+              }
+            } else {
+              dll_log.LogEx (false, L"failed: Host App is Blacklisted!\n");
             }
           }
         }
@@ -175,6 +219,15 @@ BMF_LoadEarlyImports32 (void)
     if (imports [i].hLibrary != NULL)
       continue;
 
+    bool         blacklisted = false;
+    std::wstring blacklist   =
+      imports [i].blacklist != nullptr ?
+        imports [i].blacklist->get_value_str () :
+        L"";
+
+    if (blacklist.find (host_app) != std::wstring::npos)
+      blacklisted = true;
+
     if (imports [i].filename != nullptr) {
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
@@ -184,19 +237,23 @@ BMF_LoadEarlyImports32 (void)
             dll_log.LogEx (true, L"  * Loading Early Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
-            imports [i].hLibrary = LoadLibrary (
+            if (! blacklisted) {
+              imports [i].hLibrary = LoadLibrary (
                 imports [i].filename->get_value_str ().c_str ()
-            );
+              );
 
-            if (imports [i].hLibrary != NULL) {
-              dll_log.LogEx (false, L"success!\n");
-              ++success;
-            } else  {
-              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+              if (imports [i].hLibrary != NULL) {
+                dll_log.LogEx (false, L"success!\n");
+                ++success;
+              } else  {
+                _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-              imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
-                             err.WCode (), err.ErrorMessage () );
+                imports [i].hLibrary = (HMODULE)-2;
+                dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                               err.WCode (), err.ErrorMessage () );
+              }
+            } else {
+              dll_log.LogEx (false, L"failed: Host App is Blacklisted!\n");
             }
           }
         }
@@ -219,6 +276,15 @@ BMF_LoadLateImports32 (void)
     if (imports [i].hLibrary != NULL)
       continue;
 
+    bool         blacklisted = false;
+    std::wstring blacklist   =
+      imports [i].blacklist != nullptr ?
+        imports [i].blacklist->get_value_str () :
+        L"";
+
+    if (blacklist.find (host_app) != std::wstring::npos)
+      blacklisted = true;
+
     if (imports [i].filename != nullptr) {
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
@@ -228,19 +294,23 @@ BMF_LoadLateImports32 (void)
             dll_log.LogEx (true, L"  * Loading Late Custom Import %s... ",
               imports [i].filename->get_value_str ().c_str ());
 
-            imports [i].hLibrary = LoadLibrary (
-              imports [i].filename->get_value_str ().c_str ()
-              );
+            if (! blacklisted) {
+              imports [i].hLibrary = LoadLibrary (
+                imports [i].filename->get_value_str ().c_str ()
+                );
 
-            if (imports [i].hLibrary != NULL) {
-              dll_log.LogEx (false, L"success!\n");
-              ++success;
-            } else  {
-              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+              if (imports [i].hLibrary != NULL) {
+                dll_log.LogEx (false, L"success!\n");
+                ++success;
+              } else  {
+                _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-              imports [i].hLibrary = (HMODULE)-2;
-              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
-                             err.WCode (), err.ErrorMessage () );
+                imports [i].hLibrary = (HMODULE)-2;
+                dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                               err.WCode (), err.ErrorMessage () );
+              }
+            } else {
+              dll_log.LogEx (false, L"failed: Host App is Blacklisted!\n");
             }
           }
         }
@@ -263,6 +333,15 @@ BMF_LoadLazyImports32 (void)
     if (imports [i].hLibrary != NULL)
       continue;
 
+    bool         blacklisted = false;
+    std::wstring blacklist   =
+      imports [i].blacklist != nullptr ?
+        imports [i].blacklist->get_value_str () :
+        L"";
+
+    if (blacklist.find (host_app) != std::wstring::npos)
+      blacklisted = true;
+
     if (imports [i].filename != nullptr) {
       if (imports [i].when != nullptr) {
         if (imports [i].architecture != nullptr) {
@@ -272,19 +351,23 @@ BMF_LoadLazyImports32 (void)
             dll_log.LogEx (true, L"  * Loading Lazy Custom Import %s... ",
                 imports [i].filename->get_value_str ().c_str ());
 
-            imports [i].hLibrary = LoadLibrary (
-              imports [i].filename->get_value_str ().c_str ()
-              );
+            if (! blacklisted) {
+              imports [i].hLibrary = LoadLibrary (
+                imports [i].filename->get_value_str ().c_str ()
+                );
 
-            if (imports [i].hLibrary != NULL) {
-              dll_log.LogEx (false, L"success!\n");
-              ++success;
-            } else  {
-              _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
+              if (imports [i].hLibrary != NULL) {
+                dll_log.LogEx (false, L"success!\n");
+                ++success;
+              } else  {
+                _com_error err (HRESULT_FROM_WIN32 (GetLastError ()));
 
-              imports [i].hLibrary = (HMODULE)-3;
-              dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
-                             err.WCode (), err.ErrorMessage () );
+                imports [i].hLibrary = (HMODULE)-3;
+                dll_log.LogEx (false, L"failed: 0x%04X (%s)!\n",
+                               err.WCode (), err.ErrorMessage () );
+              }
+            } else {
+              dll_log.LogEx (false, L"failed: Host App is Blacklisted!\n");
             }
           }
         }

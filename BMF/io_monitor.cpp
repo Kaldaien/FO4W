@@ -20,6 +20,8 @@
 #include "io_monitor.h"
 #include "log.h"
 
+#include "framerate.h"
+
 void
 BMF_CountIO (io_perf_t& ioc, const double update)
 {
@@ -114,26 +116,36 @@ IWbemServices* pNameSpace = nullptr;
 CRITICAL_SECTION com_cs;
 
 bool
+BMF_InitCOMLocks (void)
+{
+  InitializeCriticalSectionAndSpinCount (&com_cs, 5000);
+
+  return true;
+}
+
+bool
 BMF_InitCOM (void)
 {
   IWbemLocator*  pWbemLocator  = nullptr;
   BSTR           bstrNameSpace = nullptr;
 
+  HRESULT hr;
+
   // Every thread that uses COM has to do this, but the other stuff ...
   //   that only needs to be done once.
-  HRESULT hr;
   if (FAILED (hr = CoInitializeEx (NULL, COINIT_MULTITHREADED)))
   {
     dll_log.Log (L"[COM] Failure to initialize COM for the calling thread "
                  L"(%s:%d) -- 0x%X",
       __FILEW__, __LINE__, hr);
-    goto COM_CLEANUP;
+    return false;
+    //goto COM_CLEANUP;
   }
 
   if (com_init)
     return true;
 
-  InitializeCriticalSectionAndSpinCount (&com_cs, 5000);
+  BMF_InitCOMLocks ();
 
   if (FAILED (hr = CoInitializeSecurity (
                      NULL,
@@ -660,6 +672,9 @@ BMF_MonitorDisk (LPVOID user)
     if (! config.disk.show)
       continue;
 
+    extern LARGE_INTEGER BMF_QueryPerf (void);
+     LARGE_INTEGER now = BMF_QueryPerf ();
+
     disk.dwNumReturned = 0;
 
     EnterCriticalSection (&com_cs);
@@ -901,14 +916,30 @@ BMF_MonitorDisk (LPVOID user)
 
       disk.disks [i].name [15] = '\0';
 
+      static BMF::Framerate::Stats write_rate    [16];
+      static BMF::Framerate::Stats read_rate     [16];
+      static BMF::Framerate::Stats combined_rate [16];
+
       disk.disks [i].percent_idle   = (disk.disks [i].percent_idle   + percent_idle)   / 2;
       disk.disks [i].percent_load   = (disk.disks [i].percent_load   + percent_load)   / 2;
       disk.disks [i].percent_read   = (disk.disks [i].percent_read   + percent_read)   / 2;
       disk.disks [i].percent_write  = (disk.disks [i].percent_write  + percent_write)  / 2;
 
-      disk.disks [i].bytes_sec       = (disk.disks [i].bytes_sec       + bytes_sec)       >> 1;
-      disk.disks [i].write_bytes_sec = (disk.disks [i].write_bytes_sec + bytes_write_sec) >> 1;
-      disk.disks [i].read_bytes_sec  = (disk.disks [i].read_bytes_sec  + bytes_read_sec)  >> 1;
+      write_rate    [i].addSample ((double)bytes_write_sec, now);
+      read_rate     [i].addSample ((double)bytes_read_sec,  now);
+      combined_rate [i].addSample ((double)bytes_sec,       now);
+
+      double combined_mean = combined_rate [i].calcMean (3.0);
+      double write_mean    = write_rate    [i].calcMean (3.0);
+      double read_mean     = read_rate     [i].calcMean (3.0);
+
+      disk.disks [i].bytes_sec       = isnan (combined_mean) ? 0 : combined_mean;
+      disk.disks [i].write_bytes_sec = isnan (write_mean)    ? 0 : write_mean;
+      disk.disks [i].read_bytes_sec  = isnan (read_mean)     ? 0 : read_mean;
+
+      //disk.disks [i].bytes_sec       = (disk.disks [i].bytes_sec       + bytes_sec)       >> 1;
+      //disk.disks [i].write_bytes_sec = (disk.disks [i].write_bytes_sec + bytes_write_sec) >> 1;
+      //disk.disks [i].read_bytes_sec  = (disk.disks [i].read_bytes_sec  + bytes_read_sec)  >> 1;
 
       // Done with the object
       disk.apEnumAccess [i]->Release ();

@@ -34,7 +34,7 @@ struct bmf_config_t
   } time;
 
   struct {
-    bool   show           = true;
+    bool   show           = false;
     float  reserve        = 75.0f; // 75%
     float  interval       = 0.25f;
 
@@ -45,7 +45,7 @@ struct bmf_config_t
 
 
   struct {
-    bool   show           = true;
+    bool   show           = false;
     float  interval       = 0.25f; // 250 msecs (4 Hz)
 
     struct {
@@ -151,7 +151,7 @@ struct bmf_config_t
   struct {
     std::wstring
             achievement_sound = L"";
-    bool    achievement_sshot = true;
+    bool    achievement_sshot = false;
     int     notify_corner     = 4; // 0=Top-Left,
                                    // 1=Top-Right,
                                    // 2=Bottom-Left,
@@ -173,7 +173,7 @@ struct bmf_config_t
       int     pre_render_limit = -1;
       int     present_interval = -1;
       int     buffer_count     = -1;
-      int     max_delta_time   = 33;
+      int     max_delta_time   =  0;
       bool    flip_discard     = false;
       float   fudge_factor     = 3.333333f;
     } framerate;
