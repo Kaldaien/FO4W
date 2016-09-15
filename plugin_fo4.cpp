@@ -370,5 +370,5 @@ SK_FO4_PresentFirstFrame ( IDXGISwapChain *This,
     return S_OK;
   }
 
-  return E_FAIL;
+  return E_FAIL; 
 }
